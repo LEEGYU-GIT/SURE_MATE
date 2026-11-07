@@ -1,8 +1,9 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+import type { SureMateApi } from '../shared/ipc-channels'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: unknown
+    sureMate: SureMateApi
   }
 }
+
+export {}

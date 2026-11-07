@@ -46,6 +46,14 @@ export class HotkeyManager {
     return { ok: true }
   }
 
+  /** 후보를 앞에서부터 시도해 처음 등록되는 조합을 쓴다(다른 앱이 기본 조합을 잡은 경우 대비). */
+  bindFirst(id: HotkeyId, accs: string[], handler: () => void): { ok: true; acc: string } | { ok: false; tried: string[] } {
+    for (const acc of accs) {
+      if (this.bind(id, acc, handler).ok) return { ok: true, acc }
+    }
+    return { ok: false, tried: accs }
+  }
+
   rebind(id: HotkeyId, acc: string): BindResult {
     const entry = this.entries.get(id)
     if (!entry) return { ok: false, reason: 'blocked', detail: '먼저 bind 해야 함' }

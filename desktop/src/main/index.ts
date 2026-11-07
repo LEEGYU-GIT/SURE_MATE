@@ -1,74 +1,101 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import { optimizer } from '@electron-toolkit/utils'
+import { app, globalShortcut, type Tray } from 'electron'
+import { maskingModeLabel } from '../shared/labels'
+import { HotkeyManager } from './hotkeys/hotkey-manager'
+import { registerIpc } from './ipc'
+import { log } from './log'
+import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
+import { createTray } from './tray'
+import { createPaletteWindow, hidePalette, isPaletteVisible, showPalette } from './windows/palette-window'
 
-function createWindow(): void {
-  // Create the browser window.
-  const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
-    show: false,
-    autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
-  })
+app.setName('Sure-Mate')
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
+let settings: Settings = DEFAULT_SETTINGS
+let tray: Tray | null = null
+let hotkeys: HotkeyManager | null = null
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+function togglePalette(): void {
+  if (isPaletteVisible()) hidePalette({ restoreFocus: true })
+  else showPalette({ mode: 'search' })
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+async function runItem(id: string): Promise<void> {
+  log('palette.run', { id })
+  hidePalette({ restoreFocus: true })
+}
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+function warn(content: string): void {
+  tray?.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
+}
+
+function paletteHotkey(): string {
+  return hotkeys?.current('palette') ?? settings.hotkeys.palette
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showPalette({ mode: 'search' }))
+
+  app.whenReady().then(async () => {
+    app.setAppUserModelId('kr.suremate.app')
+    app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
+
+    settings = await loadSettings(app.getPath('userData'))
+    createPaletteWindow({ getDisplayMode: () => settings.palette.display })
+
+    const manager = new HotkeyManager({
+      register: (acc, cb) => {
+        try {
+          return globalShortcut.register(acc, cb)
+        } catch {
+          return false
+        }
+      },
+      unregister: (acc) => globalShortcut.unregister(acc)
+    })
+    hotkeys = manager
+
+    let suspended = false
+    tray = createTray({
+      tooltip: () => `Sure-Mate · 팔레트 ${paletteHotkey()}`,
+      maskingLabel: () => maskingModeLabel(settings.masking.mode),
+      onOpenPalette: () => showPalette({ mode: 'search' }),
+      onToggleSuspend: () => {
+        if (suspended) {
+          const { failed } = manager.resumeAll()
+          if (failed.length) warn(`다시 등록하지 못한 단축키가 있어요: ${failed.join(', ')}`)
+        } else {
+          manager.suspendAll()
+        }
+        suspended = !suspended
+        return suspended
+      },
+      onQuit: () => app.quit()
+    })
+
+    const wanted = settings.hotkeys.palette
+    const bound = manager.bindFirst('palette', [...new Set([wanted, ...PALETTE_HOTKEY_FALLBACKS])], togglePalette)
+    if (bound.ok && bound.acc !== wanted) {
+      warn(`${wanted}는 다른 앱이 쓰고 있어 팔레트 단축키를 ${bound.acc}로 정했어요.`)
+      settings = { ...settings, hotkeys: { ...settings.hotkeys, palette: bound.acc } }
+      await saveSettings(app.getPath('userData'), settings)
+    } else if (!bound.ok) {
+      warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
+    }
+
+    // 개발 모드에서 등록하면 node_modules의 electron.exe가 시작 프로그램에 들어가므로 설치본에서만
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, args: ['--hidden'] })
+
+    registerIpc({
+      hide: () => hidePalette({ restoreFocus: true }),
+      runItem,
+      getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
+    })
+    log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null })
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
-  createWindow()
-
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
-
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+  // 창이 모두 닫혀도 트레이에 남는다
+  app.on('window-all-closed', () => {})
+  app.on('will-quit', () => globalShortcut.unregisterAll())
+}

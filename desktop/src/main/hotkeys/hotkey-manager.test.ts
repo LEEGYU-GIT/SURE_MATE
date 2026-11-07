@@ -63,3 +63,20 @@ it('suspendAll 뒤 resumeAll은 다시 등록하고 실패한 id를 알려 준�
   b.taken.add('Ctrl+Alt+W')
   expect(m.resumeAll()).toEqual({ failed: ['lookup'] })
 })
+
+it('첫 조합이 쓰이고 있으면 다음 후보로 등록한다', () => {
+  const b = new FakeBackend()
+  b.taken.add('Ctrl+Alt+Space')
+  const m = new HotkeyManager(b)
+  expect(m.bindFirst('palette', ['Ctrl+Alt+Space', 'Alt+`'], () => {})).toEqual({ ok: true, acc: 'Alt+`' })
+  expect(m.current('palette')).toBe('Alt+`')
+})
+
+it('모든 후보가 안 되면 시도한 목록을 돌려준다', () => {
+  const b = new FakeBackend()
+  b.taken.add('Ctrl+Alt+Space')
+  b.taken.add('Alt+`')
+  const tried = ['Ctrl+Alt+Space', 'Alt+`', 'Super+Space']
+  expect(new HotkeyManager(b).bindFirst('palette', tried, () => {})).toEqual({ ok: false, tried })
+  expect(b.registered.size).toBe(0)
+})

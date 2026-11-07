@@ -20,6 +20,9 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingDone: false
 }
 
+/** 팔레트 단축키가 다른 앱과 겹칠 때 차례로 시도할 조합(Claude 데스크톱 앱이 Ctrl+Alt+Space를 씀) */
+export const PALETTE_HOTKEY_FALLBACKS = ['Ctrl+Alt+Space', 'Alt+`']
+
 const FILE = 'settings.json'
 const DISPLAYS = ['cursor', 'primary', 'active'] as const
 const MASKING_MODES = ['off', 'restore', 'remove'] as const
@@ -62,7 +65,8 @@ export async function loadSettings(dir: string): Promise<Settings> {
     throw e
   }
   try {
-    return mergeSettings(JSON.parse(text))
+    // 메모장·PowerShell 등이 붙이는 UTF-8 BOM은 JSON.parse가 거부하므로 뗀다
+    return mergeSettings(JSON.parse(text.replace(/^\uFEFF/, '')))
   } catch {
     await rename(path, join(dir, `settings.corrupt-${Date.now()}.json`))
     return structuredClone(DEFAULT_SETTINGS)

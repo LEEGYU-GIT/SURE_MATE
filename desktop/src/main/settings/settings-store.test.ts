@@ -45,3 +45,9 @@ it('저장은 원자적이고 이전 파일을 .bak으로 남긴다', async () =
   expect(JSON.parse(await readFile(join(dir, 'settings.json.bak'), 'utf8')).onboardingDone).toBe(false)
   expect(await readdir(dir)).not.toContain('settings.json.tmp')
 })
+
+it('BOM이 붙은 설정 파일도 읽는다', async () => {
+  await writeFile(join(dir, 'settings.json'), '﻿' + JSON.stringify({ hotkeys: { palette: 'Alt+`' } }))
+  expect((await loadSettings(dir)).hotkeys.palette).toBe('Alt+`')
+  expect((await readdir(dir)).some((f) => f.startsWith('settings.corrupt-'))).toBe(false)
+})

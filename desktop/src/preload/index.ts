@@ -1,22 +1,16 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
 
-// Custom APIs for renderer
-const api = {}
-
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
+// sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.
+const api: SureMateApi = {
+  hide: () => ipcRenderer.send(IPC.paletteHide),
+  runItem: (id) => ipcRenderer.invoke(IPC.paletteRunItem, id),
+  getStatus: () => ipcRenderer.invoke(IPC.appGetStatus),
+  onShown: (cb) => {
+    const listener = (_e: IpcRendererEvent, payload: ShownPayload): void => cb(payload)
+    ipcRenderer.on(IPC.paletteShown, listener)
+    return () => ipcRenderer.removeListener(IPC.paletteShown, listener)
   }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
 }
+
+contextBridge.exposeInMainWorld('sureMate', api)
