@@ -4,7 +4,7 @@ import { BrowserWindow, screen, type Display } from 'electron'
 import { IPC, type ShownPayload } from '../../shared/ipc-channels'
 import { needsResize, palettePosition, shouldHideOnBlur } from '../../shared/palette-rules'
 import { log } from '../log'
-import { getForegroundWindow, setForeground } from '../native/foreground'
+import { getForegroundWindow, setForeground } from '../native/windows'
 
 export type DisplayMode = 'cursor' | 'primary' | 'active'
 

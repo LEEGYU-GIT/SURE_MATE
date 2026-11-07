@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
 import { maskingModeLabel } from '../shared/labels'
+import { isDevCommand, runDevCommand } from './dev/dev-commands'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -29,6 +30,7 @@ async function runItem(id: string): Promise<void> {
     openImeLoggerWindow()
     return
   }
+  if (isDevCommand(id)) return runDevCommand(id)
   hidePalette({ restoreFocus: true })
 }
 
