@@ -1,7 +1,6 @@
 node_modules/
 out/
 dist/
-build/
 *.log
 .env*
 # 사내 문서(응모 가이드)는 저장소에 넣지 않는다
