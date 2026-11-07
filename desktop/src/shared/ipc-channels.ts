@@ -5,7 +5,8 @@ export const IPC = {
   paletteShown: 'palette:shown',
   paletteHide: 'palette:hide',
   paletteRunItem: 'palette:run-item',
-  appGetStatus: 'app:get-status'
+  appGetStatus: 'app:get-status',
+  devSaveImeLog: 'dev:save-ime-log'
 } as const
 
 /** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
@@ -19,4 +20,6 @@ export interface SureMateApi {
   runItem(id: string): Promise<void>
   getStatus(): Promise<AppStatus>
   onShown(cb: (payload: ShownPayload) => void): () => void
+  /** 개발용: 한글 입력 기록을 logs 폴더에 저장하고 경로를 돌려준다 */
+  saveImeLog(label: string, json: string): Promise<string>
 }

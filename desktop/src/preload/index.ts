@@ -10,7 +10,8 @@ const api: SureMateApi = {
     const listener = (_e: IpcRendererEvent, payload: ShownPayload): void => cb(payload)
     ipcRenderer.on(IPC.paletteShown, listener)
     return () => ipcRenderer.removeListener(IPC.paletteShown, listener)
-  }
+  },
+  saveImeLog: (label, json) => ipcRenderer.invoke(IPC.devSaveImeLog, label, json)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)
