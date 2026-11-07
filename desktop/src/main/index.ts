@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
 import { maskingModeLabel } from '../shared/labels'
-import { isDevCommand, runDevCommand } from './dev/dev-commands'
+import { isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -104,6 +104,12 @@ if (!app.requestSingleInstanceLock()) {
       warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
     }
 
+    // 조회 단축키: M1에서는 선택 텍스트 가져오기 검증용(M4에서 사이드 패널로 바꾼다)
+    const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
+      if (!isPaletteVisible()) void showCaptureResult()
+    })
+    if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
+
     // 개발 모드에서 등록하면 node_modules의 electron.exe가 시작 프로그램에 들어가므로 설치본에서만
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, args: ['--hidden'] })
 
@@ -113,7 +119,7 @@ if (!app.requestSingleInstanceLock()) {
       saveImeLog,
       getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
     })
-    log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null })
+    log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null, lookupHotkey: lookup.ok })
   })
 
   // 창이 모두 닫혀도 트레이에 남는다

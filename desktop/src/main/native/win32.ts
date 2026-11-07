@@ -74,6 +74,27 @@ export const GetTokenInformation = advapi32.func(
   'bool __stdcall GetTokenInformation(HANDLE TokenHandle, int TokenInformationClass, _Out_ uint32_t *TokenInformation, uint32_t TokenInformationLength, _Out_ uint32_t *ReturnLength)'
 )
 
+// 키보드 입력. INPUT(x64)은 type(4) + 패딩(4) + 공용체(32) = 40바이트이고, 키보드 입력만 쓰므로 KEYBDINPUT 배치를 직접 적는다.
+export const INPUT_KEYBOARD = 1
+export const KEYEVENTF_EXTENDEDKEY = 0x0001
+export const KEYEVENTF_KEYUP = 0x0002
+const KEYBOARD_INPUT = koffi.struct('KEYBOARD_INPUT', {
+  type: 'uint32_t',
+  _pad0: 'uint32_t',
+  wVk: 'uint16_t',
+  wScan: 'uint16_t',
+  dwFlags: 'uint32_t',
+  time: 'uint32_t',
+  dwExtraInfo: 'uintptr_t',
+  _pad1: 'uint64_t'
+})
+export const KEYBOARD_INPUT_SIZE = koffi.sizeof(KEYBOARD_INPUT)
+if (KEYBOARD_INPUT_SIZE !== 40) throw new Error(`INPUT 크기가 40이 아님: ${KEYBOARD_INPUT_SIZE}`)
+export const SendInput = user32.func('uint32_t __stdcall SendInput(uint32_t cInputs, KEYBOARD_INPUT *pInputs, int cbSize)')
+export const MapVirtualKeyW = user32.func('uint32_t __stdcall MapVirtualKeyW(uint32_t uCode, uint32_t uMapType)')
+export const GetAsyncKeyState = user32.func('int16_t __stdcall GetAsyncKeyState(int vKey)')
+export const GetClipboardSequenceNumber = user32.func('uint32_t __stdcall GetClipboardSequenceNumber()')
+
 /** UTF-16 문자열을 돌려주는 Win32 함수용 버퍼 읽기 */
 export function readWide(fn: (buf: Buffer, max: number) => number, max = 512): string {
   const buf = Buffer.alloc(max * 2)

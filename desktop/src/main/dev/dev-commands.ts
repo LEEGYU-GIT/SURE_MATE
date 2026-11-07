@@ -2,8 +2,9 @@ import { leftHalf, pickOtherMonitor, rectDiff } from '../../shared/geometry'
 import type { Rect } from '../../shared/types'
 import { log } from '../log'
 import { getMonitors, monitorOfPhysicalRect, toPhysical } from '../native/coords'
+import { captureSelection, pasteText, writeExcludedFromHistory } from '../native/selection'
 import { getWindowInfo, listWindows, moveWindow } from '../native/windows'
-import { getPreviousHwnd, showPalette } from '../windows/palette-window'
+import { getPreviousHwnd, hidePalette, showPalette } from '../windows/palette-window'
 
 // M1 네이티브 검증용 개발 명령. 로그에는 창 제목을 남기지 않는다(문서 이름이 들어갈 수 있음).
 
@@ -70,12 +71,57 @@ async function moveToOtherMonitor(): Promise<void> {
   ])
 }
 
+/** 조회 단축키(M1): 활성 창에서 선택한 글을 가져와 결과를 보여 준다. 로그에는 글자 수만 남긴다. */
+export async function showCaptureResult(): Promise<void> {
+  const result = await captureSelection()
+  log('dev.capture', {
+    method: result.method,
+    elapsedMs: result.elapsedMs,
+    restored: result.restored,
+    skipped: result.skipped ?? null,
+    length: result.text?.length ?? 0
+  })
+  output('선택 텍스트 가져오기', [
+    result.skipped
+      ? `가져오지 않음: ${result.skipped === 'terminal' ? '터미널(Ctrl+C는 실행 중단)' : result.skipped === 'elevated' ? '관리자 권한 창' : '활성 창 없음'}`
+      : result.text === null
+        ? '선택한 글이 없어요(클립보드 그대로)'
+        : `방법 ${result.method} · ${result.elapsedMs}ms · 원래 클립보드 ${result.restored ? '되돌림' : '못 되돌림'} · ${result.text.length}자`,
+    '',
+    (result.text ?? '').slice(0, 200)
+  ])
+}
+
+async function pasteTest(): Promise<void> {
+  const target = getPreviousHwnd()
+  hidePalette({ restoreFocus: false })
+  if (!target) return output('붙여넣기 시험', ['직전 창이 없어요.'])
+  const text = `Sure-Mate 붙여넣기 시험 ${new Date().toLocaleTimeString('ko-KR')}`
+  const result = await pasteText(target, text)
+  log('dev.paste', { ok: result.ok, reason: result.reason ?? null })
+  if (!result.ok) output('붙여넣기 시험', [`붙여넣지 못하고 복사만 했어요: ${result.reason}`])
+}
+
+async function clipboardExcludeTest(): Promise<void> {
+  const text = `Sure-Mate 기록 제외 시험 ${new Date().toLocaleTimeString('ko-KR')}`
+  const result = await writeExcludedFromHistory(text)
+  log('dev.clipboardExclude', { ok: result.ok, error: result.error ?? null })
+  output('클립보드 기록 제외 시험', [
+    result.ok ? `클립보드에 "${text}"를 넣었어요.` : `쓰기 실패: ${result.error}`,
+    'Win+V를 눌러 클립보드 기록에 이 글이 없으면 통과예요(Ctrl+V로는 붙여넣어져야 해요).'
+  ])
+}
+
 export async function runDevCommand(id: string): Promise<void> {
   switch (id) {
     case 'dev.listWindows':
       return showWindowList()
     case 'dev.moveToOtherMonitor':
       return moveToOtherMonitor()
+    case 'dev.pasteTest':
+      return pasteTest()
+    case 'dev.clipboardExcludeTest':
+      return clipboardExcludeTest()
     default:
       return output(id, ['아직 만들지 않은 개발 명령이에요.'])
   }

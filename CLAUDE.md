@@ -26,3 +26,5 @@ Electron 45.x(정확한 버전), electron-builder 26.18.x, koffi 3.x, cmdk 1.1.1
 ## 실행 환경 함정
 
 - Claude Code(VS Code 확장)에서 띄운 셸에는 `ELECTRON_RUN_AS_NODE=1`이 넘어와 Electron이 일반 Node로 실행된다(`app`이 undefined). 앱을 실행할 때는 이 변수를 지운다. 예: `cmd /c "set ELECTRON_RUN_AS_NODE=& npm run dev"`.
+- Bash 히어독(cat <<EOF)으로 파일을 쓰면 `\`가 `\`로 줄어 정규식·경로가 깨진다. 백슬래시가 들어간 파일은 Write/Edit 도구로 쓴다.
+- 자동 시험에서 키를 보낼 때는 스캔 코드를 함께 보낸다(없으면 KeyboardEvent.code가 빈다). 시험 창은 시스템 메뉴를 없애 Alt 단독 입력의 메뉴 모드를 막는다.
