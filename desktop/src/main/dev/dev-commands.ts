@@ -1,8 +1,10 @@
 import { leftHalf, pickOtherMonitor, rectDiff } from '../../shared/geometry'
-import type { Rect } from '../../shared/types'
+import type { CaptureSkipReason, Rect } from '../../shared/types'
+import { errorText } from '../error-text'
 import { log } from '../log'
 import { getMonitors, monitorOfPhysicalRect, toPhysical } from '../native/coords'
 import { captureSelection, pasteText, writeExcludedFromHistory } from '../native/selection'
+import { nativeStatus } from '../native/win32'
 import { getWindowInfo, listWindows, moveWindow } from '../native/windows'
 import { getPreviousHwnd, hidePalette, showPalette } from '../windows/palette-window'
 
@@ -11,6 +13,15 @@ import { getPreviousHwnd, hidePalette, showPalette } from '../windows/palette-wi
 export const isDevCommand = (id: string): boolean => id.startsWith('dev.')
 
 const fmt = (r: Rect): string => `${r.x},${r.y} ${r.width}×${r.height}`
+
+const SKIP_TEXT: Record<CaptureSkipReason, string> = {
+  terminal: '터미널(Ctrl+C는 실행 중단)',
+  elevated: '관리자 권한 창',
+  'no-foreground': '활성 창 없음',
+  'modifiers-held': '단축키를 누른 채라 키를 보내지 않았어요. 키를 모두 뗀 뒤 다시 눌러 주세요',
+  busy: '이미 가져오는 중',
+  'native-unavailable': 'Win32 기능을 불러오지 못했어요(보안 프로그램이 막았을 수 있어요)'
+}
 
 function output(title: string, lines: string[]): void {
   showPalette({ mode: 'dev-output', title, text: lines.join('\n') })
@@ -81,9 +92,11 @@ export async function showCaptureResult(): Promise<void> {
     skipped: result.skipped ?? null,
     length: result.text?.length ?? 0
   })
+  // 단축키를 연달아 눌렀을 때: 먼저 시작한 가져오기가 결과를 보여 준다
+  if (result.skipped === 'busy') return
   output('선택 텍스트 가져오기', [
     result.skipped
-      ? `가져오지 않음: ${result.skipped === 'terminal' ? '터미널(Ctrl+C는 실행 중단)' : result.skipped === 'elevated' ? '관리자 권한 창' : '활성 창 없음'}`
+      ? `가져오지 않음: ${SKIP_TEXT[result.skipped]}`
       : result.text === null
         ? '선택한 글이 없어요(클립보드 그대로)'
         : `방법 ${result.method} · ${result.elapsedMs}ms · 원래 클립보드 ${result.restored ? '되돌림' : '못 되돌림'} · ${result.text.length}자`,
@@ -113,6 +126,10 @@ async function clipboardExcludeTest(): Promise<void> {
 }
 
 export async function runDevCommand(id: string): Promise<void> {
+  const native = nativeStatus()
+  if (!native.ok && id !== 'dev.clipboardExcludeTest') {
+    return output(id, ['Win32 기능(koffi)을 불러오지 못해 이 개발 명령을 쓸 수 없어요.', errorText(native.error)])
+  }
   switch (id) {
     case 'dev.listWindows':
       return showWindowList()

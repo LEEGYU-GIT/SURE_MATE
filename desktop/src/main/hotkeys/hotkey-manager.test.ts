@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { HotkeyManager, type ShortcutBackend } from './hotkey-manager'
 
 class FakeBackend implements ShortcutBackend {
@@ -51,6 +51,48 @@ it('누르고 있을 때의 반복은 무시한다', () => {
     b.fire('Ctrl+Alt+Space')
   }
   expect(n).toBe(2)
+})
+
+it('누르고 있으면 약 0.5초 뒤의 첫 자동 반복도 무시하고, 뗀 뒤 다시 누르면 받는다', () => {
+  vi.useFakeTimers()
+  try {
+    let held = true
+    const b = new FakeBackend()
+    const m = new HotkeyManager(b, () => Date.now(), () => held)
+    let n = 0
+    m.bind('palette', 'Ctrl+Alt+Space', () => n++)
+    b.fire('Ctrl+Alt+Space') // 누름
+    vi.advanceTimersByTime(500)
+    b.fire('Ctrl+Alt+Space') // 첫 자동 반복(Windows 기본 반복 지연)
+    for (let i = 0; i < 30; i++) {
+      vi.advanceTimersByTime(33)
+      b.fire('Ctrl+Alt+Space') // 이후 자동 반복
+    }
+    expect(n).toBe(1)
+    held = false // 뗌
+    vi.advanceTimersByTime(300)
+    held = true
+    b.fire('Ctrl+Alt+Space') // 다시 누름
+    expect(n).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('키 상태가 계속 눌림으로 읽혀도 3초가 지나면 다시 받는다', () => {
+  vi.useFakeTimers()
+  try {
+    const b = new FakeBackend()
+    const m = new HotkeyManager(b, () => Date.now(), () => true)
+    let n = 0
+    m.bind('palette', 'Ctrl+Alt+Space', () => n++)
+    b.fire('Ctrl+Alt+Space')
+    vi.advanceTimersByTime(3100)
+    b.fire('Ctrl+Alt+Space')
+    expect(n).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('suspendAll 뒤 resumeAll은 다시 등록하고 실패한 id를 알려 준다', () => {

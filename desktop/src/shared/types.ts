@@ -42,10 +42,19 @@ export interface PaletteItem {
 
 export type MaskingMode = 'off' | 'restore' | 'remove'
 
+/**
+ * 가져오기를 시도하지 않은 이유.
+ * modifiers-held: 단축키를 계속 누르고 있어 키를 보내지 않음, busy: 이미 가져오거나 붙여넣는 중,
+ * native-unavailable: 보안 프로그램 등으로 Win32 기능(koffi)을 불러오지 못함
+ */
+export type CaptureSkipReason = 'terminal' | 'elevated' | 'no-foreground' | 'modifiers-held' | 'busy' | 'native-unavailable'
+
 export interface CaptureResult {
   text: string | null
   method: 'ctrl-insert' | 'ctrl-c' | 'none'
   elapsedMs: number
   restored: boolean
-  skipped?: 'terminal' | 'elevated' | 'no-foreground'
+  skipped?: CaptureSkipReason
 }
+
+export type PasteFailReason = 'target-gone' | 'elevated' | 'not-foreground' | 'modifiers-held' | 'busy' | 'native-unavailable'

@@ -15,7 +15,7 @@ export function StatusBar({ refreshKey }: { refreshKey: number }): React.JSX.Ele
   return (
     <div className="flex h-8 shrink-0 items-center justify-between border-t border-white/10 px-4 text-xs text-zinc-400">
       <span className={off ? 'font-medium text-orange-400' : undefined}>가명 처리: {maskingModeLabel(status.maskingMode)}</span>
-      <span>팔레트 {status.paletteHotkey}</span>
+      <span>팔레트 {status.paletteHotkey ?? '단축키 없음'}</span>
     </div>
   )
 }

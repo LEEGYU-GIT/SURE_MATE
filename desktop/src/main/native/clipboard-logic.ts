@@ -32,19 +32,38 @@ export function isTerminalWindow(target: { exe: string; className: string }): bo
 /** 우리가 복사한 뒤 순번이 그대로면(사용자가 따로 복사하지 않았으면) 원래 클립보드를 되돌린다 */
 export const shouldRestoreClipboard = (seqAfterOurCopy: number, seqNow: number): boolean => seqAfterOurCopy === seqNow
 
+/**
+ * UIPI가 키 입력을 막는지. 대상이 관리자 권한이어도 Sure-Mate 자신도 관리자 권한이면 막히지 않는다
+ * (UAC가 꺼진 PC에서는 관리자 계정의 모든 프로세스가 관리자 권한으로 돈다).
+ */
+const blockedByUipi = (targetElevated: boolean | null, selfElevated: boolean | null): boolean =>
+  targetElevated === true && selfElevated !== true
+
 export type CaptureDecision = { action: 'capture' } | { action: 'skip'; reason: 'terminal' | 'elevated' | 'no-foreground' }
 
-export function captureDecision(target: WindowInfo | null): CaptureDecision {
+export function captureDecision(target: WindowInfo | null, selfElevated: boolean | null = null): CaptureDecision {
   if (!target) return { action: 'skip', reason: 'no-foreground' }
   if (isTerminalWindow(target)) return { action: 'skip', reason: 'terminal' }
-  if (target.elevated === true) return { action: 'skip', reason: 'elevated' }
+  if (blockedByUipi(target.elevated, selfElevated)) return { action: 'skip', reason: 'elevated' }
   return { action: 'capture' }
 }
 
 export type PasteDecision = { action: 'paste' } | { action: 'copy-only'; reason: 'target-gone' | 'elevated' }
 
-export function pasteDecision(target: { exists: boolean; elevated: boolean | null }): PasteDecision {
+export function pasteDecision(target: { exists: boolean; elevated: boolean | null }, selfElevated: boolean | null = null): PasteDecision {
   if (!target.exists) return { action: 'copy-only', reason: 'target-gone' }
-  if (target.elevated === true) return { action: 'copy-only', reason: 'elevated' }
+  if (blockedByUipi(target.elevated, selfElevated)) return { action: 'copy-only', reason: 'elevated' }
   return { action: 'paste' }
+}
+
+export type RestoreAction = 'clear' | 'write' | 'leave'
+
+/**
+ * 가져오기 뒤 원래 클립보드를 어떻게 되돌릴지. formatCount는 백업할 때의 CountClipboardFormats.
+ * 원래 비어 있었으면 비우고, 되돌릴 수 있는 형식이 있으면 다시 쓴다.
+ * 탐색기에서 복사한 파일처럼 되돌릴 수 없는 형식만 있었으면 비우지 않고 못 되돌렸다고 알린다.
+ */
+export function restoreAction(s: { formatCount: number; restorableTypes: number }): RestoreAction {
+  if (s.formatCount === 0) return 'clear'
+  return s.restorableTypes > 0 ? 'write' : 'leave'
 }

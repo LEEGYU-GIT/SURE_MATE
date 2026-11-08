@@ -1,4 +1,4 @@
-import { createRepeatFilter } from '../../shared/execution-guard'
+import { createHoldGate, createRepeatFilter } from '../../shared/execution-guard'
 import { checkAccelerator } from './accelerator-rules'
 
 export interface ShortcutBackend {
@@ -10,8 +10,11 @@ export type HotkeyId = 'palette' | 'lookup'
 
 export type BindResult = { ok: true } | { ok: false; reason: 'in-use' | 'blocked'; detail?: string }
 
-/** 키를 누르고 있을 때 반복 호출을 거르는 간격 */
+/** 빠르게 두 번 눌렀거나 자동 반복이 이어질 때 거르는 간격 */
 const REPEAT_WINDOW_MS = 250
+/** 누르고 있는 키가 떼어졌는지 확인하는 간격과, 키 상태를 잘못 읽어도 다시 받기까지의 상한 */
+const HOLD_POLL_MS = 30
+const MAX_HOLD_MS = 3000
 
 type Entry = { acc: string; handler: () => void; wrapped: () => void; active: boolean }
 
@@ -24,7 +27,9 @@ export class HotkeyManager {
 
   constructor(
     private readonly backend: ShortcutBackend,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    /** 단축키의 주 키를 아직 누르고 있는지. 주면 누르고 있는 동안의 자동 반복을 모두 거른다. */
+    private readonly isHeld?: (acc: string) => boolean
   ) {}
 
   bind(id: HotkeyId, acc: string, handler: () => void): BindResult {
@@ -34,9 +39,12 @@ export class HotkeyManager {
     const previous = this.entries.get(id)
     if (previous?.active) this.backend.unregister(previous.acc)
 
-    const pass = createRepeatFilter(REPEAT_WINDOW_MS, this.now)
+    const repeat = createRepeatFilter(REPEAT_WINDOW_MS, this.now)
+    const isHeld = this.isHeld
+    const hold = isHeld ? createHoldGate(() => isHeld(acc), { pollMs: HOLD_POLL_MS, maxHoldMs: MAX_HOLD_MS }, this.now) : null
     const wrapped = (): void => {
-      if (pass()) handler()
+      // repeat()는 매번 불러 받은 시각을 남겨야 하므로 먼저 부른다
+      if (repeat() && (hold ? hold() : true)) handler()
     }
     if (!this.backend.register(acc, wrapped)) {
       if (previous?.active) this.backend.register(previous.acc, previous.wrapped)

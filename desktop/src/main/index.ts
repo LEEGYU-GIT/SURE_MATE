@@ -4,9 +4,12 @@ import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
 import { maskingModeLabel } from '../shared/labels'
 import { isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
+import { errorText } from './error-text'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
+import { isAcceleratorHeld } from './native/input'
+import { nativeStatus } from './native/win32'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
@@ -14,8 +17,12 @@ import { createPaletteWindow, hidePalette, isPaletteVisible, showPalette } from 
 
 app.setName('Sure-Mate')
 
+// 처리하지 못한 오류를 기록한다. 동기 예외는 Electron 기본 동작(오류 창)을 그대로 두고 기록만 덧붙인다.
+process.on('unhandledRejection', (reason) => log('error.unhandledRejection', { error: errorText(reason) }))
+process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { error: errorText(e) }))
+
 let settings: Settings = DEFAULT_SETTINGS
-let tray: Tray | null = null
+let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 
 function togglePalette(): void {
@@ -45,11 +52,84 @@ async function saveImeLog(label: string, json: string): Promise<string> {
 }
 
 function warn(content: string): void {
-  tray?.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
+  shell?.tray.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
 }
 
-function paletteHotkey(): string {
-  return hotkeys?.current('palette') ?? settings.hotkeys.palette
+/** 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
+function paletteHotkey(): string | null {
+  return hotkeys?.current('palette') ?? null
+}
+
+/** 트레이·전역 단축키·시작 프로그램 등록. 여기서 실패해도 팔레트 창과 IPC는 이미 살아 있다. */
+async function startShell(userData: string): Promise<void> {
+  const manager = new HotkeyManager(
+    {
+      register: (acc, cb) => {
+        try {
+          return globalShortcut.register(acc, cb)
+        } catch {
+          return false
+        }
+      },
+      unregister: (acc) => globalShortcut.unregister(acc)
+    },
+    Date.now,
+    // 누르고 있는 동안의 자동 반복(첫 반복은 약 0.5초 뒤)으로 팔레트가 열렸다 닫히지 않게
+    isAcceleratorHeld
+  )
+  hotkeys = manager
+
+  let suspended = false
+  shell = createTray({
+    paletteHotkey,
+    maskingLabel: () => maskingModeLabel(settings.masking.mode),
+    onOpenPalette: () => showPalette({ mode: 'search' }),
+    onToggleSuspend: () => {
+      if (suspended) {
+        const { failed } = manager.resumeAll()
+        if (failed.length) warn(`다시 등록하지 못한 단축키가 있어요: ${failed.join(', ')}`)
+      } else {
+        manager.suspendAll()
+      }
+      suspended = !suspended
+      return suspended
+    },
+    onQuit: () => app.quit()
+  })
+
+  const native = nativeStatus()
+  if (!native.ok) {
+    log('native.unavailable', { error: errorText(native.error) })
+    warn('보안 프로그램이 Win32 기능을 막아 선택 글 가져오기와 창 옮기기를 쓸 수 없어요. 팔레트는 그대로 쓸 수 있어요.')
+  }
+
+  const wanted = settings.hotkeys.palette
+  const bound = manager.bindFirst('palette', [...new Set([wanted, ...PALETTE_HOTKEY_FALLBACKS])], togglePalette)
+  if (bound.ok && bound.acc !== wanted) {
+    warn(`${wanted}는 다른 앱이 쓰고 있어 팔레트 단축키를 ${bound.acc}로 정했어요.`)
+    settings = { ...settings, hotkeys: { ...settings.hotkeys, palette: bound.acc } }
+    try {
+      await saveSettings(userData, settings)
+    } catch (e) {
+      log('settings.saveError', { error: errorText(e) })
+    }
+  } else if (!bound.ok) {
+    warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
+  }
+
+  // 조회 단축키: M1에서는 선택 텍스트 가져오기 검증용(M4에서 사이드 패널로 바꾼다)
+  const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
+    if (!isPaletteVisible()) showCaptureResult().catch((e) => log('dev.capture.error', { error: errorText(e) }))
+  })
+  if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
+
+  // 툴팁을 실제로 등록된 단축키로 다시 그린다(대체 조합으로 바뀌었거나 하나도 못 잡은 경우)
+  shell.refresh()
+  log('tray.refresh', { paletteHotkey: paletteHotkey() })
+
+  // 개발 모드에서 등록하면 node_modules의 electron.exe가 시작 프로그램에 들어가므로 설치본에서만
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, args: ['--hidden'] })
+  log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null, lookupHotkey: lookup.ok, native: native.ok })
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -61,65 +141,22 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('kr.suremate.app')
     app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
-    settings = await loadSettings(app.getPath('userData'))
+    const userData = app.getPath('userData')
+    settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
-
-    const manager = new HotkeyManager({
-      register: (acc, cb) => {
-        try {
-          return globalShortcut.register(acc, cb)
-        } catch {
-          return false
-        }
-      },
-      unregister: (acc) => globalShortcut.unregister(acc)
-    })
-    hotkeys = manager
-
-    let suspended = false
-    tray = createTray({
-      tooltip: () => `Sure-Mate · 팔레트 ${paletteHotkey()}`,
-      maskingLabel: () => maskingModeLabel(settings.masking.mode),
-      onOpenPalette: () => showPalette({ mode: 'search' }),
-      onToggleSuspend: () => {
-        if (suspended) {
-          const { failed } = manager.resumeAll()
-          if (failed.length) warn(`다시 등록하지 못한 단축키가 있어요: ${failed.join(', ')}`)
-        } else {
-          manager.suspendAll()
-        }
-        suspended = !suspended
-        return suspended
-      },
-      onQuit: () => app.quit()
-    })
-
-    const wanted = settings.hotkeys.palette
-    const bound = manager.bindFirst('palette', [...new Set([wanted, ...PALETTE_HOTKEY_FALLBACKS])], togglePalette)
-    if (bound.ok && bound.acc !== wanted) {
-      warn(`${wanted}는 다른 앱이 쓰고 있어 팔레트 단축키를 ${bound.acc}로 정했어요.`)
-      settings = { ...settings, hotkeys: { ...settings.hotkeys, palette: bound.acc } }
-      await saveSettings(app.getPath('userData'), settings)
-    } else if (!bound.ok) {
-      warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
-    }
-
-    // 조회 단축키: M1에서는 선택 텍스트 가져오기 검증용(M4에서 사이드 패널로 바꾼다)
-    const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
-      if (!isPaletteVisible()) void showCaptureResult()
-    })
-    if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
-
-    // 개발 모드에서 등록하면 node_modules의 electron.exe가 시작 프로그램에 들어가므로 설치본에서만
-    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, args: ['--hidden'] })
-
+    // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
       hide: () => hidePalette({ restoreFocus: true }),
       runItem,
       saveImeLog,
       getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
     })
-    log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null, lookupHotkey: lookup.ok })
+
+    try {
+      await startShell(userData)
+    } catch (e) {
+      log('app.startupError', { error: errorText(e) })
+    }
   })
 
   // 창이 모두 닫혀도 트레이에 남는다

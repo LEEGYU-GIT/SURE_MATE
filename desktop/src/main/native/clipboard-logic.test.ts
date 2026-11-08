@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { WindowInfo } from '../../shared/types'
-import { captureDecision, isTerminalExe, pasteDecision, shouldRestoreClipboard } from './clipboard-logic'
+import { captureDecision, isTerminalExe, pasteDecision, restoreAction, shouldRestoreClipboard } from './clipboard-logic'
 
 it('터미널 판별', () => {
   for (const e of ['WindowsTerminal.exe', 'C:\\Windows\\System32\\cmd.exe', 'powershell.exe', 'pwsh.exe', 'conhost.exe', 'mintty.exe', 'putty.exe'])
@@ -33,4 +33,19 @@ it('붙여넣기 대상 판단', () => {
   expect(pasteDecision({ exists: false, elevated: null })).toEqual({ action: 'copy-only', reason: 'target-gone' })
   expect(pasteDecision({ exists: true, elevated: true })).toEqual({ action: 'copy-only', reason: 'elevated' })
   expect(pasteDecision({ exists: true, elevated: false })).toEqual({ action: 'paste' })
+})
+
+it('대상이 관리자 권한이어도 Sure-Mate도 관리자 권한이면 막히지 않는다(UAC가 꺼진 PC)', () => {
+  const w = (elevated: boolean | null): WindowInfo => ({ exe: 'notepad.exe', className: 'Notepad', elevated }) as WindowInfo
+  expect(captureDecision(w(true), true)).toEqual({ action: 'capture' })
+  expect(captureDecision(w(true), false)).toEqual({ action: 'skip', reason: 'elevated' })
+  expect(captureDecision(w(true), null)).toEqual({ action: 'skip', reason: 'elevated' })
+  expect(pasteDecision({ exists: true, elevated: true }, true)).toEqual({ action: 'paste' })
+  expect(pasteDecision({ exists: true, elevated: true }, false)).toEqual({ action: 'copy-only', reason: 'elevated' })
+})
+
+it('클립보드 되돌리기: 비어 있었으면 비우고, 되돌릴 형식이 없으면(탐색기 파일 복사 등) 건드리지 않는다', () => {
+  expect(restoreAction({ formatCount: 0, restorableTypes: 0 })).toBe('clear')
+  expect(restoreAction({ formatCount: 3, restorableTypes: 0 })).toBe('leave')
+  expect(restoreAction({ formatCount: 5, restorableTypes: 2 })).toBe('write')
 })

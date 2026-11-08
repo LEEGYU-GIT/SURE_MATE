@@ -12,7 +12,8 @@ export const IPC = {
 /** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
 export type ShownPayload = { mode: 'search' } | { mode: 'dev-output'; title: string; text: string }
 
-export type AppStatus = { paletteHotkey: string; maskingMode: MaskingMode }
+/** paletteHotkey: 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
+export type AppStatus = { paletteHotkey: string | null; maskingMode: MaskingMode }
 
 /** preload가 window.sureMate로 노출하는 API */
 export interface SureMateApi {

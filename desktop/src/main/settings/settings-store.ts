@@ -54,22 +54,38 @@ export function mergeSettings(raw: unknown): Settings {
 
 const isMissing = (e: unknown): boolean => (e as NodeJS.ErrnoException).code === 'ENOENT'
 
-/** 없으면 기본값. JSON이 깨졌으면 settings.corrupt-<ms>.json으로 옮겨 두고 기본값. */
-export async function loadSettings(dir: string): Promise<Settings> {
+/**
+ * 없으면 기본값. JSON이 깨졌으면 settings.corrupt-<ms>.json으로 옮겨 두고 기본값.
+ * 앱 시작을 막지 않도록 어떤 실패에도 기본값을 돌려주고, 실패는 onError로 알린다.
+ */
+export async function loadSettings(dir: string, onError: (what: string, e: unknown) => void = () => {}): Promise<Settings> {
   const path = join(dir, FILE)
   let text: string
   try {
     text = await readFile(path, 'utf8')
   } catch (e) {
-    if (isMissing(e)) return structuredClone(DEFAULT_SETTINGS)
-    throw e
+    if (!isMissing(e)) onError('read', e)
+    return structuredClone(DEFAULT_SETTINGS)
   }
   try {
     // 메모장·PowerShell 등이 붙이는 UTF-8 BOM은 JSON.parse가 거부하므로 뗀다
     return mergeSettings(JSON.parse(text.replace(/^\uFEFF/, '')))
   } catch {
-    await rename(path, join(dir, `settings.corrupt-${Date.now()}.json`))
+    await keepCorruptCopy(path, join(dir, `settings.corrupt-${Date.now()}.json`), onError)
     return structuredClone(DEFAULT_SETTINGS)
+  }
+}
+
+/** 깨진 설정 파일을 옆으로 옮긴다. 백신·EDR이 잡고 있어 옮기지 못하면 사본이라도 남긴다. */
+async function keepCorruptCopy(path: string, dest: string, onError: (what: string, e: unknown) => void): Promise<void> {
+  try {
+    await rename(path, dest)
+  } catch {
+    try {
+      await copyFile(path, dest)
+    } catch (e) {
+      onError('keep-corrupt', e)
+    }
   }
 }
 
