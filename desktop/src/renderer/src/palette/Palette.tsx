@@ -2,9 +2,11 @@ import { Command } from 'cmdk'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
+import type { PromptDraft } from '../../../shared/ipc-channels'
 import { PALETTE_GROUPS } from '../../../shared/palette-query'
 import type { PaletteItem } from '../../../shared/types'
 import { GroupIcon, SearchIcon } from '../design/icons'
+import { Confirm } from './Confirm'
 import { DevOutput } from './DevOutput'
 import { filterItems } from './filter-items'
 import { nextSelection } from './selection'
@@ -23,6 +25,7 @@ export function Palette(): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [allItems, setAllItems] = useState<PaletteItem[]>([])
   const [dev, setDev] = useState<{ title: string; text: string } | null>(null)
+  const [confirm, setConfirm] = useState<PromptDraft | null>(null)
   const [shownCount, setShownCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   // 입력값은 그대로 두고, 목록만 지연 값으로 그린다(조합 중 입력이 끊기지 않게)
@@ -49,6 +52,7 @@ export function Palette(): React.JSX.Element {
         void window.sureMate.listItems().then(setAllItems)
         setShownCount((n) => n + 1)
         setDev(payload.mode === 'dev-output' ? { title: payload.title, text: payload.text } : null)
+        setConfirm(payload.mode === 'confirm' ? payload.draft : null)
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
     []
@@ -64,6 +68,19 @@ export function Palette(): React.JSX.Element {
   }
 
   if (dev) return <DevOutput title={dev.title} text={dev.text} onClose={close} />
+  if (confirm) {
+    return (
+      <Confirm
+        key={`${confirm.templateId}-${shownCount}`}
+        draft={confirm}
+        onBack={() => {
+          setConfirm(null)
+          requestAnimationFrame(() => inputRef.current?.focus())
+        }}
+        onDone={() => setConfirm(null)}
+      />
+    )
+  }
 
   return (
     <div
