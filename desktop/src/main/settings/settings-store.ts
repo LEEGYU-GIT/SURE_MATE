@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { allAiTargets, FALLBACK_AI_TARGET, sanitizeAiTargets, type AiTarget } from '../../shared/ai-targets'
 import type { MaskingMode } from '../../shared/types'
 
 export interface Settings {
@@ -8,6 +9,8 @@ export interface Settings {
   palette: { display: 'cursor' | 'primary' | 'active' }
   launchAtLogin: boolean
   masking: { mode: MaskingMode }
+  /** 기본 AI 대상과 사용자가 더한 대상(사내 LLM 등) */
+  ai: { defaultTarget: string; custom: AiTarget[] }
   onboardingDone: boolean
 }
 
@@ -17,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   palette: { display: 'cursor' },
   launchAtLogin: true,
   masking: { mode: 'restore' },
+  ai: { defaultTarget: FALLBACK_AI_TARGET, custom: [] },
   onboardingDone: false
 }
 
@@ -41,6 +45,9 @@ export function mergeSettings(raw: unknown): Settings {
   const hotkeys = isObj(r.hotkeys) ? r.hotkeys : {}
   const palette = isObj(r.palette) ? r.palette : {}
   const masking = isObj(r.masking) ? r.masking : {}
+  const ai = isObj(r.ai) ? r.ai : {}
+  const custom = sanitizeAiTargets(ai.custom)
+  const targetIds = allAiTargets(custom).map((t) => t.id)
   const d = DEFAULT_SETTINGS
   return {
     version: 1,
@@ -48,6 +55,7 @@ export function mergeSettings(raw: unknown): Settings {
     palette: { display: oneOf(palette.display, DISPLAYS, d.palette.display) },
     launchAtLogin: bool(r.launchAtLogin, d.launchAtLogin),
     masking: { mode: oneOf(masking.mode, MASKING_MODES, d.masking.mode) },
+    ai: { defaultTarget: oneOf(ai.defaultTarget, targetIds, d.ai.defaultTarget), custom },
     onboardingDone: bool(r.onboardingDone, d.onboardingDone)
   }
 }

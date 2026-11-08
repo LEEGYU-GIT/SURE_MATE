@@ -59,6 +59,31 @@ it('BOM이 붙은 설정 파일도 읽는다', async () => {
   expect((await readdir(dir)).some((f) => f.startsWith('settings.corrupt-'))).toBe(false)
 })
 
+it('AI 설정 기본값은 Claude, 사용자 대상 없음', async () => {
+  expect((await loadSettings(dir)).ai).toEqual({ defaultTarget: 'claude', custom: [] })
+})
+
+it('AI 설정: 잘못된 사용자 대상은 빼고, 기본 대상이 목록에 없으면 claude', async () => {
+  await writeFile(
+    join(dir, 'settings.json'),
+    JSON.stringify({
+      ai: {
+        defaultTarget: 'intra',
+        custom: [
+          { id: 'intra', name: '사내 LLM', url: 'https://llm.intra.example' },
+          { id: 'x', name: 'x', url: 'ftp://x' }
+        ]
+      }
+    })
+  )
+  const s = await loadSettings(dir)
+  expect(s.ai.custom.map((t) => t.id)).toEqual(['intra'])
+  expect(s.ai.defaultTarget).toBe('intra')
+
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ ai: { defaultTarget: 'gone' } }))
+  expect((await loadSettings(dir)).ai.defaultTarget).toBe('claude')
+})
+
 it('설정 파일을 읽지 못해도(파일 자리에 폴더 등) 기본값으로 시작한다', async () => {
   await mkdir(join(dir, 'settings.json'))
   expect(await loadSettings(dir)).toEqual(DEFAULT_SETTINGS)
