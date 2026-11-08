@@ -6,6 +6,9 @@ const api: SureMateApi = {
   hide: () => ipcRenderer.send(IPC.paletteHide),
   runItem: (id) => ipcRenderer.invoke(IPC.paletteRunItem, id),
   listItems: () => ipcRenderer.invoke(IPC.paletteListItems),
+  previewPrompt: (req) => ipcRenderer.invoke(IPC.promptPreview, req),
+  runPrompt: (req) => ipcRenderer.invoke(IPC.promptRun, req),
+  cancelPrompt: () => ipcRenderer.send(IPC.promptCancel),
   getStatus: () => ipcRenderer.invoke(IPC.appGetStatus),
   onShown: (cb) => {
     const listener = (_e: IpcRendererEvent, payload: ShownPayload): void => cb(payload)

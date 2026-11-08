@@ -13,6 +13,8 @@ import { log } from './log'
 import { isAcceleratorHeld } from './native/input'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
+import { createPromptRuntime } from './prompts/prompt-runtime'
+import type { PromptSession } from './prompts/prompt-session'
 import { loadTemplates } from './prompts/template-store'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
@@ -27,6 +29,7 @@ process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { e
 
 let settings: Settings = DEFAULT_SETTINGS
 let templates: Template[] = []
+let prompts: PromptSession | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 
@@ -43,6 +46,7 @@ async function runItem(id: string): Promise<void> {
     return
   }
   if (isDevCommand(id)) return runDevCommand(id)
+  if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
   hidePalette({ restoreFocus: true })
 }
 
@@ -151,12 +155,22 @@ if (!app.requestSingleInstanceLock()) {
     const loaded = await loadTemplates(userData, builtinPrompts)
     templates = loaded.templates
     if (loaded.errors.length) log('templates.loadErrors', { count: loaded.errors.length, first: errorText(loaded.errors[0]) })
+    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates })
+    prompts = session
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
       hide: () => hidePalette({ restoreFocus: true }),
       runItem,
       listItems: () => buildPaletteItems(templates, DEV_COMMAND_ITEMS),
+      previewPrompt: (req) => session.preview(req),
+      runPrompt: async (req) => {
+        const result = await session.run(req)
+        // 복사만이면 팔레트가 남아 있으니 숨기고 원래 창으로 돌아간다(AI를 열었으면 이미 숨김)
+        if (result.ok) hidePalette({ restoreFocus: true })
+        return result
+      },
+      cancelPrompt: () => session.cancel(),
       saveImeLog,
       getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
     })

@@ -96,6 +96,22 @@ export function hidePalette(opts: { restoreFocus: boolean }): void {
   log('palette.hide', { restoreFocus: opts.restoreFocus, restored })
 }
 
+/**
+ * 팔레트를 숨기고 직전 창을 앞으로 가져온다(선택 글을 그 창에서 가져오려고).
+ * 직전 창이 없거나 80ms 안에 앞으로 오지 않으면 false
+ */
+export async function hidePaletteAndRefocus(): Promise<boolean> {
+  const target = previousHwnd
+  hidePalette({ restoreFocus: true })
+  if (!target) return false
+  const deadline = Date.now() + 80
+  while (Date.now() < deadline) {
+    if (getForegroundWindow() === target) return true
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return getForegroundWindow() === target
+}
+
 export const isPaletteVisible = (): boolean => Boolean(win?.isVisible())
 
 export const getPreviousHwnd = (): string | null => previousHwnd
