@@ -20,6 +20,7 @@ import type { PromptSession } from './prompts/prompt-session'
 import { loadTemplates } from './prompts/template-store'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
+import { lockNavigation } from './windows/navigation-guard'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, showPalette } from './windows/palette-window'
 
@@ -151,7 +152,11 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('kr.suremate.app')
-    app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
+    app.on('browser-window-created', (_, w) => {
+      optimizer.watchWindowShortcuts(w)
+      // 모든 창: 파일을 끌어다 놓거나 링크를 눌러도 다른 주소로 이동하지 않는다
+      lockNavigation(w.webContents)
+    })
 
     const userData = app.getPath('userData')
     settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
