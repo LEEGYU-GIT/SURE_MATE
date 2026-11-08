@@ -1,0 +1,50 @@
+/* Sure-Mate 디자인 토큰(설계 문서 §14-4). 색·모서리·글자 크기는 여기서만 정한다. */
+
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/PretendardVariable.woff2') format('woff2-variations');
+}
+
+:root {
+  /* 색 (다크 기본) */
+  --ink: #1B1E26;
+  --surface-bar: rgba(30, 33, 42, 0.94);
+  --surface-flyout: rgba(40, 44, 56, 0.96);
+  /* 팔레트는 아크릴 위에 얹으므로 반투명, 아크릴이 안 되면 solid */
+  --surface-palette: rgba(30, 33, 42, 0.78);
+  --surface-palette-solid: #1E212A;
+  --text-1: #F1F3F8;
+  --text-2: #C9D0DD;
+  --text-3: #8A93A6;
+  --line: rgba(255, 255, 255, 0.10);
+  --brand: #3CC8B4;
+  --brand-strong: #2A9D8F;
+  --highlight: #FFD447;
+  --warn: #F59E3D;
+  --danger: #FF6B6B;
+  --cheek: #FF8FA3;
+  --lens: #BFF3EC;
+  --mist: #E8ECF2;
+  --row-selected: rgba(255, 255, 255, 0.08);
+  --row-hover: rgba(255, 255, 255, 0.05);
+
+  /* 모양 */
+  --radius-window: 8px;
+  --radius-control: 4px;
+  --shadow-flyout: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  /* 글자: 영문·숫자는 Segoe UI Variable, 한글은 Pretendard */
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Pretendard Variable', 'Malgun Gothic', sans-serif;
+  --fs-caption: 12px;
+  --fs-small: 13px;
+  --fs-body: 14px;
+  --fs-input: 16px;
+  --fs-title: 20px;
+
+  /* 움직임 */
+  --dur-hover: 120ms;
+  --dur-open: 200ms;
+}

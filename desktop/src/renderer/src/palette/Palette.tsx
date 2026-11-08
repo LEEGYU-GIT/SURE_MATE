@@ -4,6 +4,7 @@ import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
 import { PALETTE_GROUPS } from '../../../shared/palette-query'
 import type { PaletteItem } from '../../../shared/types'
+import { GroupIcon, SearchIcon } from '../design/icons'
 import { DevOutput } from './DevOutput'
 import { filterItems } from './filter-items'
 import { nextSelection } from './selection'
@@ -11,6 +12,12 @@ import { StatusBar } from './StatusBar'
 
 /** 같은 항목을 300ms 안에 두 번 실행하지 않는다(한글 조합 중 Enter 중복 대비) */
 const runGuard = createExecutionGuard(300)
+
+const PREFIX_HINTS = [
+  ['/', '프롬프트'],
+  ['?', '위키'],
+  ['>', '명령']
+] as const
 
 export function Palette(): React.JSX.Element {
   const [query, setQuery] = useState('')
@@ -60,7 +67,7 @@ export function Palette(): React.JSX.Element {
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden bg-zinc-900/85 text-zinc-100"
+      className="flex h-screen flex-col overflow-hidden bg-surface-palette font-ui text-fg"
       onKeyDown={(e) => {
         if (isImeComposing(e.nativeEvent)) return
         if (e.code === 'Escape' || e.key === 'Escape') {
@@ -84,17 +91,28 @@ export function Palette(): React.JSX.Element {
           if (top) run(top.id)
         }}
       >
-        <Command.Input
-          ref={inputRef}
-          value={query}
-          onValueChange={setQuery}
-          autoFocus
-          spellCheck={false}
-          placeholder="무엇을 할까요?   ? 위키 · ! 상용구 · / 프롬프트 · @ 워크스페이스 · > 명령"
-          className="h-14 w-full shrink-0 border-b border-white/10 bg-transparent px-5 text-lg outline-none placeholder:text-sm placeholder:text-zinc-500"
-        />
-        <Command.List className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <Command.Empty className="px-3 py-6 text-center text-sm text-zinc-500">결과가 없어요</Command.Empty>
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
+          <SearchIcon size={18} className="shrink-0 text-fg-3" />
+          <Command.Input
+            ref={inputRef}
+            value={query}
+            onValueChange={setQuery}
+            autoFocus
+            spellCheck={false}
+            placeholder="무엇을 할까요?"
+            className="h-full min-w-0 flex-1 bg-transparent text-input text-fg outline-none placeholder:text-fg-3 focus-visible:outline-none"
+          />
+          <div className="flex shrink-0 items-center gap-2.5 text-caption text-fg-3">
+            {PREFIX_HINTS.map(([key, label]) => (
+              <span key={key} className="flex items-center gap-1">
+                <kbd className="rounded-control border border-line px-1.5 font-ui text-fg-2">{key}</kbd>
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <Command.List className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <Command.Empty className="px-3 py-10 text-center text-small text-fg-3">찾는 항목이 없어요. / ? &gt; 로 범위를 좁혀 보세요.</Command.Empty>
           {PALETTE_GROUPS.map((group) => {
             const groupItems = items.filter((item) => item.group === group.id)
             if (groupItems.length === 0) return null
@@ -105,10 +123,12 @@ export function Palette(): React.JSX.Element {
                     key={item.id}
                     value={item.id}
                     onSelect={() => run(item.id)}
-                    className="flex cursor-default items-center justify-between rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-white/10"
+                    className="group relative flex h-10 cursor-default items-center gap-3 rounded-control px-3 text-body data-[selected=true]:bg-row-selected"
                   >
-                    <span>{item.title}</span>
-                    {item.subtitle && <span className="ml-4 truncate text-xs text-zinc-400">{item.subtitle}</span>}
+                    <span className="absolute top-2.5 bottom-2.5 left-0 w-0.5 rounded-full bg-brand opacity-0 group-data-[selected=true]:opacity-100" />
+                    <GroupIcon group={item.group} className="shrink-0 text-fg-3 group-data-[selected=true]:text-brand" />
+                    <span className="shrink-0 text-fg">{item.title}</span>
+                    {item.subtitle && <span className="min-w-0 truncate text-small text-fg-3">{item.subtitle}</span>}
                   </Command.Item>
                 ))}
               </Command.Group>

@@ -1,3 +1,4 @@
+import './design/tokens.css'
 import './assets/tailwind.css'
 
 import { StrictMode } from 'react'

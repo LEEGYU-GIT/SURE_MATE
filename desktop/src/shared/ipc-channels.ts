@@ -54,8 +54,8 @@ export type ShownPayload =
   | { mode: 'dev-output'; title: string; text: string }
   | { mode: 'confirm'; draft: PromptDraft }
 
-/** paletteHotkey: 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
-export type AppStatus = { paletteHotkey: string | null; maskingMode: MaskingMode }
+/** paletteHotkey: 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null. aiTargetName: 기본 AI 대상 이름 */
+export type AppStatus = { paletteHotkey: string | null; maskingMode: MaskingMode; aiTargetName: string }
 
 /** preload가 window.sureMate로 노출하는 API */
 export interface SureMateApi {

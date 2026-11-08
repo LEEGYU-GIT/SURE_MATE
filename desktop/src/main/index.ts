@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
 import builtinPrompts from '../../resources/prompts.json'
+import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { maskingModeLabel } from '../shared/labels'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
@@ -172,7 +173,11 @@ if (!app.requestSingleInstanceLock()) {
       },
       cancelPrompt: () => session.cancel(),
       saveImeLog,
-      getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
+      getStatus: () => ({
+        paletteHotkey: paletteHotkey(),
+        maskingMode: settings.masking.mode,
+        aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
+      })
     })
 
     try {

@@ -1,5 +1,32 @@
 @import "tailwindcss";
 
+/* 토큰(../design/tokens.css, main.tsx에서 먼저 불러옴)을 Tailwind 이름으로 연결한다 */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-surface-bar: var(--surface-bar);
+  --color-surface-flyout: var(--surface-flyout);
+  --color-surface-palette: var(--surface-palette);
+  --color-fg: var(--text-1);
+  --color-fg-2: var(--text-2);
+  --color-fg-3: var(--text-3);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-highlight: var(--highlight);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-row-selected: var(--row-selected);
+  --color-row-hover: var(--row-hover);
+  --radius-window: var(--radius-window);
+  --radius-control: var(--radius-control);
+  --text-caption: var(--fs-caption);
+  --text-small: var(--fs-small);
+  --text-body: var(--fs-body);
+  --text-input: var(--fs-input);
+  --text-title: var(--fs-title);
+  --font-ui: var(--font-ui);
+}
+
 html,
 body,
 #root {
@@ -10,12 +37,54 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-  font-family: system-ui, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  color: var(--text-1);
   user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  /* 키보드로 움직일 때만 보이는 포커스 링. base 층에 두어 outline-none 같은 유틸리티가 덮을 수 있게 한다 */
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  /* 얇고 조용한 스크롤 막대(Windows 기본 화살표 막대 대신) */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.16) content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.26);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
 }
 
 [cmdk-group-heading] {
-  padding: 0.375rem 0.75rem 0.25rem;
-  font-size: 0.75rem;
-  color: var(--color-zinc-400);
+  padding: 10px 12px 4px;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { CommandIcon } from '../design/icons'
 
 /** 개발 명령 결과를 보여 주는 화면. Esc로 팔레트를 닫는다. */
 export function DevOutput(props: { title: string; text: string; onClose: () => void }): React.JSX.Element {
@@ -18,15 +19,14 @@ export function DevOutput(props: { title: string; text: string; onClose: () => v
           props.onClose()
         }
       }}
-      className="flex h-screen flex-col bg-zinc-900/90 text-zinc-100 outline-none"
+      className="flex h-screen flex-col bg-surface-palette font-ui text-fg outline-none"
     >
-      <div className="flex h-12 shrink-0 items-center border-b border-white/10 px-5 font-medium">
-        {props.title}
-        <span className="ml-auto text-xs font-normal text-zinc-500">Esc로 닫기</span>
+      <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line px-5">
+        <CommandIcon size={18} className="text-fg-3" />
+        <span className="text-input font-semibold">{props.title}</span>
+        <span className="ml-auto text-caption text-fg-3">Esc 닫기</span>
       </div>
-      <pre className="min-h-0 flex-1 overflow-auto px-5 py-3 font-mono text-xs leading-5 whitespace-pre-wrap break-all text-zinc-300">
-        {props.text}
-      </pre>
+      <pre className="min-h-0 flex-1 overflow-auto px-5 py-3 font-mono text-caption leading-5 break-all whitespace-pre-wrap text-fg-2">{props.text}</pre>
     </div>
   )
 }
