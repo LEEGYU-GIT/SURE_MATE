@@ -23,6 +23,7 @@ function fake(
     captured?: { text: string | null; skipped?: CaptureSkipReason }
     mode?: MaskingMode
     masked?: { text: string; items: MaskItem[] }
+    maskWarnings?: string[]
     openError?: string
   } = {}
 ): { deps: MaskingCommandDeps; calls: Calls } {
@@ -33,7 +34,7 @@ function fake(
       mask: async (text, o) => {
         calls.masks.push({ text, mode: o.mode, dryRun: o.dryRun })
         const m = over.masked ?? { text: `[머리말]\n\n${text.replace('가상자동차', 'CLIENT_A')}`, items: [item(true)] }
-        return { text: m.text, ranges: [], preamble: '[머리말]', items: m.items, mapRanges: (r) => r }
+        return { text: m.text, ranges: [], preamble: '[머리말]', items: m.items, warnings: over.maskWarnings ?? [], notes: [], mapRanges: (r) => r }
       },
       unmask: () => over.unmask ?? { text: '가상자동차와 XY방산은 씁니다', restored: 2, unknownTokens: [] },
       tableSize: () => over.tableSize ?? 3
@@ -111,6 +112,12 @@ it('선택한 글 가명 처리: 지금 모드로 가려(대응표 확정) 클�
   await createMaskingCommands(off.deps).run('cmd.mask-selection')
   expect(off.calls.masks[0].mode).toBe('restore')
   expect(JSON.stringify([...f.calls.logs, ...off.calls.logs])).not.toMatch(/가상자동차|CLIENT_A/)
+})
+
+it('선택한 글 가명 처리: 가명 사전 경고가 있으면 알림에 함께 알린다', async () => {
+  const f = fake({ maskWarnings: ['가명 사전을 읽지 못해 고객사·프로젝트 이름을 가리지 않아요'] })
+  await createMaskingCommands(f.deps).run('cmd.mask-selection')
+  expect(f.calls.notes[0]).toContain('가명 사전을 읽지 못해')
 })
 
 it('선택한 글 가명 처리: 선택한 글이 없거나 가릴 것이 없으면 클립보드를 건드리지 않는다', async () => {

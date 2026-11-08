@@ -1,5 +1,5 @@
 import { resolveOverlaps } from '../../shared/masking/detections'
-import { findTerms, type MaskTerm } from '../../shared/masking/dictionary'
+import { findTerms } from '../../shared/masking/dictionary'
 import { MappingTable } from '../../shared/masking/mapping-table'
 import { mapRanges, maskPreamble, maskText } from '../../shared/masking/mask'
 import { findPatterns } from '../../shared/masking/patterns'
@@ -7,6 +7,7 @@ import type { Detection, MaskCategory, MaskItem } from '../../shared/masking/typ
 import { unmaskText } from '../../shared/masking/unmask'
 import type { MaskingMode } from '../../shared/types'
 import type { Settings } from '../settings/settings-store'
+import type { DictionaryState } from './terms-cache'
 
 export interface MaskResult {
   /** 머리말을 붙인 최종 글(끔이면 원문 그대로) */
@@ -15,8 +16,26 @@ export interface MaskResult {
   ranges: [number, number][]
   preamble: string | null
   items: MaskItem[]
+  /** 확인 화면에 주황으로 보일 경고(가명 사전 오류 등) */
+  warnings: string[]
+  /** 흐리게 보일 안내(가명 사전이 비었음 등) */
+  notes: string[]
   /** 가리기 전 위치의 구간을 text 안 위치로 옮긴다(넣은 글 형광펜용) */
   mapRanges(ranges: [number, number][]): [number, number][]
+}
+
+/** 사전 상태를 확인 화면 경고·안내로. 사전이 깨졌는데 켜진 줄 알고 실명을 보내는 일을 막는다(설계 문서 §1) */
+function dictionaryNotices(dict: DictionaryState): { warnings: string[]; notes: string[] } {
+  if (dict.errors > 0 && dict.terms.length === 0) {
+    return { warnings: ["가명 사전을 읽지 못해 고객사·프로젝트 이름을 가리지 않아요. 팔레트의 '가명 사전 열기'로 고쳐 주세요"], notes: [] }
+  }
+  if (dict.errors > 0) {
+    return { warnings: [`가명 사전에 잘못된 항목이 ${dict.errors}건 있어 그 이름은 가리지 않아요. 팔레트의 '가명 사전 열기'로 고쳐 주세요`], notes: [] }
+  }
+  if (dict.terms.length === 0) {
+    return { warnings: [], notes: ["가명 사전이 비어 있어 고객사·프로젝트 이름은 가리지 않아요. 팔레트의 '가명 사전 열기'에서 넣을 수 있어요"] }
+  }
+  return { warnings: [], notes: [] }
 }
 
 export interface MaskingService {
@@ -41,23 +60,24 @@ function summarize(ds: Detection[]): { key: string; category: MaskCategory; orig
  * 가명 처리 서비스(설계 문서 §8). 대응표는 이 서비스가 메모리에만 하나 두고 디스크에 쓰지 않는다.
  * dryRun(미리 보기)은 표를 복제해 써서 토큰을 확정하지 않는다. 대응표 보관 시간은 앱을 시작할 때의 설정을 쓴다.
  */
-export function createMaskingService(d: { loadTerms(): Promise<MaskTerm[]>; settings(): Settings['masking']; now(): number }): MaskingService {
+export function createMaskingService(d: { loadDictionary(): Promise<DictionaryState>; settings(): Settings['masking']; now(): number }): MaskingService {
   const table = new MappingTable({ now: d.now, ttlMs: d.settings().ttlHours * 3_600_000 })
 
-  const detect = async (text: string): Promise<Detection[]> => {
+  const detect = async (text: string): Promise<{ found: Detection[]; dict: DictionaryState }> => {
     const s = d.settings()
-    const found = resolveOverlaps([...findTerms(text, await d.loadTerms()), ...findPatterns(text, { internalDomains: s.internalDomains })])
-    return found.filter((x) => s.categories[x.category])
+    const dict = await d.loadDictionary()
+    const found = resolveOverlaps([...findTerms(text, dict.terms), ...findPatterns(text, { internalDomains: s.internalDomains })])
+    return { found: found.filter((x) => s.categories[x.category]), dict }
   }
 
   return {
     async mask(input, o) {
       if (o.mode === 'off') {
-        const items = summarize(await detect(input.normalize('NFC'))).map((x): MaskItem => ({ ...x, replacement: null, enabled: false }))
-        return { text: input, ranges: [], preamble: null, items, mapRanges: (r) => r }
+        const items = summarize((await detect(input.normalize('NFC'))).found).map((x): MaskItem => ({ ...x, replacement: null, enabled: false }))
+        return { text: input, ranges: [], preamble: null, items, warnings: [], notes: [], mapRanges: (r) => r }
       }
       const text = input.normalize('NFC')
-      const ds = await detect(text)
+      const { found: ds, dict } = await detect(text)
       const s = d.settings()
       const r = maskText(text, ds, { mode: o.mode, categories: s.categories, disabledKeys: o.disabledKeys }, o.dryRun ? table.fork() : table)
       const replaced = new Map(r.applied.map((a) => [a.key, a.replacement]))
@@ -69,6 +89,7 @@ export function createMaskingService(d: { loadTerms(): Promise<MaskTerm[]>; sett
         ranges: r.ranges.map(([a, b]): [number, number] => [a + offset, b + offset]),
         preamble,
         items,
+        ...dictionaryNotices(dict),
         mapRanges: (ranges) => mapRanges(ranges, r.edits, offset)
       }
     },

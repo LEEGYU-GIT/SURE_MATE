@@ -20,6 +20,9 @@ export interface PromptMaskResult {
   ranges: [number, number][]
   preamble: string | null
   items: MaskItem[]
+  /** 가명 처리가 낸 경고·안내(가명 사전 오류 등) */
+  warnings: string[]
+  notes: string[]
   mapRanges(ranges: [number, number][]): [number, number][]
 }
 
@@ -130,7 +133,7 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       const mode = modeOf(s.template, req)
       const filled = d.fill(s.template, input, s.clipboard)
       const masked = await d.mask(filled.text, { mode, disabledKeys: req.disabledKeys ?? [], dryRun: true })
-      const warnings = [...filled.warnings]
+      const warnings = [...filled.warnings, ...masked.warnings]
       if (input.length > INPUT_WARN_CHARS) {
         warnings.push(`입력이 2만 자를 넘어요(${input.length.toLocaleString('ko-KR')}자). AI가 앞부분만 읽을 수 있어요`)
       }
@@ -140,7 +143,7 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         truncated,
         inputLength: input.length,
         warnings,
-        notes: filled.notes,
+        notes: [...filled.notes, ...masked.notes],
         highlights: clip(masked.mapRanges(filled.inputRanges), PREVIEW_CHARS),
         masking: { mode, items: masked.items },
         maskRanges: clip(masked.ranges, PREVIEW_CHARS)

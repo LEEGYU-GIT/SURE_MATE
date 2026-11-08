@@ -113,7 +113,9 @@ export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
     }
     await d.writeClipboard(m.text, { excludeFromHistory: false })
     const note = configured === 'off' ? '(기본값이 꺼짐이라 되돌리기로 가림)' : ''
-    d.notify(`가명 처리해 복사했어요 · 가명 ${masked}건${note}. 붙여넣을 곳에서 Ctrl+V를 누르세요.`)
+    // 사전이 깨졌으면 이름이 안 가려졌을 수 있으니 같이 알린다
+    const warning = m.warnings.length ? ` ${m.warnings[0]}.` : ''
+    d.notify(`가명 처리해 복사했어요 · 가명 ${masked}건${note}. 붙여넣을 곳에서 Ctrl+V를 누르세요.${warning}`)
   }
 
   const cycleMode = async (): Promise<void> => {

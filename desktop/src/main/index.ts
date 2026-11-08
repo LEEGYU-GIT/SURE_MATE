@@ -39,8 +39,8 @@ let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
-/** 트레이가 생기기 전에 생긴 템플릿 읽기 오류(트레이가 생기면 알린다) */
-let pendingTemplateErrors: string[] = []
+/** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
+let pendingFileErrors: { what: string; errors: string[] }[] = []
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
@@ -74,13 +74,18 @@ function warn(content: string): void {
   shell?.tray.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
 }
 
-/** 읽지 못한 템플릿 파일을 사용자에게 알린다. 파일 이름에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
-function reportTemplateErrors(errors: string[]): void {
-  log('templates.loadErrors', { count: errors.length })
-  pendingTemplateErrors = errors
+/** 트레이가 있으면 쌓아 둔 파일 읽기 오류를 알린다 */
+function flushFileErrors(): void {
   if (!shell) return
-  warn(`프롬프트 템플릿 ${errors.length}건을 읽지 못해 건너뛰었어요. ${errors[0]}`)
-  pendingTemplateErrors = []
+  for (const p of pendingFileErrors) warn(`${p.what} ${p.errors.length}건을 읽지 못해 건너뛰었어요. ${p.errors[0]}`)
+  pendingFileErrors = []
+}
+
+/** 읽지 못한 템플릿·가명 사전 파일을 사용자에게 알린다. 파일 이름·항목에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
+function reportFileErrors(what: string, event: string, errors: string[]): void {
+  log(event, { count: errors.length })
+  pendingFileErrors.push({ what, errors })
+  flushFileErrors()
 }
 
 /** 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
@@ -151,7 +156,7 @@ async function startShell(userData: string): Promise<void> {
   })
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
-  if (pendingTemplateErrors.length) reportTemplateErrors(pendingTemplateErrors)
+  flushFileErrors()
 
   // 툴팁을 실제로 등록된 단축키로 다시 그린다(대체 조합으로 바뀌었거나 하나도 못 잡은 경우)
   shell.refresh()
@@ -178,10 +183,11 @@ if (!app.requestSingleInstanceLock()) {
     const userData = app.getPath('userData')
     settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
     // 팔레트를 열 때마다(목록 요청) 템플릿 파일이 바뀌었는지 보고 다시 읽는다
-    const templateCache = createTemplateCache(userData, builtinPrompts, reportTemplateErrors)
+    const templateCache = createTemplateCache(userData, builtinPrompts, (errors) => reportFileErrors('프롬프트 템플릿', 'templates.loadErrors', errors))
     templates = await templateCache.get()
-    const loadTerms = createTermsCache(userData, (errors) => log('masking.dictionaryErrors', { count: errors.length }))
-    masking = createMaskingService({ loadTerms, settings: () => settings.masking, now: Date.now })
+    // 사전이 깨지면 이름이 가려지지 않으므로 트레이로도 알린다(확인 화면에는 미리 보기 경고로)
+    const loadDictionary = createTermsCache(userData, (errors) => reportFileErrors('가명 사전 항목', 'masking.dictionaryErrors', errors))
+    masking = createMaskingService({ loadDictionary, settings: () => settings.masking, now: Date.now })
     const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, masking })
     prompts = session
     maskingCommands = createMaskingCommandsRuntime({

@@ -9,7 +9,7 @@ const allOn = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, true])) as Record
 const terms: MaskTerm[] = [{ id: 'g', category: 'client', canonical: '가상자동차', aliases: [] }]
 const svc = (over: Partial<Settings['masking']> = {}): ReturnType<typeof createMaskingService> =>
   createMaskingService({
-    loadTerms: async () => terms,
+    loadDictionary: async () => ({ terms, errors: 0 }),
     settings: () => ({ mode: 'restore', categories: allOn, internalDomains: [], ttlHours: 8, ...over }),
     now: () => 0
   })
@@ -22,6 +22,27 @@ it('미리 보기(dryRun)는 대응표를 늘리지 않고, 실행은 토큰을 
   expect(r.text).toBe(`${maskPreamble('restore')}\n\nCLIENT_A 회의`)
   expect(s.tableSize()).toBe(1)
   expect(s.unmask('CLIENT_A가 좋다')).toEqual({ text: '가상자동차가 좋다', restored: 1, unknownTokens: [] })
+})
+
+it('가명 사전에 오류가 있으면 미리 보기 경고로, 비었으면 흐린 안내로 알린다(끔이면 알리지 않음)', async () => {
+  const withDict = (dict: { terms: MaskTerm[]; errors: number }): ReturnType<typeof createMaskingService> =>
+    createMaskingService({
+      loadDictionary: async () => dict,
+      settings: () => ({ mode: 'restore', categories: allOn, internalDomains: [], ttlHours: 8 }),
+      now: () => 0
+    })
+  const o = { mode: 'restore' as const, disabledKeys: [], dryRun: true }
+  const broken = await withDict({ terms: [], errors: 1 }).mask('가상자동차 회의', o)
+  expect(broken.warnings).toEqual([expect.stringContaining('가명 사전을 읽지 못해')])
+  expect(broken.notes).toEqual([])
+  const partial = await withDict({ terms, errors: 2 }).mask('가상자동차 회의', o)
+  expect(partial.warnings).toEqual([expect.stringContaining('2건')])
+  const empty = await withDict({ terms: [], errors: 0 }).mask('회의', o)
+  expect(empty.warnings).toEqual([])
+  expect(empty.notes).toEqual([expect.stringContaining('비어')])
+  const off = await withDict({ terms: [], errors: 1 }).mask('회의', { ...o, mode: 'off' })
+  expect([...off.warnings, ...off.notes]).toEqual([])
+  expect((await svc().mask('가상자동차 회의', o)).warnings).toEqual([])
 })
 
 it('끔이면 원문 그대로, 머리말 없음, 찾은 것은 목록에만 꺼진 채로', async () => {
