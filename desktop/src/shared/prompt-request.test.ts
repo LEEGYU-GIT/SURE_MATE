@@ -25,6 +25,12 @@ it('가명 처리 모드와 이번 실행에서 끈 항목을 검사한다', () 
   expect(parsePromptRequest({ source: 'selection', target: 'claude', disabledKeys: Array(201).fill('k') })).toBeNull()
 })
 
+it('긴 URL·경로 항목(키가 200자 넘음)도 끌 수 있고, 지나치게 긴 키는 거절한다', () => {
+  const longUrl = `url:https://intra.example/sites/team/Shared%20Documents/${'a'.repeat(900)}`
+  expect(parsePromptRequest({ source: 'selection', target: 'claude', disabledKeys: [longUrl] })?.disabledKeys).toEqual([longUrl])
+  expect(parsePromptRequest({ source: 'selection', target: 'claude', disabledKeys: ['k'.repeat(5000)] })).toBeNull()
+})
+
 it('input 출처가 아니면 입력 글은 버린다', () => {
   expect(parsePromptRequest({ source: 'clipboard', input: '무시', target: 'claude' })).toEqual({ source: 'clipboard', target: 'claude' })
 })

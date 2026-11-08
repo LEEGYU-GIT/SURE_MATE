@@ -4,6 +4,8 @@ import type { MaskingMode } from './types'
 /** 직접 입력으로 받을 최대 길이 */
 export const MAX_INPUT_CHARS = 200000
 const MAX_DISABLED_KEYS = 200
+/** 끈 항목 키 하나의 최대 길이. 키는 'url:'·'path:' + 원문이라 SharePoint 같은 긴 주소도 들어가야 한다 */
+const MAX_DISABLED_KEY_CHARS = 4100
 
 const SOURCES: readonly PromptSource[] = ['selection', 'clipboard', 'input']
 const MODES: readonly MaskingMode[] = ['off', 'restore', 'remove']
@@ -16,7 +18,7 @@ export function parsePromptRequest(raw: unknown): PromptRequest | null {
   if (masking !== undefined && !MODES.includes(masking as MaskingMode)) return null
   if (
     disabledKeys !== undefined &&
-    (!Array.isArray(disabledKeys) || disabledKeys.length > MAX_DISABLED_KEYS || !disabledKeys.every((k) => typeof k === 'string' && k.length <= 200))
+    (!Array.isArray(disabledKeys) || disabledKeys.length > MAX_DISABLED_KEYS || !disabledKeys.every((k) => typeof k === 'string' && k.length <= MAX_DISABLED_KEY_CHARS))
   ) {
     return null
   }
