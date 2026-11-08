@@ -106,6 +106,20 @@ export function keyToAction(k: KeyInfo, s: ConfirmState): ConfirmAction | null {
   return null
 }
 
+/** 미리 보기 글을 형광펜(넣은 글) 구간과 나머지로 나눈다. ranges는 겹치지 않고 앞에서부터 */
+export function splitHighlights(text: string, ranges: [number, number][]): { text: string; mark: boolean }[] {
+  const parts: { text: string; mark: boolean }[] = []
+  let pos = 0
+  for (const [start, end] of ranges) {
+    if (start > pos) parts.push({ text: text.slice(pos, start), mark: false })
+    const from = Math.max(start, pos)
+    if (end > from) parts.push({ text: text.slice(from, end), mark: true })
+    pos = Math.max(pos, end)
+  }
+  if (pos < text.length) parts.push({ text: text.slice(pos), mark: false })
+  return parts
+}
+
 const SELECTION_NOTES: Record<NonNullable<PromptDraft['selection']['skipped']>, string> = {
   terminal: '터미널에서는 가져오지 않아요',
   elevated: '관리자 권한 창이라 가져오지 못했어요',

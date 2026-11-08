@@ -28,6 +28,10 @@ export interface PromptPreview {
   truncated: boolean
   inputLength: number
   warnings: string[]
+  /** 알아 두면 좋은 안내(경고보다 흐리게 보인다) */
+  notes: string[]
+  /** text 안에서 넣은 글의 [시작, 끝) 위치(형광펜) */
+  highlights: [number, number][]
 }
 
 export interface PromptRunResult {

@@ -1,4 +1,4 @@
-# shared helpers for smoke tests (dot-source this)
+﻿# shared helpers for smoke tests (dot-source this)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -24,7 +24,7 @@ function Combo([string]$combo) { $t = $combo.ToLower().Split('+'); $mods = @($t[
 function Fg { $h = [W]::GetForegroundWindow(); $p = [W]::Pid($h); [pscustomobject]@{ Title = [W]::Title($h); Process = (Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName } }
 $logFile = Join-Path $env:APPDATA ("Sure-Mate\logs\" + (Get-Date -Format 'yyyy-MM-dd') + ".log")
 $startLines = if (Test-Path $logFile) { @(Get-Content $logFile).Count } else { 0 }
-function NewLogs([string]$event) { @(Get-Content $logFile | Select-Object -Skip $startLines | Where-Object { $_ -match "`"event`":`"$event`"" }) }
+function NewLogs([string]$eventName) { @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines | Where-Object { $_ -match "`"event`":`"$eventName`"" }) }
 function NewTestForm {
   $f = New-Object System.Windows.Forms.Form
   $f.Text = 'SureMate-Test'; $f.ControlBox = $false; $f.Width = 420; $f.Height = 200; $f.StartPosition = 'CenterScreen'
@@ -33,3 +33,16 @@ function NewTestForm {
   return $f
 }
 function IsApp { $p = (Fg).Process; return ($p -eq 'electron' -or $p -eq 'Sure-Mate') }
+# 마지막 palette.show 로그의 위치(DIP×배율)로 팔레트 화면을 %TEMP%\sure-mate-smoke\<이름>.png로 저장
+function Shot([string]$name) {
+  Add-Type -AssemblyName System.Drawing
+  $dir = Join-Path $env:TEMP 'sure-mate-smoke'; New-Item -ItemType Directory -Force $dir | Out-Null
+  $show = NewLogs 'palette.show' | Select-Object -Last 1 | ConvertFrom-Json
+  $s = [double]$show.scale; $b = $show.bounds
+  $w = [int]($b.width * $s); $h = [int]($b.height * $s)
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen([int]($b.x * $s), [int]($b.y * $s), 0, 0, (New-Object System.Drawing.Size $w, $h))
+  $path = Join-Path $dir "$name.png"; $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
+  "$name = $path ($w x $h)"
+}

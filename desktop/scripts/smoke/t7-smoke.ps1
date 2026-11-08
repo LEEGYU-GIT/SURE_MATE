@@ -1,4 +1,4 @@
-# Task 7 smoke: palette "ime"+Enter -> logger window opens; type "ab", Tab, Tab, Space -> JSON saved
+﻿# Task 7 smoke: palette "ime"+Enter -> logger window opens; type "ab", Tab, Tab, Space -> JSON saved
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

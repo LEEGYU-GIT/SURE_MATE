@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { PromptDraft } from '../../../shared/ipc-channels'
-import { confirmReducer, initialConfirmState, keyToAction, selectionNote, type ConfirmState, type KeyInfo } from './confirm-state'
+import { confirmReducer, initialConfirmState, keyToAction, selectionNote, splitHighlights, type ConfirmState, type KeyInfo } from './confirm-state'
 
 const draft = (over: Partial<PromptDraft> = {}): PromptDraft => ({
   templateId: 'meeting-notes',
@@ -91,6 +91,17 @@ it('화살표는 칩 값을 바꾸고, 입력칸에서는 커서 이동이라 �
   expect(keyToAction(key('ArrowRight'), s)).toEqual({ type: 'next-value' })
   expect(keyToAction(key('ArrowLeft'), s)).toEqual({ type: 'prev-value' })
   expect(keyToAction(key('ArrowRight'), { ...s, source: 'input', focus: 'input' })).toBeNull()
+})
+
+it('미리 보기 글을 형광펜 구간과 나머지로 나눈다', () => {
+  expect(splitHighlights('앞 가나 중간 가나', [[2, 4], [8, 10]])).toEqual([
+    { text: '앞 ', mark: false },
+    { text: '가나', mark: true },
+    { text: ' 중간 ', mark: false },
+    { text: '가나', mark: true }
+  ])
+  expect(splitHighlights('본문', [])).toEqual([{ text: '본문', mark: false }])
+  expect(splitHighlights('abc', [[0, 3]])).toEqual([{ text: 'abc', mark: true }])
 })
 
 it('선택 글을 못 가져온 이유를 짧게 알려 준다', () => {

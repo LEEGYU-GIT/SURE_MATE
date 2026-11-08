@@ -1,4 +1,4 @@
-# Files-only clipboard (like an Explorer file copy): capture must not report a restore it could not do, and must not clear
+﻿# Files-only clipboard (like an Explorer file copy): capture must not report a restore it could not do, and must not clear
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

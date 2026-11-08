@@ -96,7 +96,7 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
 
     preview(req) {
       const s = current()
-      if (!s) return { text: '', truncated: false, inputLength: 0, warnings: [EXPIRED] }
+      if (!s) return { text: '', truncated: false, inputLength: 0, warnings: [EXPIRED], notes: [], highlights: [] }
       const input = inputOf(s, req)
       const filled = d.fill(s.template, input, s.clipboard)
       const warnings = [...filled.warnings]
@@ -104,7 +104,17 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         warnings.push(`입력이 2만 자를 넘어요(${input.length.toLocaleString('ko-KR')}자). AI가 앞부분만 읽을 수 있어요`)
       }
       const truncated = filled.text.length > PREVIEW_CHARS
-      return { text: truncated ? filled.text.slice(0, PREVIEW_CHARS) : filled.text, truncated, inputLength: input.length, warnings }
+      const highlights = filled.inputRanges
+        .filter(([start]) => start < PREVIEW_CHARS)
+        .map(([start, end]): [number, number] => [start, Math.min(end, PREVIEW_CHARS)])
+      return {
+        text: truncated ? filled.text.slice(0, PREVIEW_CHARS) : filled.text,
+        truncated,
+        inputLength: input.length,
+        warnings,
+        notes: filled.notes,
+        highlights
+      }
     },
 
     async run(req) {

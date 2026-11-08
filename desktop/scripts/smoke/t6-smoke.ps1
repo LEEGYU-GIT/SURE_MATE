@@ -1,4 +1,4 @@
-# Task 6 smoke: type "mc" + Enter -> wiki.mcdc runs once; reopen -> query empty (Enter runs first item)
+﻿# Task 6 smoke: type "mc" + Enter -> wiki.mcdc runs once; reopen -> query empty (Enter runs first item)
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

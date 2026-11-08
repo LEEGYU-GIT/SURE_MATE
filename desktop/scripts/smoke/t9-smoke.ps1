@@ -1,4 +1,4 @@
-# Task 9 smoke: capture selection (restore clipboard), nothing selected, paste test, clipboard exclude format
+﻿# Task 9 smoke: capture selection (restore clipboard), nothing selected, paste test, clipboard exclude format
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

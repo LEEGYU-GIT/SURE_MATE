@@ -22,7 +22,7 @@ export function registerIpc(d: IpcDeps): void {
   ipcMain.handle(IPC.paletteListItems, () => d.listItems())
   ipcMain.handle(IPC.promptPreview, (_e, raw: unknown): PromptPreview => {
     const req = parsePromptRequest(raw)
-    return req ? d.previewPrompt(req) : { text: '', truncated: false, inputLength: 0, warnings: [BAD_REQUEST] }
+    return req ? d.previewPrompt(req) : { text: '', truncated: false, inputLength: 0, warnings: [BAD_REQUEST], notes: [], highlights: [] }
   })
   ipcMain.handle(IPC.promptRun, (_e, raw: unknown): Promise<PromptRunResult> => {
     const req = parsePromptRequest(raw)

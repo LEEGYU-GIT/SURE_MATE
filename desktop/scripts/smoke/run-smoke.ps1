@@ -1,4 +1,4 @@
-# dev 앱을 띄우고 시험 스크립트를 돌린 뒤 모두 정리한다. 사용: .\run-smoke.ps1 -Script t11-smoke.ps1
+﻿# dev 앱을 띄우고 시험 스크립트를 돌린 뒤 모두 정리한다. 사용: .\run-smoke.ps1 -Script t11-smoke.ps1
 # 결과와 dev 로그는 %TEMP%\sure-mate-smoke, 앱 로그는 %APPDATA%\Sure-Mate\logs 에 남는다.
 param([string]$Script = 't5-smoke.ps1')
 $W = $PSScriptRoot

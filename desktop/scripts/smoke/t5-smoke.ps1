@@ -1,4 +1,4 @@
-# Task 5 smoke: test window -> hotkey -> palette -> Esc -> focus back, quick repeats, second instance
+﻿# Task 5 smoke: test window -> hotkey -> palette -> Esc -> focus back, quick repeats, second instance
 param([string]$Combo = 'Ctrl+Alt+Space')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

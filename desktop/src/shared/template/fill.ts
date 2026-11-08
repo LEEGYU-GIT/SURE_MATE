@@ -19,6 +19,8 @@ const formatTime = (d: Date): string => `${pad2(d.getHours())}:${pad2(d.getMinut
  */
 export function fillTemplate(body: string, ctx: FillContext): FillResult {
   const warnings: string[] = []
+  const notes: string[] = []
+  const inputRanges: [number, number][] = []
   const normalized = body.replace(/\r\n?/g, '\n')
   if (!HAS_SELECTION.test(normalized)) warnings.push('이 템플릿에는 {{selection}} 자리가 없어 입력한 글이 들어가지 않아요')
 
@@ -35,14 +37,16 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
     if (ref) {
       const kind = ref[1].trim()
       if (referenceOf(kind) === null) {
-        warnings.push(`기준 예시(${kind})가 없어 그 줄을 뺐어요. 설정에서 추가하면 결과가 회사 양식에 더 가까워져요`)
+        notes.push(`기준 예시(${kind})를 넣어 두면 결과가 회사 양식에 더 가까워져요`)
         return false
       }
     }
     return true
   })
+  // 줄을 빼면 앞뒤 빈 줄이 겹치므로, 템플릿의 빈 줄 겹침은 하나로 줄인다(넣는 글은 아직 들어가기 전이라 영향 없음)
+  const tidy = lines.filter((line, i) => !(line.trim() === '' && i > 0 && lines[i - 1].trim() === ''))
 
-  const text = lines.join('\n').replace(PLACEHOLDER, (whole, name: string, arg: string | undefined) => {
+  const replacement = (whole: string, name: string, arg: string | undefined): string => {
     switch (name) {
       case 'selection':
         return ctx.input
@@ -60,7 +64,16 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
     }
     warnings.push(`알 수 없는 자리표시자: ${whole}`)
     return whole
+  }
+
+  // 왼쪽부터 차례로 바꾸며, 앞에서 늘거나 준 길이(shift)를 더해 넣은 글의 결과 위치를 기록한다
+  let shift = 0
+  const text = tidy.join('\n').replace(PLACEHOLDER, (whole: string, name: string, arg: string | undefined, offset: number) => {
+    const out = replacement(whole, name, arg)
+    if (name === 'selection') inputRanges.push([offset + shift, offset + shift + out.length])
+    shift += out.length - whole.length
+    return out
   })
 
-  return { text, warnings }
+  return { text, warnings, notes, inputRanges }
 }

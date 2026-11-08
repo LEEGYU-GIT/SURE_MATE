@@ -1,4 +1,4 @@
-# koffi.node를 잠시 숨기고(회사 보안 프로그램이 막은 상황) t12를 돌린 뒤 되돌린다.
+﻿# koffi.node를 잠시 숨기고(회사 보안 프로그램이 막은 상황) t12를 돌린 뒤 되돌린다.
 # 설정의 팔레트 단축키도 Ctrl+Alt+Space로 바꿔, 다른 앱이 잡고 있으면 대체 조합이 트레이에 보이는지 함께 본다.
 $W = $PSScriptRoot
 $desktop = (Resolve-Path "$PSScriptRoot\..\..").Path

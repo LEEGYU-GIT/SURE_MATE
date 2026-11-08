@@ -34,7 +34,7 @@ export function createPromptRuntime(o: { userData: string; getSettings: () => Se
         }
       })
       const warnings = longKinds.map((k) => `기준 예시(${k})가 4,000자를 넘어요. 프롬프트가 길어져 AI가 앞부분만 읽을 수 있어요`)
-      return { text: result.text, warnings: [...result.warnings, ...warnings] }
+      return { ...result, warnings: [...result.warnings, ...warnings] }
     },
     writeClipboard: (text) => clipboard.writeText(text),
     openUrl: async (url) => {

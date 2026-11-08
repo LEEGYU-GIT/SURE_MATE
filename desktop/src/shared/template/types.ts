@@ -40,5 +40,10 @@ export interface FillContext {
 
 export interface FillResult {
   text: string
+  /** 고쳐야 할 문제(모르는 자리표시자 등) */
   warnings: string[]
+  /** 알아 두면 좋은 안내(기준 예시가 없어 줄을 뺌 등) */
+  notes: string[]
+  /** text 안에서 {{selection}}으로 넣은 글의 [시작, 끝) 위치. 미리 보기에서 형광펜으로 칠한다 */
+  inputRanges: [number, number][]
 }

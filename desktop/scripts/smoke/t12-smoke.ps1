@@ -1,4 +1,4 @@
-# koffi blocked: the app must still start, show the palette on the hotkey, and explain lookups instead of crashing
+﻿# koffi blocked: the app must still start, show the palette on the hotkey, and explain lookups instead of crashing
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

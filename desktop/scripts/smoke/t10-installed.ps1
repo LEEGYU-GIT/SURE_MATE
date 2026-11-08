@@ -1,4 +1,4 @@
-# silent per-user install -> launch installed app -> smoke (t9) -> quit -> uninstall -> cleanup
+﻿# silent per-user install -> launch installed app -> smoke (t9) -> quit -> uninstall -> cleanup
 $ErrorActionPreference = 'Continue'
 $W = $PSScriptRoot
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue

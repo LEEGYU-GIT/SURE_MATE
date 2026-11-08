@@ -4,7 +4,7 @@ import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft, PromptPreview, PromptSource } from '../../../shared/ipc-channels'
 import { withObjectParticle } from '../../../shared/josa'
 import { PromptIcon } from '../design/icons'
-import { confirmReducer, initialConfirmState, keyToAction, selectionNote, type ConfirmFocus } from './confirm-state'
+import { confirmReducer, initialConfirmState, keyToAction, selectionNote, splitHighlights, type ConfirmFocus } from './confirm-state'
 
 /** 실행을 300ms 안에 두 번 하지 않는다(Enter 연타) */
 const runGuard = createExecutionGuard(300)
@@ -36,6 +36,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
   const [running, setRunning] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
   const deferredInput = useDeferredValue(state.input)
   const targetName = draft.targets.find((t) => t.id === state.target)?.name ?? state.target
   const note = selectionNote(draft)
@@ -59,6 +60,13 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
       clearTimeout(timer)
     }
   }, [state.source, state.target, deferredInput])
+
+  // 확인할 것은 넣은 글이므로, 미리 보기가 바뀌면 첫 형광펜 구간이 보이게 스크롤한다
+  useEffect(() => {
+    const box = previewRef.current
+    const mark = box?.querySelector('mark')
+    if (box && mark) box.scrollTop = Math.max(0, mark.offsetTop - 12)
+  }, [preview])
 
   const back = (): void => {
     window.sureMate.cancelPrompt()
@@ -162,14 +170,33 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
             <span>미리 보기</span>
             {preview && <span className="ml-auto">넣을 글 {count(preview.inputLength)}</span>}
           </div>
-          <div className="min-h-0 flex-1 overflow-auto rounded-window border border-line bg-black/20 px-3 py-2.5 text-small leading-relaxed break-all whitespace-pre-wrap text-fg-2 select-text">
-            {preview?.text}
+          <div
+            ref={previewRef}
+            className="relative min-h-0 flex-1 overflow-auto rounded-window border border-line bg-black/20 px-3 py-2.5 text-small leading-relaxed break-all whitespace-pre-wrap text-fg-3 select-text"
+          >
+            {preview &&
+              splitHighlights(preview.text, preview.highlights).map((part, i) =>
+                part.mark ? (
+                  <mark key={i} className="rounded-[2px] bg-highlight/20 text-fg [box-decoration-break:clone]">
+                    {part.text}
+                  </mark>
+                ) : (
+                  <span key={i}>{part.text}</span>
+                )
+              )}
             {preview?.truncated && <div className="mt-2 text-caption text-fg-3">… 앞 4,000자만 보여요. 복사할 때는 전체가 들어가요.</div>}
           </div>
-          {preview && preview.warnings.length > 0 && (
-            <ul className="flex flex-col gap-0.5 text-caption text-warn">
+          {preview && (preview.warnings.length > 0 || preview.notes.length > 0) && (
+            <ul className="flex flex-col gap-0.5 text-caption">
               {preview.warnings.map((w) => (
-                <li key={w}>! {w}</li>
+                <li key={w} className="text-warn">
+                  ! {w}
+                </li>
+              ))}
+              {preview.notes.map((n) => (
+                <li key={n} className="text-fg-3">
+                  {n}
+                </li>
               ))}
             </ul>
           )}

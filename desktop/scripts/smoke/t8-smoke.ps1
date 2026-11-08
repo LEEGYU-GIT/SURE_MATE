@@ -1,4 +1,4 @@
-# Task 8 smoke: palette "window" -> list (log), Esc; palette "monitor" -> move test form (log diff)
+﻿# Task 8 smoke: palette "window" -> list (log), Esc; palette "monitor" -> move test form (log diff)
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"

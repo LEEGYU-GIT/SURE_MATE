@@ -93,6 +93,20 @@ it('미리 보기는 고른 출처로 채우고, 2만 자 넘으면 경고하며
   expect(s.preview({ source: 'input', input: '직접 쓴 글', target: 'claude' }).text).toBe('정리해 주세요.\n직접 쓴 글')
 })
 
+it('미리 보기는 넣은 글 자리를 알려 주고, 잘린 미리 보기에서는 자리도 4,000자에서 자른다', async () => {
+  const f = fake()
+  const s = createPromptSession(f.deps)
+  await s.prepare('meeting-notes')
+  const p = s.preview({ source: 'selection', target: 'claude' })
+  expect(p.text.slice(p.highlights[0][0], p.highlights[0][1])).toBe(SELECTED)
+
+  const long = fake({ capture: { text: '가'.repeat(25000), method: 'ctrl-insert', elapsedMs: 50, restored: true } })
+  const s2 = createPromptSession(long.deps)
+  await s2.prepare('meeting-notes')
+  const p2 = s2.preview({ source: 'selection', target: 'claude' })
+  expect(p2.highlights).toEqual([[9, 4000]])
+})
+
 it('실행하면 전체 프롬프트를 복사하고 Claude를 연다', async () => {
   const f = fake()
   const s = createPromptSession(f.deps)

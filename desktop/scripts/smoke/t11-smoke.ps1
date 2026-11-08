@@ -1,4 +1,4 @@
-# Final-review fixes smoke (human timing): hotkey held with OS-like auto-repeat, late modifier release in a box
+﻿# Final-review fixes smoke (human timing): hotkey held with OS-like auto-repeat, late modifier release in a box
 # that ignores Ctrl+Insert, modifiers held > 0.5 s, two lookups 0.35 s apart.
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
