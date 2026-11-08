@@ -1,7 +1,7 @@
 import type { SVGProps } from 'react'
 import type { PaletteGroup } from '../../../shared/types'
 
-// Lucide 아이콘 몇 개를 옮겨 왔다(ISC, 일부는 Feather MIT). 라이선스: ./LUCIDE-LICENSE.txt
+// Lucide 아이콘 몇 개를 옮겨 왔다(ISC, 일부는 Feather MIT). 라이선스: resources/licenses/Lucide-LICENSE.txt(설치 파일에 함께 들어간다)
 // 설계 문서 §14-4: 24 격자, 선 굵기 1.8, 둥근 끝
 
 type IconProps = { size?: number; className?: string }
