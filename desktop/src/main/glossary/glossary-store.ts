@@ -26,7 +26,7 @@ async function readUserFile(path: string): Promise<ReadUser> {
   }
   try {
     // 메모장 등이 붙이는 UTF-8 BOM은 JSON.parse가 거부하므로 뗀다
-    const r = parseGlossaryPack(JSON.parse(text.replace(/^﻿/, '')), 'user')
+    const r = parseGlossaryPack(JSON.parse(text.replace(/^\uFEFF/, '')), 'user')
     const broken = r.entries.length === 0 && r.errors.length > 0
     return { entries: r.entries, errors: r.errors.map((e) => `${GLOSSARY_FILE}: ${e}`), broken }
   } catch (e) {

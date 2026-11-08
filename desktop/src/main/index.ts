@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, shell as electronShell, globalShortcut, type Tray } from 'electron'
+import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
@@ -11,6 +11,7 @@ import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } fro
 import { errorText } from './error-text'
 import { createGlossaryRuntime } from './glossary/glossary-runtime'
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
+import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -18,11 +19,12 @@ import type { MaskingCommands } from './masking/masking-commands'
 import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime'
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { createTermsCache } from './masking/terms-cache'
-import { isAcceleratorHeld } from './native/input'
+import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
-import { createPromptRuntime } from './prompts/prompt-runtime'
+import { notify } from './notify'
+import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, updateSettings, type Settings } from './settings/settings-store'
@@ -42,6 +44,7 @@ let templates: Template[] = []
 let prompts: PromptSession | null = null
 let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
+let packCommands: { run(id: string): Promise<boolean> } | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
@@ -61,6 +64,7 @@ async function runItem(id: string): Promise<void> {
   }
   if (isDevCommand(id)) return runDevCommand(id)
   if (maskingCommands && (await maskingCommands.run(id))) return
+  if (packCommands && (await packCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
   hidePalette({ restoreFocus: true })
 }
@@ -207,6 +211,53 @@ if (!app.requestSingleInstanceLock()) {
       newId: () => randomUUID(),
       now: () => new Date().toISOString(),
       log
+    })
+    // 용어 팩 내보내기·가져오기(설계 문서 §9). 대화상자는 팔레트를 숨긴 뒤 부모 창 없이 띄운다
+    packCommands = createPackCommands({
+      glossary: () => glossaryCache.get(),
+      saveUserEntries: async (list) => {
+        await saveUserEntries(userData, list)
+        glossaryCache.invalidate()
+      },
+      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+      showSaveDialog: async (name) => {
+        const r = await dialog.showSaveDialog({
+          title: '용어 팩 내보내기',
+          defaultPath: join(app.getPath('documents'), name),
+          filters: [{ name: 'Sure-Mate 용어 팩', extensions: ['json'] }]
+        })
+        return r.canceled || !r.filePath ? null : r.filePath
+      },
+      showOpenDialog: async () => {
+        const r = await dialog.showOpenDialog({ title: '용어 팩 가져오기', properties: ['openFile'], filters: [{ name: 'Sure-Mate 용어 팩', extensions: ['json'] }] })
+        return r.canceled ? null : (r.filePaths[0] ?? null)
+      },
+      writeFile: (path, text) => writeFile(path, text, 'utf8'),
+      readFile: async (path) => {
+        try {
+          if ((await stat(path)).size > PACK_MAX_BYTES) return { error: 'too-big' }
+          return { text: await readFile(path, 'utf8') }
+        } catch {
+          return { error: 'read-failed' }
+        }
+      },
+      confirm: async (detail) =>
+        (
+          await dialog.showMessageBox({
+            type: 'question',
+            title: 'Sure-Mate',
+            message: '이 용어 팩을 가져올까요?',
+            detail,
+            buttons: ['가져오기', '취소'],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true
+          })
+        ).response === 0,
+      notify,
+      log,
+      now: () => new Date()
     })
     // 사전이 깨지면 이름이 가려지지 않으므로 트레이로도 알린다(확인 화면에는 미리 보기 경고로)
     const loadDictionary = createTermsCache(userData, (errors) => reportFileErrors('가명 사전 항목', 'masking.dictionaryErrors', errors))

@@ -16,13 +16,15 @@ const t = (over: Partial<Template>): Template => ({
 const commands: PaletteItem[] = [{ id: 'dev.listWindows', group: 'command', title: '개발: 창 목록' }]
 
 const MASKING_IDS = ['cmd.unmask', 'cmd.mask-selection', 'cmd.masking-mode', 'cmd.open-dictionary']
+/** 용어 팩 명령은 가명 처리 명령 다음 */
+const PACK_IDS = ['cmd.glossary-export', 'cmd.glossary-import']
 
 it('프롬프트는 템플릿 순서대로 prompt:<id>, 부제는 설명, 키워드는 별칭과 그룹, 명령은 뒤에', () => {
   const items = buildPaletteItems([t({ id: 'b', name: '나', description: '설명', aliases: ['별칭'], group: '회의' }), t({ id: 'a', name: '가' })], commands, {
     maskingMode: 'restore',
     glossary: []
   })
-  expect(items.map((i) => i.id)).toEqual(['prompt:b', 'prompt:a', ...MASKING_IDS, 'dev.listWindows'])
+  expect(items.map((i) => i.id)).toEqual(['prompt:b', 'prompt:a', ...MASKING_IDS, ...PACK_IDS, 'dev.listWindows'])
   expect(items[0]).toMatchObject({ group: 'prompt', title: '나', subtitle: '설명', keywords: ['별칭', '회의'] })
 })
 
@@ -32,7 +34,7 @@ it('상용구 템플릿은 상용구 구역으로', () => {
 
 it('가명 처리 명령 4개를 명령 구역 맨 앞에 넣고, 모드 명령은 지금 모드와 누르면 바뀔 모드를 보여 준다', () => {
   const items = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [] })
-  expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, 'dev.listWindows'])
+  expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, ...PACK_IDS, 'dev.listWindows'])
   expect(items.every((i) => i.group === 'command')).toBe(true)
   expect(items.find((i) => i.id === 'cmd.masking-mode')?.subtitle).toBe('지금: 가명 후 되돌리기 · 누르면 결과에서 빼기')
   // 영문으로 쳐도 찾는다(스모크 시험은 영문만 칠 수 있다)

@@ -35,7 +35,7 @@ it('사용자 파일이 없으면 기본 팩만', async () => {
 })
 
 it('같은 id는 사용자 것이 이기고(자리는 기본 팩 순서), 새 id는 뒤에 붙는다. BOM이 있어도 읽는다', async () => {
-  await writeFile(join(dir, GLOSSARY_FILE), '﻿' + pack([raw({ id: 'sa', term: '정적분석(우리 팀)', version: 2 }), raw({ id: 'new', term: '새 용어' })]))
+  await writeFile(join(dir, GLOSSARY_FILE), '\uFEFF' + pack([raw({ id: 'sa', term: '정적분석(우리 팀)', version: 2 }), raw({ id: 'new', term: '새 용어' })]))
   const r = await loadGlossary(dir, builtin)
   expect(r.entries.map((e) => [e.id, e.term, e.source])).toEqual([
     ['mcdc', 'MC/DC', 'builtin'],
