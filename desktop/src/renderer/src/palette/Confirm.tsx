@@ -4,10 +4,11 @@ import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft, PromptPreview, PromptSource } from '../../../shared/ipc-channels'
 import { withObjectParticle } from '../../../shared/josa'
 import { maskingModeLabel } from '../../../shared/labels'
+import { MASKING_MODES } from '../../../shared/masking/modes'
 import type { MaskItem } from '../../../shared/masking/types'
 import type { MaskingMode } from '../../../shared/types'
 import { PromptIcon, ShieldIcon, ShieldOffIcon } from '../design/icons'
-import { confirmReducer, initialConfirmState, keyToAction, MASKING_MODES, maskingSummary, selectionNote, splitPreview, type ConfirmFocus } from './confirm-state'
+import { confirmReducer, initialConfirmState, keyToAction, maskingSummary, selectionNote, splitPreview, type ConfirmFocus } from './confirm-state'
 
 /** 실행을 300ms 안에 두 번 하지 않는다(Enter 연타) */
 const runGuard = createExecutionGuard(300)

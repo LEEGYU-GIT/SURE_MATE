@@ -10,6 +10,8 @@ import { errorText } from './error-text'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
+import type { MaskingCommands } from './masking/masking-commands'
+import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime'
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld } from './native/input'
@@ -34,6 +36,7 @@ let settings: Settings = DEFAULT_SETTINGS
 let templates: Template[] = []
 let prompts: PromptSession | null = null
 let masking: MaskingService | null = null
+let maskingCommands: MaskingCommands | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** 트레이가 생기기 전에 생긴 템플릿 읽기 오류(트레이가 생기면 알린다) */
@@ -52,6 +55,7 @@ async function runItem(id: string): Promise<void> {
     return
   }
   if (isDevCommand(id)) return runDevCommand(id)
+  if (maskingCommands && (await maskingCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
   hidePalette({ restoreFocus: true })
 }
@@ -180,6 +184,20 @@ if (!app.requestSingleInstanceLock()) {
     masking = createMaskingService({ loadTerms, settings: () => settings.masking, now: Date.now })
     const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, masking })
     prompts = session
+    maskingCommands = createMaskingCommandsRuntime({
+      userData,
+      masking,
+      getMode: () => settings.masking.mode,
+      setMode: async (mode) => {
+        settings = { ...settings, masking: { ...settings.masking, mode } }
+        shell?.refresh()
+        try {
+          await saveSettings(userData, settings)
+        } catch (e) {
+          log('settings.saveError', { error: errorText(e) })
+        }
+      }
+    })
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
@@ -187,7 +205,7 @@ if (!app.requestSingleInstanceLock()) {
       runItem,
       listItems: async () => {
         templates = await templateCache.get()
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS)
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {

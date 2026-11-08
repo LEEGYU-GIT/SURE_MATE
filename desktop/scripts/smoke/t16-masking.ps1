@@ -1,4 +1,5 @@
 ﻿# M3 가명 처리: §8 예시 글 선택 → 팔레트 "/" → 회의록 정리 → 확인 화면(되돌리기·빼기·끔 캡처, 항목 끄기) → 복사만 → 클립보드에 가명.
+# 이어서 AI 답 흉내 글을 클립보드에 넣고 팔레트 "가명 되돌리기" → 이름과 조사가 돌아오는지.
 # 가상 예시 사전과 "복사만" 대상이 필요하므로 t16-run.ps1로 돌린다.
 param([string]$Combo = 'Alt+`')
 $ErrorActionPreference = 'Stop'
@@ -47,6 +48,19 @@ $r.clipboard_length = $clip.Length
 $r.log_has_no_names = -not ("$($r.prepare)$($r.run)" -match '가상자동차|XY방산|10\.0\.3\.15|fs01')
 $r.textbox_unchanged = ($tb.Text -eq $selected)
 $r.foreground_after_run = (Fg).Title
+
+# 되돌리기: AI 답을 복사했다고 치고 팔레트에서 "가명 되돌리기"(영문 키워드 unmask로 찾는다)
+[System.Windows.Forms.Clipboard]::SetText('CLIENT_A와 CLIENT_B는 IP_1을 씁니다')
+$form.Activate(); $tb.Focus(); Pump 300
+Combo $Combo; Pump 900
+TypeAscii 'unmask'; Pump 700
+if ((IsApp)) { Shot 'm3-unmask-search' }
+Tap $VK['enter']; Pump 1500
+$r.unmask_log = NewLogs 'masking.unmask' | Select-Object -Last 1
+$restored = [System.Windows.Forms.Clipboard]::GetText()
+$r.unmask_result = ($restored -eq '가상자동차와 XY방산은 10.0.3.15를 씁니다')
+$r.unmask_log_has_no_names = -not ("$($r.unmask_log)" -match '가상자동차|XY방산|10\.0\.3\.15|CLIENT_')
+$r.foreground_after_unmask = (Fg).Title
 
 $form.Close()
 $r.GetEnumerator() | ForEach-Object { "{0} = {1}" -f $_.Key, $_.Value }

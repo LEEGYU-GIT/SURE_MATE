@@ -1,12 +1,10 @@
 import type { PromptDraft, PromptSource } from '../../../shared/ipc-channels'
-import { MASK_CATEGORY_LABELS } from '../../../shared/labels'
+import { CAPTURE_NOTES, MASK_CATEGORY_LABELS } from '../../../shared/labels'
+import { MASKING_MODES } from '../../../shared/masking/modes'
 import { ALL_CATEGORIES, type MaskItem } from '../../../shared/masking/types'
 import type { MaskingMode } from '../../../shared/types'
 
 export type ConfirmFocus = 'source' | 'masking' | 'items' | 'target' | 'input'
-
-/** Alt+M·←/→로 도는 가명 처리 모드 순서(끔 → 되돌리기 → 빼기) */
-export const MASKING_MODES: MaskingMode[] = ['off', 'restore', 'remove']
 
 export interface ConfirmState {
   source: PromptSource
@@ -89,7 +87,7 @@ function focusOrder(s: ConfirmState): ConfirmFocus[] {
 /** 끔으로 바꾸거나 항목이 사라져 초점이 갈 수 없는 곳에 남으면 가명 처리 칩으로 옮긴다 */
 const settleFocus = (s: ConfirmState): ConfirmState => (focusOrder(s).includes(s.focus) ? s : { ...s, focus: 'masking' })
 
-const step = <T,>(list: T[], current: T, delta: number): T => {
+const step = <T,>(list: readonly T[], current: T, delta: number): T => {
   const i = list.indexOf(current)
   return list[(((i < 0 ? 0 : i) + delta) % list.length + list.length) % list.length]
 }
@@ -203,18 +201,5 @@ export function maskingSummary(items: MaskItem[]): string | null {
   return parts.length ? parts.join(' · ') : null
 }
 
-const SELECTION_NOTES: Record<NonNullable<PromptDraft['selection']['skipped']>, string> = {
-  terminal: '터미널에서는 가져오지 않아요',
-  elevated: '관리자 권한 창이라 가져오지 못했어요',
-  'no-foreground': '가져올 창이 없어요',
-  'modifiers-held': '단축키를 누른 채라 가져오지 않았어요',
-  busy: '다른 가져오기가 진행 중이었어요',
-  'native-unavailable': '보안 프로그램이 막아 가져오지 못했어요',
-  'keys-held': '키를 누르고 있어 가져오지 않았어요',
-  'focus-changed': '가져오는 동안 다른 창으로 바뀌어 멈췄어요',
-  'nothing-selected': '선택한 글이 없어요'
-}
-
 /** 선택 글을 못 가져온 이유. 가져왔으면 null */
-export const selectionNote = (draft: PromptDraft): string | null =>
-  draft.selection.skipped ? SELECTION_NOTES[draft.selection.skipped] : null
+export const selectionNote = (draft: PromptDraft): string | null => (draft.selection.skipped ? CAPTURE_NOTES[draft.selection.skipped] : null)

@@ -1,5 +1,18 @@
 import type { MaskCategory } from './masking/types'
-import type { MaskingMode } from './types'
+import type { CaptureSkipReason, MaskingMode } from './types'
+
+/** 선택한 글을 가져오지 못한 까닭(확인 화면 안내·명령 알림) */
+export const CAPTURE_NOTES: Record<CaptureSkipReason | 'nothing-selected', string> = {
+  terminal: '터미널에서는 가져오지 않아요',
+  elevated: '관리자 권한 창이라 가져오지 못했어요',
+  'no-foreground': '가져올 창이 없어요',
+  'modifiers-held': '단축키를 누른 채라 가져오지 않았어요',
+  busy: '다른 가져오기가 진행 중이었어요',
+  'native-unavailable': '보안 프로그램이 막아 가져오지 못했어요',
+  'keys-held': '키를 누르고 있어 가져오지 않았어요',
+  'focus-changed': '가져오는 동안 다른 창으로 바뀌어 멈췄어요',
+  'nothing-selected': '선택한 글이 없어요'
+}
 
 const MASKING_LABELS: Record<MaskingMode, string> = {
   off: '끔',

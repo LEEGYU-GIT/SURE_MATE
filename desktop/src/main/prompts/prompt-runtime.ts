@@ -1,4 +1,4 @@
-import { clipboard, Notification, shell } from 'electron'
+import { clipboard, shell } from 'electron'
 import { allAiTargets, isOpenableUrl } from '../../shared/ai-targets'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
@@ -6,6 +6,7 @@ import { log } from '../log'
 import type { MaskingService } from '../masking/masking-service'
 import { waitPickKeysReleased } from '../native/input'
 import { captureSelection, writeClipboardText } from '../native/selection'
+import { notify } from '../notify'
 import type { Settings } from '../settings/settings-store'
 import { hidePalette, hidePaletteAndRefocus, showPalette } from '../windows/palette-window'
 import { createPromptSession, type PromptSession } from './prompt-session'
@@ -58,9 +59,7 @@ export function createPromptRuntime(o: {
       hidePalette({ restoreFocus: false })
       await shell.openExternal(url)
     },
-    notify: (message) => {
-      if (Notification.isSupported()) new Notification({ title: 'Sure-Mate', body: message, silent: true }).show()
-    },
+    notify,
     log,
     targets: () => {
       const s = o.getSettings()
