@@ -38,6 +38,8 @@ export interface PaletteItem {
   title: string
   subtitle?: string
   keywords?: string[]
+  /** 검색 마지막 단계에서만 보는 본문(위키 설명 등) */
+  body?: string
 }
 
 export type MaskingMode = 'off' | 'restore' | 'remove'

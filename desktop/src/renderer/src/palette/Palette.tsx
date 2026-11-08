@@ -4,12 +4,12 @@ import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft } from '../../../shared/ipc-channels'
 import { PALETTE_GROUPS } from '../../../shared/palette-query'
-import type { PaletteItem } from '../../../shared/types'
+import type { PaletteGroup, PaletteItem } from '../../../shared/types'
 import { GroupIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
 import { isRepeatedEnter } from './confirm-state'
 import { DevOutput } from './DevOutput'
-import { filterItems } from './filter-items'
+import { buildPaletteIndex, filterItems, groupItems } from './filter-items'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 
@@ -22,6 +22,8 @@ const PREFIX_HINTS = [
   ['>', '명령']
 ] as const
 
+const GROUP_LABELS = Object.fromEntries(PALETTE_GROUPS.map((g) => [g.id, g.label])) as Record<PaletteGroup, string>
+
 export function Palette(): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [allItems, setAllItems] = useState<PaletteItem[]>([])
@@ -31,7 +33,9 @@ export function Palette(): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null)
   // 입력값은 그대로 두고, 목록만 지연 값으로 그린다(조합 중 입력이 끊기지 않게)
   const deferredQuery = useDeferredValue(query)
-  const items = useMemo(() => filterItems(allItems, deferredQuery), [allItems, deferredQuery])
+  // 검색 키(초성·자모·자판)는 항목이 바뀔 때만 다시 계산한다
+  const index = useMemo(() => buildPaletteIndex(allItems), [allItems])
+  const items = useMemo(() => filterItems(allItems, deferredQuery, index), [allItems, deferredQuery, index])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
 
@@ -110,7 +114,7 @@ export function Palette(): React.JSX.Element {
           // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 항목을 실행한다
           if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || query === deferredQuery) return
           e.preventDefault()
-          const top = filterItems(allItems, query)[0]
+          const top = filterItems(allItems, query, index)[0]
           if (top) run(top.id)
         }}
       >
@@ -136,12 +140,11 @@ export function Palette(): React.JSX.Element {
         </div>
         <Command.List className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <Command.Empty className="px-3 py-10 text-center text-small text-fg-3">찾는 항목이 없어요. / ? &gt; 로 범위를 좁혀 보세요.</Command.Empty>
-          {PALETTE_GROUPS.map((group) => {
-            const groupItems = items.filter((item) => item.group === group.id)
-            if (groupItems.length === 0) return null
+          {/* 구역 순서는 점수 순: 맨 위 후보가 든 구역이 맨 위 */}
+          {groupItems(items).map(({ group, items: groupList }) => {
             return (
-              <Command.Group key={group.id} heading={group.label}>
-                {groupItems.map((item) => (
+              <Command.Group key={group} heading={GROUP_LABELS[group]}>
+                {groupList.map((item) => (
                   <Command.Item
                     key={item.id}
                     value={item.id}
