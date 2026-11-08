@@ -1,4 +1,39 @@
-import type { MaskingMode, PaletteItem } from './types'
+import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
+
+/** 프롬프트에 넣을 글의 출처 */
+export type PromptSource = 'selection' | 'clipboard' | 'input'
+
+/** 확인 화면에 보낼 값. 선택한 글은 길이만 보내고 내용은 main에 둔다. */
+export interface PromptDraft {
+  templateId: string
+  name: string
+  group?: string
+  selection: { length: number; skipped?: CaptureSkipReason | 'nothing-selected' }
+  clipboardLength: number
+  defaultSource: PromptSource
+  targets: { id: string; name: string }[]
+  target: string
+}
+
+export interface PromptRequest {
+  source: PromptSource
+  /** source가 input일 때 직접 입력한 글 */
+  input?: string
+  target: string
+}
+
+export interface PromptPreview {
+  text: string
+  /** 미리 보기를 앞부분만 잘랐는지 */
+  truncated: boolean
+  inputLength: number
+  warnings: string[]
+}
+
+export interface PromptRunResult {
+  ok: boolean
+  message: string
+}
 
 /** main ↔ renderer 채널 이름 */
 export const IPC = {
