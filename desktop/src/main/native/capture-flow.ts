@@ -106,6 +106,7 @@ export async function runCapture(d: CaptureDeps, t: CaptureTiming = CAPTURE_TIMI
   let method: CaptureResult['method'] = 'ctrl-insert'
   d.sendChord(['CONTROL', 'INSERT'])
   let changed = await waitSequenceChange(d, before, t.insertMs, t.pollMs)
+  if (!changed && decision.insertOnly) return { result: none(), settled: watchLateCopy() }
   if (!changed) {
     if (!stillThere()) return { result: none({ skipped: 'focus-changed' }), settled: watchLateCopy() }
     method = 'ctrl-c'

@@ -29,6 +29,34 @@ it('터미널은 창 클래스로 판단하고, 셸이 띄운 GUI 창은 가져�
   expect(captureDecision(w('mintty.exe', 'mintty'))).toEqual({ action: 'skip', reason: 'terminal' })
 })
 
+it('사내에서 흔한 SSH·터미널 프로그램도 터미널로 보고 가져오지 않는다', () => {
+  const w = (exe: string): WindowInfo => ({ exe, className: 'SomeWindowClass', elevated: false }) as WindowInfo
+  for (const e of [
+    'MobaXterm.exe',
+    'MobaXterm_Personal_24.2.exe',
+    'SecureCRT.exe',
+    'Xshell.exe',
+    'ConEmu64.exe',
+    'ConEmu.exe',
+    'alacritty.exe',
+    'wezterm-gui.exe',
+    'Tabby.exe',
+    'Hyper.exe',
+    'mRemoteNG.exe',
+    'kitty.exe',
+    'Termius.exe'
+  ])
+    expect(captureDecision(w(e)), e).toEqual({ action: 'skip', reason: 'terminal' })
+})
+
+it('통합 터미널이 있는 편집기(VS Code·JetBrains·Visual Studio)에서는 Ctrl+Insert로만 가져온다', () => {
+  const w = (exe: string): WindowInfo => ({ exe, className: 'Chrome_WidgetWin_1', elevated: false }) as WindowInfo
+  for (const e of ['C:\\Program Files\\Microsoft VS Code\\Code.exe', 'Code - Insiders.exe', 'Cursor.exe', 'idea64.exe', 'pycharm64.exe', 'clion64.exe', 'rider64.exe', 'studio64.exe', 'devenv.exe'])
+    expect(captureDecision(w(e)), e).toEqual({ action: 'capture', insertOnly: true })
+  expect(captureDecision(w('notepad.exe'))).toEqual({ action: 'capture' })
+  expect(captureDecision(w('chrome.exe'))).toEqual({ action: 'capture' })
+})
+
 it('붙여넣기 대상 판단', () => {
   expect(pasteDecision({ exists: false, elevated: null })).toEqual({ action: 'copy-only', reason: 'target-gone' })
   expect(pasteDecision({ exists: true, elevated: true })).toEqual({ action: 'copy-only', reason: 'elevated' })

@@ -15,6 +15,7 @@ class FakeDesktop implements CaptureDeps {
   copyDelay: Record<'INSERT' | 'C', number | null> = { INSERT: 20, C: 20 }
   selection: string | null = '선택한 글'
   windowElevated: boolean | null = false
+  exe = 'notepad.exe'
   /** 지금 앞에 있는 창. 시각(ms)을 넘기면 그때부터 다른 창이 앞에 온다 */
   foreground = '0x100'
   switchAt: number | null = null
@@ -39,7 +40,7 @@ class FakeDesktop implements CaptureDeps {
     this.advance(ms)
   }
   target = (): WindowInfo | null =>
-    ({ hwnd: this.switchAt !== null && this.t >= this.switchAt ? '0x200' : this.foreground, exe: 'notepad.exe', className: 'Notepad', elevated: this.windowElevated }) as WindowInfo
+    ({ hwnd: this.switchAt !== null && this.t >= this.switchAt ? '0x200' : this.foreground, exe: this.exe, className: 'Notepad', elevated: this.windowElevated }) as WindowInfo
   selfElevated = (): boolean | null => false
   waitModifiersReleased = async (timeoutMs: number): Promise<boolean> => {
     const wait = Math.max(0, this.modifiersUpAt - this.t)
@@ -112,6 +113,17 @@ it('Ctrl+Insert 뒤 다른 창이 앞에 오면 그 창에 Ctrl+C를 보내지 �
   await settled
   expect(d.sent).toEqual(['CONTROL+INSERT'])
   expect(result).toMatchObject({ text: null, method: 'none', skipped: 'focus-changed' })
+  expect(d.clip).toBe('원래 클립보드')
+})
+
+it('통합 터미널이 있는 편집기(VS Code)에서는 Ctrl+Insert가 안 먹어도 Ctrl+C를 보내지 않는다', async () => {
+  const d = new FakeDesktop()
+  d.exe = 'Code.exe'
+  d.copyDelay = { INSERT: null, C: 20 }
+  const { result, settled } = await runCapture(d)
+  await settled
+  expect(d.sent).toEqual(['CONTROL+INSERT'])
+  expect(result).toMatchObject({ text: null, method: 'none' })
   expect(d.clip).toBe('원래 클립보드')
 })
 

@@ -1,6 +1,6 @@
 import type { WindowInfo } from '../../shared/types'
 
-/** Ctrl+C가 "실행 중단"이 되는 터미널·콘솔 */
+/** Ctrl+C가 "실행 중단"이 되는 터미널·콘솔·SSH 프로그램 */
 const TERMINAL_EXES = new Set([
   'windowsterminal.exe',
   'cmd.exe',
@@ -10,13 +10,40 @@ const TERMINAL_EXES = new Set([
   'openconsole.exe',
   'mintty.exe',
   'putty.exe',
-  'wsl.exe'
+  'kitty.exe',
+  'wsl.exe',
+  'securecrt.exe',
+  'xshell.exe',
+  'conemu.exe',
+  'conemu64.exe',
+  'alacritty.exe',
+  'wezterm-gui.exe',
+  'tabby.exe',
+  'hyper.exe',
+  'mremoteng.exe',
+  'termius.exe'
 ])
+/** 휴대용 판은 이름 뒤에 판 번호가 붙는다(MobaXterm_Personal_24.2.exe) */
+const TERMINAL_EXE_PREFIXES = ['mobaxterm']
 
 const exeName = (exe: string): string => (exe.split(/[\\/]/).pop() ?? '').toLowerCase()
 
 export function isTerminalExe(exe: string): boolean {
-  return TERMINAL_EXES.has(exeName(exe))
+  const name = exeName(exe)
+  return TERMINAL_EXES.has(name) || TERMINAL_EXE_PREFIXES.some((p) => name.startsWith(p))
+}
+
+/**
+ * 통합 터미널이 있는 편집기. 창 안에서 편집기와 터미널을 구별할 수 없는데, 터미널에서는 선택이 없을 때
+ * Ctrl+C가 실행 중단이 되므로 Ctrl+Insert(편집기·터미널 모두 복사, 선택이 없으면 아무 일 없음)만 보낸다.
+ */
+const INSERT_ONLY_EXES = new Set(['code.exe', 'code - insiders.exe', 'cursor.exe', 'windsurf.exe', 'devenv.exe'])
+/** JetBrains IDE와 Android Studio(idea64.exe, pycharm64.exe …) */
+const JETBRAINS_EXE = /^(idea|pycharm|webstorm|clion|goland|rider|phpstorm|datagrip|rubymine|dataspell|rustrover|aqua|studio)(64)?\.exe$/
+
+export function isInsertOnlyExe(exe: string): boolean {
+  const name = exeName(exe)
+  return INSERT_ONLY_EXES.has(name) || JETBRAINS_EXE.test(name)
 }
 
 /** 콘솔·터미널 창 클래스(클래식 콘솔, Windows Terminal, mintty, PuTTY) */
@@ -39,13 +66,14 @@ export const shouldRestoreClipboard = (seqAfterOurCopy: number, seqNow: number):
 const blockedByUipi = (targetElevated: boolean | null, selfElevated: boolean | null): boolean =>
   targetElevated === true && selfElevated !== true
 
-export type CaptureDecision = { action: 'capture' } | { action: 'skip'; reason: 'terminal' | 'elevated' | 'no-foreground' }
+/** insertOnly면 Ctrl+C로 넘어가지 않는다(통합 터미널이 있는 편집기) */
+export type CaptureDecision = { action: 'capture'; insertOnly?: true } | { action: 'skip'; reason: 'terminal' | 'elevated' | 'no-foreground' }
 
 export function captureDecision(target: WindowInfo | null, selfElevated: boolean | null = null): CaptureDecision {
   if (!target) return { action: 'skip', reason: 'no-foreground' }
   if (isTerminalWindow(target)) return { action: 'skip', reason: 'terminal' }
   if (blockedByUipi(target.elevated, selfElevated)) return { action: 'skip', reason: 'elevated' }
-  return { action: 'capture' }
+  return isInsertOnlyExe(target.exe) ? { action: 'capture', insertOnly: true } : { action: 'capture' }
 }
 
 export type PasteDecision = { action: 'paste' } | { action: 'copy-only'; reason: 'target-gone' | 'elevated' }
