@@ -6,6 +6,7 @@ import { app, dialog, shell as electronShell, globalShortcut, type Tray } from '
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
+import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
@@ -45,6 +46,8 @@ let prompts: PromptSession | null = null
 let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
 let packCommands: { run(id: string): Promise<boolean> } | null = null
+/** 지금 용어 목록. 팔레트를 열 때(목록 요청)마다 새로 읽은 것으로 바꾼다({{terms}}는 이것을 쓴다) */
+let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
@@ -262,7 +265,8 @@ if (!app.requestSingleInstanceLock()) {
     // 사전이 깨지면 이름이 가려지지 않으므로 트레이로도 알린다(확인 화면에는 미리 보기 경고로)
     const loadDictionary = createTermsCache(userData, (errors) => reportFileErrors('가명 사전 항목', 'masking.dictionaryErrors', errors))
     masking = createMaskingService({ loadDictionary, settings: () => settings.masking, now: Date.now })
-    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, masking })
+    glossaryEntries = (await glossaryCache.get()).entries
+    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, getGlossary: () => glossaryEntries, masking })
     prompts = session
     maskingCommands = createMaskingCommandsRuntime({
       userData,
@@ -289,6 +293,7 @@ if (!app.requestSingleInstanceLock()) {
       listItems: async () => {
         templates = await templateCache.get()
         const glossary = (await glossaryCache.get()).entries
+        glossaryEntries = glossary
         return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
       },
       previewPrompt: (req) => session.preview(req),

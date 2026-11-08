@@ -1,5 +1,7 @@
 import { clipboard, shell } from 'electron'
 import { allAiTargets, isOpenableUrl } from '../../shared/ai-targets'
+import { termsFor } from '../../shared/glossary/find-terms'
+import type { GlossaryEntry } from '../../shared/glossary/types'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import { errorText } from '../error-text'
@@ -23,6 +25,8 @@ export function createPromptRuntime(o: {
   userData: string
   getSettings: () => Settings
   getTemplates: () => Template[]
+  /** 지금 용어 목록({{terms}}용, 팔레트를 열 때마다 새로 읽은 것) */
+  getGlossary: () => GlossaryEntry[]
   masking: MaskingService
 }): PromptSession {
   return createPromptSession({
@@ -38,7 +42,8 @@ export function createPromptRuntime(o: {
         input,
         clipboard: clip,
         now: new Date(),
-        terms: () => [], // M4 용어 사전 전까지 빈 목록
+        // 입력 글에 나온 용어의 설명을 붙인다(설계 문서 §7). 채운 뒤 가명 처리하므로 설명 속 이름도 가려진다
+        terms: (text) => termsFor(text, o.getGlossary()),
         reference: (kind) => {
           const text = readReference(o.userData, kind)
           if (text && text.length > REFERENCE_WARN_CHARS) longKinds.push(kind)

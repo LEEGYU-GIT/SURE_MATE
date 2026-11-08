@@ -1,4 +1,4 @@
-import { foldForMatch, isAsciiAlnum, isHangulSyllable } from '../text/normalize'
+import { findNames } from '../text/find-names'
 import { ENTITY_CATEGORIES, type Detection, type EntityCategory } from './types'
 
 /** 가명 사전 항목(설계 문서 §8). 사전 파일은 로컬 전용 */
@@ -41,54 +41,13 @@ export function parseMaskDictionary(raw: unknown): { terms: MaskTerm[]; errors: 
   return { terms, errors }
 }
 
-interface Candidate {
-  folded: string
-  term: MaskTerm
-}
-
 /**
- * 사전 이름(정식 이름과 별칭)을 글에서 찾는다(설계 문서 §8 찾기 규칙). 글은 NFC로 맞춰 둔 상태여야 한다.
- * 왼쪽부터 가장 긴 것, 겹치지 않게. 한글로 시작하면 한글 구간의 맨 앞에서만, 영문·숫자로 시작하거나 끝나면 그쪽 이웃이 영문·숫자가 아닐 때만.
- * 한글로 끝나는 이름 뒤에는 조사가 붙어도 된다. exactOnly면 뒤에 글자·숫자·한글이 오면 안 된다.
+ * 사전 이름(정식 이름과 별칭)을 글에서 찾는다(설계 문서 §8 찾기 규칙, 규칙은 shared/text/find-names). 글은 NFC로 맞춰 둔 상태여야 한다.
  */
 export function findTerms(text: string, terms: MaskTerm[]): Detection[] {
-  const byFirst = new Map<string, Candidate[]>()
-  for (const term of terms) {
-    for (const name of new Set([term.canonical, ...term.aliases])) {
-      const folded = foldForMatch(name.normalize('NFC'))
-      if (!folded) continue
-      const list = byFirst.get(folded[0]) ?? []
-      list.push({ folded, term })
-      byFirst.set(folded[0], list)
-    }
-  }
-  for (const list of byFirst.values()) list.sort((a, b) => b.folded.length - a.folded.length)
-
-  const folded = foldForMatch(text)
-  const out: Detection[] = []
-  let i = 0
-  while (i < folded.length) {
-    const hit = (byFirst.get(folded[i]) ?? []).find((c) => matchesAt(folded, i, c))
-    if (!hit) {
-      i++
-      continue
-    }
-    const end = i + hit.folded.length
-    out.push({ start: i, end, category: hit.term.category, original: text.slice(i, end), key: `${hit.term.category}:${hit.term.id}` })
-    i = end
-  }
-  return out
-}
-
-function matchesAt(folded: string, i: number, c: Candidate): boolean {
-  if (!folded.startsWith(c.folded, i)) return false
-  const first = c.folded[0]
-  const last = c.folded[c.folded.length - 1]
-  const prev = folded[i - 1] ?? ''
-  const next = folded[i + c.folded.length] ?? ''
-  if (isHangulSyllable(first) && isHangulSyllable(prev)) return false
-  if (isAsciiAlnum(first) && isAsciiAlnum(prev)) return false
-  if (isAsciiAlnum(last) && isAsciiAlnum(next)) return false
-  if (c.term.exactOnly && (isAsciiAlnum(next) || isHangulSyllable(next))) return false
-  return true
+  const byKey = new Map(terms.map((t) => [`${t.category}:${t.id}`, t]))
+  return findNames(
+    text,
+    terms.map((t) => ({ key: `${t.category}:${t.id}`, names: [t.canonical, ...t.aliases], ...(t.exactOnly ? { exactOnly: true } : {}) }))
+  ).map((h) => ({ start: h.start, end: h.end, category: byKey.get(h.key)!.category, original: h.original, key: h.key }))
 }
