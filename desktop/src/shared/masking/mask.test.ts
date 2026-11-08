@@ -16,6 +16,11 @@ const detect = (text: string): ReturnType<typeof findTerms> => [...findTerms(tex
 const table = (): MappingTable => new MappingTable({ now: () => 0, ttlMs: 8 * 3600_000 })
 const restore = (over: Partial<MaskOptions> = {}): MaskOptions => ({ mode: 'restore', categories: allOn, disabledKeys: [], ...over })
 
+it('원문에 대소문자만 다른 토큰 모양(client_a)이 있으면 새 토큰은 그다음 글자부터', () => {
+  const text = 'client_a 변수는 가상자동차 담당'
+  expect(maskText(text, detect(text), restore(), table()).text).toBe('client_a 변수는 CLIENT_B 담당')
+})
+
 it('가명 후 되돌리기: 이름·IP·경로를 토큰으로', () => {
   expect(maskText(SAMPLE, detect(SAMPLE), restore(), table()).text).toBe('CLIENT_A에서 받은 SRS를 CLIENT_B는 IP_1의 PATH_1 폴더에 올림')
 })

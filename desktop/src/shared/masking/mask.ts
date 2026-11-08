@@ -1,6 +1,7 @@
 import { resolveOverlaps } from './detections'
 import { letterSuffix, type MappingTable } from './mapping-table'
 import type { Detection, MaskCategory } from './types'
+import { tokensIn } from './unmask'
 
 export interface MaskOptions {
   mode: 'restore' | 'remove'
@@ -53,7 +54,9 @@ export function maskText(
   const disabled = new Set(o.disabledKeys)
   // 끄기(분류·항목)는 겹침 정리보다 먼저: 끈 경로·이메일 안에 든 이름·IP는 그대로 가려야 한다
   const active = resolveOverlaps(ds.filter((d) => o.categories[d.category] && !disabled.has(d.key)))
-  const isTaken = (token: string): boolean => text.includes(token)
+  // 원문에 이미 있는 토큰 모양(대소문자·구분자가 달라도)은 쓰지 않는다. 되돌릴 때 그 글까지 이름으로 바뀌지 않게
+  const taken = tokensIn(text)
+  const isTaken = (token: string): boolean => taken.has(token) || text.includes(token)
   const removeLabels = new Map<string, string>()
   const removeCounts = new Map<MaskCategory, number>()
 
