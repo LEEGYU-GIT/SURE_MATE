@@ -4,6 +4,7 @@ import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import { log } from '../log'
 import type { MaskingService } from '../masking/masking-service'
+import { waitPickKeysReleased } from '../native/input'
 import { captureSelection, writeClipboardText } from '../native/selection'
 import type { Settings } from '../settings/settings-store'
 import { hidePalette, hidePaletteAndRefocus, showPalette } from '../windows/palette-window'
@@ -12,6 +13,8 @@ import { readReference } from './references'
 
 /** 넘으면 경고하는 기준 예시 길이(설계 문서 §7: 4,000자 이하 권장) */
 export const REFERENCE_WARN_CHARS = 4000
+/** 프롬프트를 고른 Enter를 떼길 기다리는 시간. Windows 자동 반복은 기본 0.5초 뒤 시작한다 */
+export const PICK_KEYS_WAIT_MS = 600
 
 /** 프롬프트 세션에 실제 Electron·Win32 기능을 연결한다 */
 export function createPromptRuntime(o: {
@@ -22,6 +25,7 @@ export function createPromptRuntime(o: {
 }): PromptSession {
   return createPromptSession({
     findTemplate: (id) => o.getTemplates().find((t) => t.id === id) ?? null,
+    waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
     hidePaletteAndRefocus,
     capture: captureSelection,
     readClipboard: () => clipboard.readText(),

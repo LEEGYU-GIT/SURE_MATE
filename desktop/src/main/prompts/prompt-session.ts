@@ -25,6 +25,8 @@ export interface PromptMaskResult {
 
 export interface PromptSessionDeps {
   findTemplate(id: string): Template | null
+  /** 프롬프트를 고른 Enter·보조키가 떼어질 때까지 기다린다. 시간 안에 안 떼면 false */
+  waitKeysReleased(): Promise<boolean>
   /** 팔레트를 숨기고 직전 창을 앞으로. 직전 창이 없거나 못 가져오면 false */
   hidePaletteAndRefocus(): Promise<boolean>
   capture(): Promise<CaptureResult>
@@ -89,7 +91,10 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       }
       let selection = ''
       let skipped: PromptDraft['selection']['skipped']
-      if (!(await d.hidePaletteAndRefocus())) {
+      // 키를 누른 채로 팔레트를 숨기면 자동 반복된 Enter가 원래 앱에 들어가 선택한 글을 지운다
+      if (!(await d.waitKeysReleased())) {
+        skipped = 'keys-held'
+      } else if (!(await d.hidePaletteAndRefocus())) {
         skipped = 'no-foreground'
       } else {
         const result = await d.capture()

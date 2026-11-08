@@ -33,6 +33,8 @@ export interface KeyInfo {
   altKey: boolean
   /** isImeComposing(e.nativeEvent) 결과 */
   isComposing: boolean
+  /** 누르고 있어 자동 반복된 keydown(KeyboardEvent.repeat) */
+  repeat: boolean
 }
 
 export function initialConfirmState(draft: PromptDraft): ConfirmState {
@@ -89,7 +91,10 @@ export function confirmReducer(s: ConfirmState, a: ConfirmAction): ConfirmState 
   }
 }
 
-const isEnter = (k: KeyInfo): boolean => k.code === 'Enter' || k.code === 'NumpadEnter' || (!k.code && k.key === 'Enter')
+const isEnter = (k: Pick<KeyInfo, 'code' | 'key'>): boolean => k.code === 'Enter' || k.code === 'NumpadEnter' || (!k.code && k.key === 'Enter')
+
+/** 누르고 있어 자동 반복된 Enter. 목록·확인 화면 모두 이것으로는 실행하지 않는다(프롬프트를 고른 Enter가 이어져 실행되지 않게) */
+export const isRepeatedEnter = (k: Pick<KeyInfo, 'code' | 'key' | 'repeat'>): boolean => k.repeat && isEnter(k)
 
 /**
  * 확인 화면의 키를 동작으로 바꾼다. 한글 조합 중이면 아무것도 하지 않는다(설계 문서 §6).
@@ -98,7 +103,7 @@ const isEnter = (k: KeyInfo): boolean => k.code === 'Enter' || k.code === 'Numpa
 export function keyToAction(k: KeyInfo, s: ConfirmState): ConfirmAction | null {
   if (k.isComposing) return null
   if (k.code === 'Escape' || k.key === 'Escape') return { type: 'back' }
-  if (isEnter(k)) return k.ctrlKey || s.focus !== 'input' ? { type: 'run' } : null
+  if (isEnter(k)) return !k.repeat && (k.ctrlKey || s.focus !== 'input') ? { type: 'run' } : null
   if (k.code === 'Tab') return { type: k.shiftKey ? 'focus-prev' : 'focus-next' }
   if (s.focus === 'input') return null
   if (k.code === 'ArrowRight' || k.code === 'ArrowDown') return { type: 'next-value' }
@@ -127,6 +132,8 @@ const SELECTION_NOTES: Record<NonNullable<PromptDraft['selection']['skipped']>, 
   'modifiers-held': '단축키를 누른 채라 가져오지 않았어요',
   busy: '다른 가져오기가 진행 중이었어요',
   'native-unavailable': '보안 프로그램이 막아 가져오지 못했어요',
+  'keys-held': '키를 누르고 있어 가져오지 않았어요',
+  'focus-changed': '가져오는 동안 다른 창으로 바뀌어 멈췄어요',
   'nothing-selected': '선택한 글이 없어요'
 }
 

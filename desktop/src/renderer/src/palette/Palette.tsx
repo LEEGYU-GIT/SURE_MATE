@@ -7,6 +7,7 @@ import { PALETTE_GROUPS } from '../../../shared/palette-query'
 import type { PaletteItem } from '../../../shared/types'
 import { GroupIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
+import { isRepeatedEnter } from './confirm-state'
 import { DevOutput } from './DevOutput'
 import { filterItems } from './filter-items'
 import { nextSelection } from './selection'
@@ -101,6 +102,11 @@ export function Palette(): React.JSX.Element {
         label="Sure-Mate"
         className="flex min-h-0 flex-1 flex-col"
         onKeyDown={(e) => {
+          // 누르고 있어 자동 반복된 Enter로 같은 항목을 또 고르지 않는다(cmdk는 preventDefault면 건너뛴다)
+          if (isRepeatedEnter(e)) {
+            e.preventDefault()
+            return
+          }
           // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 항목을 실행한다
           if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || query === deferredQuery) return
           e.preventDefault()

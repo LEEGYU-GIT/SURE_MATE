@@ -75,8 +75,13 @@ export async function runCapture(d: CaptureDeps, t: CaptureTiming = CAPTURE_TIMI
   })
   const nothingPending = Promise.resolve()
 
-  const decision = captureDecision(d.target(), d.selfElevated())
-  if (decision.action === 'skip') return { result: none({ skipped: decision.reason }), settled: nothingPending }
+  const first = d.target()
+  const decision = captureDecision(first, d.selfElevated())
+  if (decision.action === 'skip' || !first) {
+    return { result: none({ skipped: decision.action === 'skip' ? decision.reason : 'no-foreground' }), settled: nothingPending }
+  }
+  /** 처음 본 창이 아직 앞에 있는지. 그사이 앞에 온 다른 창(터미널이면 Ctrl+C가 실행 중단)에 키를 보내지 않게 키마다 본다 */
+  const stillThere = (): boolean => d.target()?.hwnd === first.hwnd
 
   // 보조키를 누른 채로 보내면 Ctrl+Alt+C(워드에서는 ©)처럼 섞이므로 아예 보내지 않는다
   if (!(await d.waitModifiersReleased(t.modifiersMs))) {
@@ -85,28 +90,29 @@ export async function runCapture(d: CaptureDeps, t: CaptureTiming = CAPTURE_TIMI
 
   const backup = await d.snapshot()
   const before = d.sequence()
+  if (!stillThere()) return { result: none({ skipped: 'focus-changed' }), settled: nothingPending }
+
+  // 앱이 늦게 복사를 끝내면 사용자 클립보드가 선택 글로 덮이므로, 조금 더 지켜보다 되돌린다
+  const watchLateCopy = async (): Promise<void> => {
+    try {
+      if (!(await waitSequenceChange(d, before, t.lateWatchMs, t.pollMs))) return
+      await d.sleep(t.settleMs)
+      await d.restore(backup)
+    } catch {
+      // 뒷정리 실패로 다음 가져오기가 막히면 안 된다
+    }
+  }
 
   let method: CaptureResult['method'] = 'ctrl-insert'
   d.sendChord(['CONTROL', 'INSERT'])
   let changed = await waitSequenceChange(d, before, t.insertMs, t.pollMs)
   if (!changed) {
+    if (!stillThere()) return { result: none({ skipped: 'focus-changed' }), settled: watchLateCopy() }
     method = 'ctrl-c'
     d.sendChord(['CONTROL', 'C'])
     changed = await waitSequenceChange(d, before, t.ctrlCMs, t.pollMs)
   }
-  if (!changed) {
-    // 앱이 늦게 복사를 끝내면 사용자 클립보드가 선택 글로 덮이므로, 조금 더 지켜보다 되돌린다
-    const settled = (async (): Promise<void> => {
-      try {
-        if (!(await waitSequenceChange(d, before, t.lateWatchMs, t.pollMs))) return
-        await d.sleep(t.settleMs)
-        await d.restore(backup)
-      } catch {
-        // 뒷정리 실패로 다음 가져오기가 막히면 안 된다
-      }
-    })()
-    return { result: none(), settled }
-  }
+  if (!changed) return { result: none(), settled: watchLateCopy() }
 
   await d.sleep(t.settleMs)
   const afterCopy = d.sequence()

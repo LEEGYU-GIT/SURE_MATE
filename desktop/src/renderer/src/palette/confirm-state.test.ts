@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { PromptDraft } from '../../../shared/ipc-channels'
-import { confirmReducer, initialConfirmState, keyToAction, selectionNote, splitHighlights, type ConfirmState, type KeyInfo } from './confirm-state'
+import { confirmReducer, initialConfirmState, isRepeatedEnter, keyToAction, selectionNote, splitHighlights, type ConfirmState, type KeyInfo } from './confirm-state'
 
 const draft = (over: Partial<PromptDraft> = {}): PromptDraft => ({
   templateId: 'meeting-notes',
@@ -26,6 +26,7 @@ const key = (code: string, o: Partial<KeyInfo> = {}): KeyInfo => ({
   shiftKey: false,
   altKey: false,
   isComposing: false,
+  repeat: false,
   ...o
 })
 
@@ -59,6 +60,20 @@ it('칩에 초점이 있으면 Enter로 실행, Esc는 목록으로', () => {
   expect(keyToAction(key('NumpadEnter'), s)).toEqual({ type: 'run' })
   expect(keyToAction(key('Escape'), s)).toEqual({ type: 'back' })
   expect(keyToAction({ ...key(''), key: 'Escape' }, s)).toEqual({ type: 'back' })
+})
+
+it('누르고 있어 자동 반복된 Enter·Ctrl+Enter로는 실행하지 않는다', () => {
+  const chip = initialConfirmState(draft())
+  expect(keyToAction(key('Enter', { repeat: true }), chip)).toBeNull()
+  const input: ConfirmState = { ...chip, source: 'input', focus: 'input' }
+  expect(keyToAction(key('Enter', { ctrlKey: true, repeat: true }), input)).toBeNull()
+})
+
+it('목록에서도 자동 반복된 Enter는 알아본다(프롬프트를 두 번 고르지 않게)', () => {
+  expect(isRepeatedEnter(key('Enter', { repeat: true }))).toBe(true)
+  expect(isRepeatedEnter(key('NumpadEnter', { repeat: true }))).toBe(true)
+  expect(isRepeatedEnter(key('Enter'))).toBe(false)
+  expect(isRepeatedEnter(key('ArrowDown', { repeat: true }))).toBe(false)
 })
 
 it('한글 조합 중에는 Enter·Ctrl+Enter·Tab·화살표를 모두 무시한다', () => {
@@ -109,4 +124,6 @@ it('선택 글을 못 가져온 이유를 짧게 알려 준다', () => {
   expect(selectionNote(draft())).toBeNull()
   expect(selectionNote(draft({ selection: { length: 0, skipped: 'terminal' } }))).toBe('터미널에서는 가져오지 않아요')
   expect(selectionNote(draft({ selection: { length: 0, skipped: 'nothing-selected' } }))).toBe('선택한 글이 없어요')
+  expect(selectionNote(draft({ selection: { length: 0, skipped: 'keys-held' } }))).toBe('키를 누르고 있어 가져오지 않았어요')
+  expect(selectionNote(draft({ selection: { length: 0, skipped: 'focus-changed' } }))).toBe('가져오는 동안 다른 창으로 바뀌어 멈췄어요')
 })

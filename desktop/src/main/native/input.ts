@@ -1,8 +1,8 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { acceleratorKeyCode } from '../hotkeys/accelerator-rules'
-import { win32 } from './win32'
+import { nativeStatus, win32 } from './win32'
 
-const VK = { CONTROL: 0x11, SHIFT: 0x10, MENU: 0x12, INSERT: 0x2d, C: 0x43, V: 0x56, LWIN: 0x5b, RWIN: 0x5c } as const
+const VK = { CONTROL: 0x11, SHIFT: 0x10, MENU: 0x12, INSERT: 0x2d, C: 0x43, V: 0x56, LWIN: 0x5b, RWIN: 0x5c, RETURN: 0x0d } as const
 export type ChordKey = 'CONTROL' | 'SHIFT' | 'MENU' | 'INSERT' | 'C' | 'V'
 
 /** Insert는 확장 키라 표시하지 않으면 숫자 키패드 0으로 해석된다 */
@@ -18,6 +18,20 @@ const isDown = (vk: number): boolean => (win32().GetAsyncKeyState(vk) & 0x8000) 
 export async function waitModifiersReleased(timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (MODIFIERS.some(isDown)) {
+    if (Date.now() >= deadline) return false
+    await sleep(10)
+  }
+  return true
+}
+
+/**
+ * 팔레트에서 항목을 고른 Enter(키패드 Enter 포함)와 보조키가 떼어질 때까지 기다린다.
+ * 누른 채로 팔레트를 숨기면 자동 반복 키가 원래 앱으로 간다. Win32를 못 쓰면 확인할 수 없으니 true.
+ */
+export async function waitPickKeysReleased(timeoutMs: number): Promise<boolean> {
+  if (!nativeStatus().ok) return true
+  const deadline = Date.now() + timeoutMs
+  while (isDown(VK.RETURN) || MODIFIERS.some(isDown)) {
     if (Date.now() >= deadline) return false
     await sleep(10)
   }

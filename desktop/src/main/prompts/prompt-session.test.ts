@@ -27,6 +27,7 @@ function fake(
     capture?: CaptureResult
     clipboard?: string
     refocused?: boolean
+    keysReleased?: boolean
     defaultId?: string
     template?: Template
     defaultMasking?: MaskingMode
@@ -34,6 +35,7 @@ function fake(
   } = {}
 ) {
   const calls = {
+    order: [] as string[],
     captures: 0,
     writes: [] as { text: string; excludeFromHistory: boolean }[],
     opened: [] as string[],
@@ -46,8 +48,16 @@ function fake(
   const tpl = over.template ?? template
   const deps: PromptSessionDeps = {
     findTemplate: (id) => (id === tpl.id ? tpl : null),
-    hidePaletteAndRefocus: async () => over.refocused ?? true,
+    waitKeysReleased: async () => {
+      calls.order.push('keys')
+      return over.keysReleased ?? true
+    },
+    hidePaletteAndRefocus: async () => {
+      calls.order.push('hide')
+      return over.refocused ?? true
+    },
     capture: async () => {
+      calls.order.push('capture')
       calls.captures++
       return over.capture ?? { text: SELECTED, method: 'ctrl-insert', elapsedMs: 50, restored: true }
     },
@@ -101,6 +111,19 @@ it('터미널이라 건너뛰고 클립보드도 비었으면 직접 입력', as
   const f = fake({ capture: { text: null, method: 'none', elapsedMs: 0, restored: false, skipped: 'terminal' } })
   await createPromptSession(f.deps).prepare('meeting-notes')
   expect(f.calls.drafts[0]).toMatchObject({ selection: { length: 0, skipped: 'terminal' }, defaultSource: 'input' })
+})
+
+it('Enter·보조키를 뗀 것을 확인한 뒤에 팔레트를 숨기고 가져온다', async () => {
+  const f = fake()
+  await createPromptSession(f.deps).prepare('meeting-notes')
+  expect(f.calls.order).toEqual(['keys', 'hide', 'capture'])
+})
+
+it('Enter를 계속 누르고 있으면 팔레트를 숨기지 않고 가져오지도 않는다(눌린 키가 원래 앱에 들어가지 않게)', async () => {
+  const f = fake({ keysReleased: false, clipboard: '클립 글' })
+  await createPromptSession(f.deps).prepare('meeting-notes')
+  expect(f.calls.order).toEqual(['keys'])
+  expect(f.calls.drafts[0]).toMatchObject({ selection: { length: 0, skipped: 'keys-held' }, defaultSource: 'clipboard' })
 })
 
 it('선택한 글이 없으면 nothing-selected', async () => {

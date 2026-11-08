@@ -98,7 +98,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
       className="flex h-screen flex-col overflow-hidden bg-surface-palette font-ui text-fg outline-none"
       onKeyDown={(e) => {
         const action = keyToAction(
-          { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent) },
+          { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent), repeat: e.repeat },
           state
         )
         if (!action) return

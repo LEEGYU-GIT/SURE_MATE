@@ -29,7 +29,9 @@ const SKIP_TEXT: Record<CaptureSkipReason, string> = {
   'no-foreground': '활성 창 없음',
   'modifiers-held': '단축키를 누른 채라 키를 보내지 않았어요. 키를 모두 뗀 뒤 다시 눌러 주세요',
   busy: '이미 가져오는 중',
-  'native-unavailable': 'Win32 기능을 불러오지 못했어요(보안 프로그램이 막았을 수 있어요)'
+  'native-unavailable': 'Win32 기능을 불러오지 못했어요(보안 프로그램이 막았을 수 있어요)',
+  'keys-held': 'Enter를 누른 채라 팔레트를 숨기지 않았어요',
+  'focus-changed': '가져오는 동안 다른 창이 앞에 와서 멈췄어요'
 }
 
 function output(title: string, lines: string[]): void {

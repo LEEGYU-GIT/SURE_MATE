@@ -15,6 +15,9 @@ class FakeDesktop implements CaptureDeps {
   copyDelay: Record<'INSERT' | 'C', number | null> = { INSERT: 20, C: 20 }
   selection: string | null = '선택한 글'
   windowElevated: boolean | null = false
+  /** 지금 앞에 있는 창. 시각(ms)을 넘기면 그때부터 다른 창이 앞에 온다 */
+  foreground = '0x100'
+  switchAt: number | null = null
   sent: string[] = []
   restores = 0
   private timers: { at: number; run: () => void }[] = []
@@ -35,7 +38,8 @@ class FakeDesktop implements CaptureDeps {
   sleep = async (ms: number): Promise<void> => {
     this.advance(ms)
   }
-  target = (): WindowInfo | null => ({ exe: 'notepad.exe', className: 'Notepad', elevated: this.windowElevated }) as WindowInfo
+  target = (): WindowInfo | null =>
+    ({ hwnd: this.switchAt !== null && this.t >= this.switchAt ? '0x200' : this.foreground, exe: 'notepad.exe', className: 'Notepad', elevated: this.windowElevated }) as WindowInfo
   selfElevated = (): boolean | null => false
   waitModifiersReleased = async (timeoutMs: number): Promise<boolean> => {
     const wait = Math.max(0, this.modifiersUpAt - this.t)
@@ -98,6 +102,26 @@ it('복사가 기다리는 시간보다 늦게 끝나도 원래 클립보드를 
   await settled
   d.advance(2000)
   expect(d.clip).toBe('원래 클립보드')
+})
+
+it('Ctrl+Insert 뒤 다른 창이 앞에 오면 그 창에 Ctrl+C를 보내지 않고 멈춘다(터미널이면 실행 중단이 된다)', async () => {
+  const d = new FakeDesktop()
+  d.copyDelay = { INSERT: null, C: 20 }
+  d.switchAt = 100
+  const { result, settled } = await runCapture(d)
+  await settled
+  expect(d.sent).toEqual(['CONTROL+INSERT'])
+  expect(result).toMatchObject({ text: null, method: 'none', skipped: 'focus-changed' })
+  expect(d.clip).toBe('원래 클립보드')
+})
+
+it('보조키를 기다리는 동안 다른 창이 앞에 오면 아무 키도 보내지 않는다', async () => {
+  const d = new FakeDesktop()
+  d.modifiersUpAt = 200
+  d.switchAt = 100
+  const { result } = await runCapture(d)
+  expect(d.sent).toEqual([])
+  expect(result).toMatchObject({ skipped: 'focus-changed' })
 })
 
 it('선택한 글이 없으면 클립보드를 건드리지 않는다', async () => {
