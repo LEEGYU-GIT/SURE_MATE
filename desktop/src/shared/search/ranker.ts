@@ -57,12 +57,23 @@ const HANGUL = /[ㄱ-ㆎ가-힣]/
 /** 영문·숫자 덩어리와 한글 덩어리. 그 밖의 글자(공백, -_/.,:()· 와 다른 기호)는 나누는 자리 */
 const TOKEN = /[a-z0-9]+|[ㄱ-ㆎ가-힣]+/g
 
+/** 토큰(영문·숫자 덩어리와 한글 덩어리)을 붙인 것. 'C++'·'C#'처럼 기호를 빼면 한 글자 이하가 되면 공백만 뺀 원형 */
+function compactOfNorm(norm: string, tokens: string[]): string {
+  const joined = tokens.join('')
+  const spaceless = norm.replace(/\s+/g, '')
+  return joined.length <= 1 && spaceless.length > joined.length ? spaceless : joined
+}
+
+/** 검색과 같은 compact 키(용어 중복 판단에도 쓴다) */
+export function compactOf(name: string): string {
+  const norm = normalize(name).trim()
+  return compactOfNorm(norm, norm.match(TOKEN) ?? [])
+}
+
 function keysOf(name: string): NameKeys {
   const norm = normalize(name).trim()
   const tokens = norm.match(TOKEN) ?? []
-  const joined = tokens.join('')
-  // 'C++'·'C#'처럼 기호를 빼면 한 글자 이하가 되면 원형을 쓴다
-  const compact = joined.length <= 1 && norm.replace(/\s+/g, '').length > joined.length ? norm.replace(/\s+/g, '') : joined
+  const compact = compactOfNorm(norm, tokens)
   const jamo = disassemble(compact)
   return { tokens, compact, jamo, cho: getChoseong(norm), qwerty: toQwerty(jamo).toLowerCase() }
 }
