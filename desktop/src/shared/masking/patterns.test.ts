@@ -35,6 +35,14 @@ it('전화번호(010, 02, 0xx, 070, 15xx, +82)와 날짜는 구별한다', () =>
   for (const no of ['2026-11-08', '1234-5678', '15881234', '주문번호 0311234567']) expect(found(no), no).toEqual([])
 })
 
+it('전화번호의 흔한 다른 표기(공백·점 구분, 괄호 지역번호, +82 (0))도 찾는다', () => {
+  for (const p of ['010 1234 5678', '010.1234.5678', '031.123.4567', '(02) 123-4567', '(031)123-4567', '02)123-4567', '+82 (0)10 1234 5678', '1588 1234', '1588.1234']) {
+    expect(found(`연락처 ${p} 입니다`), p).toEqual([['phone', p]])
+  }
+  for (const no of ['2026.11.08', '2026. 11. 8', '버전 2.10.1234', '(2026) 123']) expect(found(no), no).toEqual([])
+  expect(findPatterns('M. 010.1234.5678 / 010 1234 5678', { internalDomains: [] }).map((d) => d.key)).toEqual(['phone:01012345678', 'phone:01012345678'])
+})
+
 it('사내 URL은 설정한 도메인만', () => {
   expect(found('위키 https://wiki.intra.example/a/b 참고', ['intra.example'])).toEqual([['url', 'https://wiki.intra.example/a/b']])
   expect(found('wiki.intra.example에 접속', ['intra.example'])).toEqual([['url', 'wiki.intra.example']])
