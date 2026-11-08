@@ -34,10 +34,12 @@ it('기본 프롬프트는 모두 입력 자리, 추측 금지, 초안 안내, �
   }
 })
 
-it('가명 기본값: 표준·규격 조항 찾기와 협업 문서 요약만 끔, 나머지는 되돌리기', () => {
+it('가명 기본값: 표준·규격 조항 찾기와 협업 문서 요약만 끔, 나머지 6종은 전체 기본값(설정)을 따른다', () => {
   const templates = builtinTemplates()
   expect(templates.filter((t) => t.masking === 'off').map((t) => t.name)).toEqual(['표준·규격 조항 찾기', '협업 문서 요약(실명 유지)'])
-  expect(templates.filter((t) => t.masking === 'restore')).toHaveLength(6)
+  const rest = templates.filter((t) => t.masking !== 'off')
+  expect(rest).toHaveLength(6)
+  expect(rest.every((t) => t.masking === undefined || t.masking === 'default')).toBe(true)
 })
 
 it('기본 프롬프트마다 영문 입력용 별칭이 하나 이상 있다', () => {
