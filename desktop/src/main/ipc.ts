@@ -58,5 +58,12 @@ export function registerIpc(d: IpcDeps): void {
     const ok = wikiId(id)
     return ok && Number.isInteger(index) && (index as number) >= 0 && (index as number) < 10 ? d.wiki.openLink(ok, index as number) : false
   })
+  // 내용 검사는 런타임이 팩과 같은 규칙으로 한다. 여기서는 옵션 모양만 본다
+  ipcMain.handle(IPC.wikiSave, (_e, draft: unknown, options: unknown) => {
+    const o = typeof options === 'object' && options !== null ? (options as Record<string, unknown>) : {}
+    const id = o.id === undefined ? undefined : wikiId(o.id)
+    if (o.id !== undefined && !id) return { ok: false, errors: [BAD_REQUEST] }
+    return d.wiki.save(draft, { ...(id ? { id } : {}), allowDuplicate: o.allowDuplicate === true })
+  })
   ipcMain.handle(IPC.devSaveImeLog, (_e, label: unknown, json: unknown) => d.saveImeLog(String(label), String(json)))
 }

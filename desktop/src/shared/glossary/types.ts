@@ -20,6 +20,13 @@ export interface GlossaryEntry {
   version: number
 }
 
+/** 추가·수정 화면이 보내는 내용(id·출처·시각·판은 main이 정한다) */
+export type WikiDraft = Pick<GlossaryEntry, 'term' | 'aliases' | 'definition' | 'links' | 'tags'> & { example?: string }
+
+export type WikiSaveResult =
+  | { ok: true; entry: GlossaryEntry }
+  | { ok: false; duplicate?: Pick<GlossaryEntry, 'id' | 'term' | 'definition'>; errors?: string[] }
+
 /** 설계 문서 §9의 제한. 별칭 수·길이와 닉네임 길이는 설계에 없어 넉넉히 정했다 */
 export const GLOSSARY_LIMITS = {
   term: 60,

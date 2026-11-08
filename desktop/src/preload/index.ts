@@ -13,6 +13,7 @@ const api: SureMateApi = {
   getWikiEntry: (id) => ipcRenderer.invoke(IPC.wikiGet, id),
   copyWikiDefinition: (id) => ipcRenderer.invoke(IPC.wikiCopy, id),
   openWikiLink: (id, index) => ipcRenderer.invoke(IPC.wikiOpenLink, id, index),
+  saveWikiEntry: (draft, o) => ipcRenderer.invoke(IPC.wikiSave, draft, o),
   onShown: (cb) => {
     const listener = (_e: IpcRendererEvent, payload: ShownPayload): void => cb(payload)
     ipcRenderer.on(IPC.paletteShown, listener)

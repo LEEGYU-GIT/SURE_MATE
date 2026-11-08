@@ -1,4 +1,4 @@
-import type { GlossaryEntry } from './glossary/types'
+import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
 
@@ -64,6 +64,7 @@ export const IPC = {
   wikiGet: 'wiki:get',
   wikiCopy: 'wiki:copy',
   wikiOpenLink: 'wiki:open-link',
+  wikiSave: 'wiki:save',
   devSaveImeLog: 'dev:save-ime-log'
 } as const
 
@@ -95,6 +96,8 @@ export interface SureMateApi {
   copyWikiDefinition(id: string): Promise<boolean>
   /** 그 용어의 index번째 링크를 연다(http/https만) */
   openWikiLink(id: string, index: number): Promise<boolean>
+  /** 용어를 추가하거나(id 없음) 고친다. 같은 이름이 있으면 duplicate로 먼저 알린다 */
+  saveWikiEntry(draft: WikiDraft, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
   onShown(cb: (payload: ShownPayload) => void): () => void
   /** 개발용: 한글 입력 기록을 logs 폴더에 저장하고 경로를 돌려준다 */
   saveImeLog(label: string, json: string): Promise<string>

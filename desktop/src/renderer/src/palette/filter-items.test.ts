@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { PaletteItem } from '../../../shared/types'
-import { buildPaletteIndex, filterItems, groupItems } from './filter-items'
+import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd } from './filter-items'
 
 const items: PaletteItem[] = [
   { id: 'prompt:meeting-notes', group: 'prompt', title: '회의록 정리', subtitle: '결정 사항·담당자', keywords: ['회의', 'meeting'] },
@@ -45,4 +45,15 @@ it('구역은 가장 먼저 나온 항목 순서대로 묶는다(맨 위 후보�
     ['prompt', ['prompt:meeting-notes']],
     ['command', ['dev.listWindows']]
   ])
+})
+
+it('위키 범위에 검색어가 있거나 아무것도 못 찾으면 맨 끝에 "직접 추가하기"를 붙인다(검색어를 용어로)', () => {
+  const add = (q: string): PaletteItem | undefined => withWikiAdd(filterItems(items, q), q).find((i) => i.id === WIKI_ADD_ID)
+  expect(add('?mc')?.title).toBe('‘mc’ 용어 직접 추가하기')
+  expect(withWikiAdd(filterItems(items, '?mc'), '?mc').at(-1)?.id).toBe(WIKI_ADD_ID)
+  expect(add('정적분석')?.group).toBe('wiki')
+  expect(add('회의')).toBeUndefined()
+  expect(add('/없는말')).toBeUndefined()
+  expect(add('')).toBeUndefined()
+  expect(add('?')).toBeUndefined()
 })

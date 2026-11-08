@@ -32,6 +32,10 @@ function fake(): { deps: GlossaryRuntimeDeps; calls: { writes: string[]; hides: 
       openExternal: async (url) => {
         calls.opened.push(url)
       },
+      userEntries: async () => [],
+      saveUserEntries: async () => {},
+      newId: () => 'new-id',
+      now: () => '2026-11-09T00:00:00.000Z',
       log: (event, data) => calls.logs.push({ event, data })
     }
   }
@@ -61,4 +65,64 @@ it('링크는 그 항목의 http/https 링크만 번호로 연다', async () => 
   expect(await r.openLink('없음', 0)).toBe(false)
   expect(f.calls.opened).toEqual(['https://example.com/mcdc'])
   expect(f.calls.hides).toEqual([false])
+})
+
+function saving(existingUser: GlossaryEntry[] = []): {
+  deps: GlossaryRuntimeDeps
+  saved: GlossaryEntry[][]
+} {
+  const saved: GlossaryEntry[][] = []
+  let user = [...existingUser]
+  const all = (): GlossaryEntry[] => {
+    const byId = new Map([entry].map((e) => [e.id, e]))
+    for (const e of user) byId.set(e.id, e)
+    return [...byId.values()]
+  }
+  return {
+    saved,
+    deps: {
+      ...fake().deps,
+      entries: async () => all(),
+      userEntries: async () => user,
+      saveUserEntries: async (list) => {
+        user = list
+        saved.push(list)
+      },
+      newId: () => '11111111-2222-4333-8444-555555555555',
+      now: () => '2026-11-09T10:00:00.000Z'
+    }
+  }
+}
+
+const draft = { term: '정적분석', aliases: ['SA'], definition: '실행하지 않고 코드를 분석', links: [], tags: [] }
+
+it('새 용어는 uuid·version 1·내 용어로 사용자 파일에 더한다', async () => {
+  const s = saving()
+  const r = await createGlossaryRuntime(s.deps).save(draft, { allowDuplicate: false })
+  expect(r).toMatchObject({ ok: true, entry: { id: '11111111-2222-4333-8444-555555555555', term: '정적분석', source: 'user', version: 1, updatedAt: '2026-11-09T10:00:00.000Z' } })
+  expect(s.saved[0].map((e) => e.term)).toEqual(['정적분석'])
+})
+
+it('같은 정규화 키의 용어가 있으면 저장하지 않고 먼저 보여 주고, 그래도 추가하면 둘 다 둔다', async () => {
+  const s = saving()
+  const runtime = createGlossaryRuntime(s.deps)
+  const dup = await runtime.save({ ...draft, term: 'mc dc' }, { allowDuplicate: false })
+  expect(dup).toMatchObject({ ok: false, duplicate: { id: 'mcdc', term: 'MC/DC' } })
+  expect(s.saved).toEqual([])
+  expect(await runtime.save({ ...draft, term: 'mc dc' }, { allowDuplicate: true })).toMatchObject({ ok: true })
+  expect(s.saved).toHaveLength(1)
+})
+
+it('기본 용어를 고치면 같은 id의 내 용어로 저장하고 version을 올린다', async () => {
+  const s = saving()
+  const r = await createGlossaryRuntime(s.deps).save({ ...draft, term: 'MC/DC', definition: '우리 팀 설명' }, { id: 'mcdc', allowDuplicate: false })
+  expect(r).toMatchObject({ ok: true, entry: { id: 'mcdc', definition: '우리 팀 설명', source: 'user', version: 2 } })
+  expect(s.saved[0].map((e) => e.id)).toEqual(['mcdc'])
+})
+
+it('제한을 넘는 항목은 저장하지 않고 까닭을 돌려준다', async () => {
+  const s = saving()
+  const r = await createGlossaryRuntime(s.deps).save({ ...draft, definition: '가'.repeat(1001) }, { allowDuplicate: false })
+  expect(r).toMatchObject({ ok: false, errors: [expect.stringContaining('설명')] })
+  expect(s.saved).toEqual([])
 })

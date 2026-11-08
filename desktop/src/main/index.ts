@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
@@ -9,7 +10,7 @@ import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
 import { createGlossaryRuntime } from './glossary/glossary-runtime'
-import { createGlossaryCache } from './glossary/glossary-store'
+import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -198,6 +199,13 @@ if (!app.requestSingleInstanceLock()) {
       },
       hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
       openExternal: (url) => electronShell.openExternal(url),
+      userEntries: async () => (await glossaryCache.get()).userEntries,
+      saveUserEntries: async (list) => {
+        await saveUserEntries(userData, list)
+        glossaryCache.invalidate()
+      },
+      newId: () => randomUUID(),
+      now: () => new Date().toISOString(),
       log
     })
     // 사전이 깨지면 이름이 가려지지 않으므로 트레이로도 알린다(확인 화면에는 미리 보기 경고로)

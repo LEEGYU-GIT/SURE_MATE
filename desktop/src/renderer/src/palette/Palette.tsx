@@ -4,16 +4,17 @@ import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import type { PromptDraft } from '../../../shared/ipc-channels'
-import { PALETTE_GROUPS } from '../../../shared/palette-query'
+import { PALETTE_GROUPS, parseQuery } from '../../../shared/palette-query'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
 import { GroupIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
 import { isRepeatedEnter } from './confirm-state'
 import { DevOutput } from './DevOutput'
-import { buildPaletteIndex, filterItems, groupItems } from './filter-items'
+import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd } from './filter-items'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 import { WikiDetail } from './WikiDetail'
+import { WikiEdit } from './WikiEdit'
 
 /** 같은 항목을 300ms 안에 두 번 실행하지 않는다(한글 조합 중 Enter 중복 대비) */
 const runGuard = createExecutionGuard(300)
@@ -32,13 +33,14 @@ export function Palette(): React.JSX.Element {
   const [dev, setDev] = useState<{ title: string; text: string } | null>(null)
   const [confirm, setConfirm] = useState<PromptDraft | null>(null)
   const [wiki, setWiki] = useState<GlossaryEntry | null>(null)
+  const [wikiEdit, setWikiEdit] = useState<{ entry?: GlossaryEntry; term?: string } | null>(null)
   const [shownCount, setShownCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   // 입력값은 그대로 두고, 목록만 지연 값으로 그린다(조합 중 입력이 끊기지 않게)
   const deferredQuery = useDeferredValue(query)
   // 검색 키(초성·자모·자판)는 항목이 바뀔 때만 다시 계산한다
   const index = useMemo(() => buildPaletteIndex(allItems), [allItems])
-  const items = useMemo(() => filterItems(allItems, deferredQuery, index), [allItems, deferredQuery, index])
+  const items = useMemo(() => withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), [allItems, deferredQuery, index])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
 
@@ -62,6 +64,7 @@ export function Palette(): React.JSX.Element {
         setDev(payload.mode === 'dev-output' ? { title: payload.title, text: payload.text } : null)
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
         setWiki(null)
+        setWikiEdit(null)
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
     []
@@ -74,6 +77,10 @@ export function Palette(): React.JSX.Element {
 
   const run = (id: string): void => {
     if (!runGuard(id)) return
+    if (id === WIKI_ADD_ID) {
+      setWikiEdit({ term: parseQuery(query).text })
+      return
+    }
     // 용어는 팔레트 안에서 상세를 연다(검색어는 그대로 두어 Esc로 돌아오면 같은 목록)
     if (id.startsWith('wiki:')) {
       void window.sureMate.getWikiEntry(id.slice('wiki:'.length)).then((entry) => {
@@ -85,11 +92,30 @@ export function Palette(): React.JSX.Element {
   }
 
   if (dev) return <DevOutput title={dev.title} text={dev.text} onClose={close} />
+  if (wikiEdit) {
+    return (
+      <WikiEdit
+        entry={wikiEdit.entry}
+        prefillTerm={wikiEdit.term}
+        onCancel={() => {
+          setWikiEdit(null)
+          if (!wiki) requestAnimationFrame(() => inputRef.current?.focus())
+        }}
+        onSaved={(entry) => {
+          setWikiEdit(null)
+          setWiki(entry)
+          // 목록과 검색 색인에 새 용어가 들어가게
+          void window.sureMate.listItems().then(setAllItems)
+        }}
+      />
+    )
+  }
   if (wiki) {
     return (
       <WikiDetail
         key={wiki.id}
         entry={wiki}
+        onEdit={() => setWikiEdit({ entry: wiki })}
         onBack={() => {
           setWiki(null)
           requestAnimationFrame(() => inputRef.current?.focus())

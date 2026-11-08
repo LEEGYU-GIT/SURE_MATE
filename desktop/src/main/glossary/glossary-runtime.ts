@@ -1,5 +1,5 @@
-import { isHttpUrl } from '../../shared/glossary/pack'
-import type { GlossaryEntry } from '../../shared/glossary/types'
+import { GLOSSARY_FORMAT, isHttpUrl, normalizedKey, parseGlossaryPack } from '../../shared/glossary/pack'
+import type { GlossaryEntry, WikiDraft, WikiSaveResult } from '../../shared/glossary/types'
 
 export interface GlossaryRuntimeDeps {
   /** 지금 용어 목록(기본 팩 + 사용자 용어) */
@@ -7,6 +7,13 @@ export interface GlossaryRuntimeDeps {
   writeClipboard(text: string): Promise<void>
   hidePalette(restoreFocus: boolean): void
   openExternal(url: string): Promise<void>
+  /** 사용자 파일의 항목(저장할 때 고쳐 쓴다) */
+  userEntries(): Promise<GlossaryEntry[]>
+  saveUserEntries(entries: GlossaryEntry[]): Promise<void>
+  /** 새 항목 id(uuid v4) */
+  newId(): string
+  /** 지금 시각(ISO) */
+  now(): string
   /** id·길이·번호만 넘긴다(용어·설명 금지) */
   log(event: string, data: Record<string, unknown>): void
 }
@@ -17,7 +24,15 @@ export interface GlossaryRuntime {
   copy(id: string): Promise<boolean>
   /** 그 항목의 index번째 링크(http/https만)를 연다 */
   openLink(id: string, index: number): Promise<boolean>
+  /**
+   * 용어를 추가하거나(id 없음) 고친다(id). 새로 추가할 때 정규화 키가 같은 용어가 있으면 저장하지 않고
+   * duplicate로 먼저 보여 준다(설계 문서 §9). allowDuplicate면 둘 다 둔다.
+   */
+  save(draft: unknown, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
 }
+
+/** 팩 검사 오류에서 '1번째 항목: '과 끝의 '(id)'를 떼어 화면용으로 */
+const plainError = (e: string): string => e.replace(/^\d+번째 항목: /, '').replace(/\([^()]*\)$/, '')
 
 /** 팔레트 위키의 main 쪽 동작(설계 문서 §9 보기) */
 export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
@@ -31,6 +46,27 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
       d.hidePalette(true)
       d.log('wiki.copy', { id, length: entry.definition.length })
       return true
+    },
+    async save(draft, o) {
+      const entries = await d.entries()
+      const base = o.id ? entries.find((e) => e.id === o.id) : undefined
+      if (o.id && !base) return { ok: false, errors: ['고칠 용어를 찾지 못했어요. 목록을 다시 열어 주세요'] }
+      const fields = typeof draft === 'object' && draft !== null ? (draft as Partial<WikiDraft>) : {}
+      if (!base && !o.allowDuplicate) {
+        const key = normalizedKey(typeof fields.term === 'string' ? fields.term : '')
+        const dup = key ? entries.find((e) => normalizedKey(e.term) === key) : undefined
+        if (dup) return { ok: false, duplicate: { id: dup.id, term: dup.term, definition: dup.definition } }
+      }
+      // 보낸 내용은 팩과 같은 검사를 거친다(renderer를 믿지 않는다)
+      const raw = { ...fields, id: base?.id ?? d.newId(), source: 'user', updatedAt: d.now(), version: (base?.version ?? 0) + 1 }
+      const parsed = parseGlossaryPack({ format: GLOSSARY_FORMAT, version: 1, entries: [raw] }, 'user')
+      const entry = parsed.entries[0]
+      if (!entry || parsed.errors.length) return { ok: false, errors: (parsed.errors.length ? parsed.errors : ['저장할 수 없는 내용이에요']).map(plainError) }
+      const user = await d.userEntries()
+      const next = user.some((e) => e.id === entry.id) ? user.map((e) => (e.id === entry.id ? entry : e)) : [...user, entry]
+      await d.saveUserEntries(next)
+      d.log('wiki.save', { id: entry.id, isNew: !base, version: entry.version })
+      return { ok: true, entry }
     },
     async openLink(id, index) {
       const link = (await find(id))?.links[index]
