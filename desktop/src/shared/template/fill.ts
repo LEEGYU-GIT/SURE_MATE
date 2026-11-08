@@ -4,7 +4,11 @@ import type { FillContext, FillResult } from './types'
 const PLACEHOLDER = /\{\{\s*([a-z]+)(?::([^}]*))?\s*\}\}/g
 const HAS_SELECTION = /\{\{\s*selection\s*\}\}/
 const TERMS_LINE = /\{\{\s*terms\s*\}\}/
-const REFERENCE_IN_LINE = /\{\{\s*reference:([^}]*)\}\}/
+/** 줄에서 뺄 때는 앞 공백과 함께 */
+const TERMS_TOKEN = /[ \t]*\{\{\s*terms\s*\}\}/g
+const REFERENCE_TOKEN = /[ \t]*\{\{\s*reference:([^}]*)\}\}/g
+/** 넣는 글이 들어가는 자리. 이런 줄은 통째로 빼지 않는다 */
+const INPUT_IN_LINE = /\{\{\s*(selection|clipboard)\s*\}\}/
 
 export const TERMS_HEADING = '다음은 우리 회사에서 쓰는 용어 뜻입니다.'
 
@@ -16,6 +20,7 @@ const formatTime = (d: Date): string => `${pad2(d.getHours())}:${pad2(d.getMinut
  * 템플릿 본문의 자리표시자를 한 번에 채운다(설계 문서 §7).
  * 넣은 글 안의 {{…}}는 다시 채우지 않고, 모르는 자리표시자는 그대로 두고 경고한다.
  * 넣을 용어가 없는 {{terms}} 줄과 기준 예시가 없는 {{reference:종류}} 줄은 통째로 뺀다.
+ * 다만 그 줄에 {{selection}}·{{clipboard}}가 같이 있으면 넣은 글까지 사라지므로 그 자리표시자만 뺀다.
  */
 export function fillTemplate(body: string, ctx: FillContext): FillResult {
   const warnings: string[] = []
@@ -31,18 +36,22 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
     return references.get(kind) ?? null
   }
 
-  const lines = normalized.split('\n').filter((line) => {
-    if (TERMS_LINE.test(line) && terms.length === 0) return false
-    const ref = REFERENCE_IN_LINE.exec(line)
-    if (ref) {
-      const kind = ref[1].trim()
-      if (referenceOf(kind) === null) {
-        notes.push(`기준 예시(${kind})를 넣어 두면 결과가 회사 양식에 더 가까워져요`)
-        return false
-      }
-    }
-    return true
-  })
+  const missingKinds = new Set<string>()
+  const lines: string[] = []
+  for (const raw of normalized.split('\n')) {
+    let emptied = false
+    let line = terms.length === 0 ? raw.replace(TERMS_TOKEN, () => ((emptied = true), '')) : raw
+    line = line.replace(REFERENCE_TOKEN, (whole: string, kind: string) => {
+      const k = kind.trim()
+      if (referenceOf(k) !== null) return whole
+      missingKinds.add(k)
+      emptied = true
+      return ''
+    })
+    if (!emptied) lines.push(raw)
+    else if (INPUT_IN_LINE.test(raw)) lines.push(line)
+  }
+  for (const kind of missingKinds) notes.push(`기준 예시(${kind})를 넣어 두면 결과가 회사 양식에 더 가까워져요`)
   // 줄을 빼면 앞뒤 빈 줄이 겹치므로, 템플릿의 빈 줄 겹침은 하나로 줄인다(넣는 글은 아직 들어가기 전이라 영향 없음)
   const tidy = lines.filter((line, i) => !(line.trim() === '' && i > 0 && lines[i - 1].trim() === ''))
 

@@ -34,6 +34,17 @@ it('줄을 빼서 생긴 빈 줄 겹침은 하나로 줄이고, 넣은 글 안�
   expect(r.text).toBe('가\n\n---\n첫 줄\n\n\n셋째 줄')
 })
 
+it('빈 {{terms}}·없는 기준 예시가 넣은 글과 한 줄에 있으면 자리표시자만 빼고 넣은 글은 남긴다', () => {
+  const terms = fillTemplate('정리해 주세요: {{selection}} {{terms}}', ctx({ input: '회의 메모' }))
+  expect(terms.text).toBe('정리해 주세요: 회의 메모')
+  expect(terms.inputRanges).toEqual([[9, 14]])
+  const ref = fillTemplate('{{selection}} {{reference:회의록}}', ctx({ input: '회의 메모' }))
+  expect(ref.text).toBe('회의 메모')
+  expect(ref.notes[0]).toContain('회의록')
+  // 넣는 글이 없는 줄은 설계 문서 §7대로 통째로 뺀다(머리말만 남지 않게)
+  expect(fillTemplate('용어: {{terms}}\n{{selection}}', ctx()).text).toBe('본문')
+})
+
 it('용어가 있으면 머리말과 목록으로 채운다', () => {
   const r = fillTemplate('{{terms}}', ctx({ terms: () => [{ term: 'MC/DC', definition: '변경 조건/결정 커버리지' }] }))
   expect(r.text).toBe('다음은 우리 회사에서 쓰는 용어 뜻입니다.\n- MC/DC: 변경 조건/결정 커버리지')
