@@ -1,3 +1,4 @@
+import type { GlossaryEntry } from './glossary/types'
 import type { MaskItem } from './masking/types'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
 
@@ -60,6 +61,9 @@ export const IPC = {
   promptRun: 'prompt:run',
   promptCancel: 'prompt:cancel',
   appGetStatus: 'app:get-status',
+  wikiGet: 'wiki:get',
+  wikiCopy: 'wiki:copy',
+  wikiOpenLink: 'wiki:open-link',
   devSaveImeLog: 'dev:save-ime-log'
 } as const
 
@@ -85,6 +89,12 @@ export interface SureMateApi {
   /** 확인 화면을 벗어날 때 세션을 버린다 */
   cancelPrompt(): void
   getStatus(): Promise<AppStatus>
+  /** 용어 하나(없으면 null) */
+  getWikiEntry(id: string): Promise<GlossaryEntry | null>
+  /** 설명을 클립보드에 넣고 팔레트를 닫는다 */
+  copyWikiDefinition(id: string): Promise<boolean>
+  /** 그 용어의 index번째 링크를 연다(http/https만) */
+  openWikiLink(id: string, index: number): Promise<boolean>
   onShown(cb: (payload: ShownPayload) => void): () => void
   /** 개발용: 한글 입력 기록을 logs 폴더에 저장하고 경로를 돌려준다 */
   saveImeLog(label: string, json: string): Promise<string>

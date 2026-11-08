@@ -1,12 +1,15 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, globalShortcut, type Tray } from 'electron'
+import { app, shell as electronShell, globalShortcut, type Tray } from 'electron'
+import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
+import { createGlossaryRuntime } from './glossary/glossary-runtime'
+import { createGlossaryCache } from './glossary/glossary-store'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -15,6 +18,7 @@ import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld } from './native/input'
+import { writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
 import { createPromptRuntime } from './prompts/prompt-runtime'
@@ -81,7 +85,7 @@ function flushFileErrors(): void {
   pendingFileErrors = []
 }
 
-/** 읽지 못한 템플릿·가명 사전 파일을 사용자에게 알린다. 파일 이름·항목에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
+/** 읽지 못한 템플릿·가명 사전·용어 파일을 사용자에게 알린다. 파일 이름·항목에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
 function reportFileErrors(what: string, event: string, errors: string[]): void {
   log(event, { count: errors.length })
   pendingFileErrors.push({ what, errors })
@@ -185,6 +189,17 @@ if (!app.requestSingleInstanceLock()) {
     // 팔레트를 열 때마다(목록 요청) 템플릿 파일이 바뀌었는지 보고 다시 읽는다
     const templateCache = createTemplateCache(userData, builtinPrompts, (errors) => reportFileErrors('프롬프트 템플릿', 'templates.loadErrors', errors))
     templates = await templateCache.get()
+    // 용어도 팔레트를 열 때마다 사용자 파일이 바뀌었는지 보고 다시 읽는다
+    const glossaryCache = createGlossaryCache(userData, builtinGlossary, (errors) => reportFileErrors('용어', 'glossary.loadErrors', errors))
+    const wiki = createGlossaryRuntime({
+      entries: async () => (await glossaryCache.get()).entries,
+      writeClipboard: async (text) => {
+        await writeClipboardText(text, { excludeFromHistory: false })
+      },
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+      openExternal: (url) => electronShell.openExternal(url),
+      log
+    })
     // 사전이 깨지면 이름이 가려지지 않으므로 트레이로도 알린다(확인 화면에는 미리 보기 경고로)
     const loadDictionary = createTermsCache(userData, (errors) => reportFileErrors('가명 사전 항목', 'masking.dictionaryErrors', errors))
     masking = createMaskingService({ loadDictionary, settings: () => settings.masking, now: Date.now })
@@ -214,7 +229,8 @@ if (!app.requestSingleInstanceLock()) {
       runItem,
       listItems: async () => {
         templates = await templateCache.get()
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode })
+        const glossary = (await glossaryCache.get()).entries
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
@@ -224,6 +240,7 @@ if (!app.requestSingleInstanceLock()) {
         return result
       },
       cancelPrompt: () => session.cancel(),
+      wiki,
       saveImeLog,
       getStatus: () => ({
         paletteHotkey: paletteHotkey(),
