@@ -3,6 +3,9 @@ import { join } from 'node:path'
 import { parseTemplatePack } from '../../shared/template/pack'
 import type { Template } from '../../shared/template/types'
 
+/** 개인 템플릿 폴더 이름(`<userDir>/templates/*.json`) */
+export const TEMPLATES_DIR = 'templates'
+
 /**
  * 기본 팩과 개인 템플릿(`<userDir>/templates/*.json`)을 불러온다.
  * 같은 id면 개인 것이 이기되 목록 자리는 기본 팩 순서를 따른다. 읽지 못한 파일은 건너뛰고 errors에 남긴다.
@@ -13,7 +16,7 @@ export async function loadTemplates(userDir: string, builtin: unknown): Promise<
   const byId = new Map<string, Template>()
   for (const t of base.templates) byId.set(t.id, t)
 
-  const dir = join(userDir, 'templates')
+  const dir = join(userDir, TEMPLATES_DIR)
   let files: string[] = []
   try {
     files = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith('.json')).sort()

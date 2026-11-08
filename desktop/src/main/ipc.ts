@@ -6,7 +6,7 @@ import type { PaletteItem } from '../shared/types'
 export interface IpcDeps {
   hide: () => void
   runItem: (id: string) => Promise<void>
-  listItems: () => PaletteItem[]
+  listItems: () => Promise<PaletteItem[]>
   previewPrompt: (req: PromptRequest) => Promise<PromptPreview>
   runPrompt: (req: PromptRequest) => Promise<PromptRunResult>
   cancelPrompt: () => void

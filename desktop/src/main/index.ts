@@ -17,7 +17,7 @@ import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
 import { createPromptRuntime } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
-import { loadTemplates } from './prompts/template-store'
+import { createTemplateCache } from './prompts/template-cache'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
@@ -36,6 +36,8 @@ let prompts: PromptSession | null = null
 let masking: MaskingService | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
+/** 트레이가 생기기 전에 생긴 템플릿 읽기 오류(트레이가 생기면 알린다) */
+let pendingTemplateErrors: string[] = []
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
@@ -66,6 +68,15 @@ async function saveImeLog(label: string, json: string): Promise<string> {
 
 function warn(content: string): void {
   shell?.tray.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
+}
+
+/** 읽지 못한 템플릿 파일을 사용자에게 알린다. 파일 이름에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
+function reportTemplateErrors(errors: string[]): void {
+  log('templates.loadErrors', { count: errors.length })
+  pendingTemplateErrors = errors
+  if (!shell) return
+  warn(`프롬프트 템플릿 ${errors.length}건을 읽지 못해 건너뛰었어요. ${errors[0]}`)
+  pendingTemplateErrors = []
 }
 
 /** 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
@@ -136,6 +147,8 @@ async function startShell(userData: string): Promise<void> {
   })
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
+  if (pendingTemplateErrors.length) reportTemplateErrors(pendingTemplateErrors)
+
   // 툴팁을 실제로 등록된 단축키로 다시 그린다(대체 조합으로 바뀌었거나 하나도 못 잡은 경우)
   shell.refresh()
   log('tray.refresh', { paletteHotkey: paletteHotkey() })
@@ -160,9 +173,9 @@ if (!app.requestSingleInstanceLock()) {
 
     const userData = app.getPath('userData')
     settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
-    const loaded = await loadTemplates(userData, builtinPrompts)
-    templates = loaded.templates
-    if (loaded.errors.length) log('templates.loadErrors', { count: loaded.errors.length, first: errorText(loaded.errors[0]) })
+    // 팔레트를 열 때마다(목록 요청) 템플릿 파일이 바뀌었는지 보고 다시 읽는다
+    const templateCache = createTemplateCache(userData, builtinPrompts, reportTemplateErrors)
+    templates = await templateCache.get()
     const loadTerms = createTermsCache(userData, (errors) => log('masking.dictionaryErrors', { count: errors.length }))
     masking = createMaskingService({ loadTerms, settings: () => settings.masking, now: Date.now })
     const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, masking })
@@ -172,7 +185,10 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc({
       hide: () => hidePalette({ restoreFocus: true }),
       runItem,
-      listItems: () => buildPaletteItems(templates, DEV_COMMAND_ITEMS),
+      listItems: async () => {
+        templates = await templateCache.get()
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS)
+      },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
         const result = await session.run(req)
