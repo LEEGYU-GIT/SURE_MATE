@@ -4,7 +4,7 @@ import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import { log } from '../log'
 import type { MaskingService } from '../masking/masking-service'
-import { captureSelection, writeExcludedFromHistory } from '../native/selection'
+import { captureSelection, writeClipboardText } from '../native/selection'
 import type { Settings } from '../settings/settings-store'
 import { hidePalette, hidePaletteAndRefocus, showPalette } from '../windows/palette-window'
 import { createPromptSession, type PromptSession } from './prompt-session'
@@ -45,9 +45,8 @@ export function createPromptRuntime(o: {
     mask: (text, mo) => o.masking.mask(text, mo),
     defaultMasking: () => o.getSettings().masking.mode,
     writeClipboard: async (text, wo) => {
-      // 실명이 든 글은 Win+V 기록·클라우드 동기화에서 빼고, 안 되면 보통으로라도 쓴다
-      if (wo.excludeFromHistory && (await writeExcludedFromHistory(text)).ok) return
-      await clipboard.writeText(text)
+      // 실명이 든 글은 Win+V 기록·클라우드 동기화에서 뺀다. 가져오기의 늦은 복사 지켜보기가 끝난 뒤에 쓴다
+      await writeClipboardText(text, wo)
     },
     openUrl: async (url) => {
       if (!isOpenableUrl(url)) return

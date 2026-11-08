@@ -3,7 +3,7 @@ import type { CaptureSkipReason, PaletteItem, Rect } from '../../shared/types'
 import { errorText } from '../error-text'
 import { log } from '../log'
 import { getMonitors, monitorOfPhysicalRect, toPhysical } from '../native/coords'
-import { captureSelection, pasteText, writeExcludedFromHistory } from '../native/selection'
+import { captureSelection, pasteText, writeClipboardText } from '../native/selection'
 import { nativeStatus } from '../native/win32'
 import { getWindowInfo, listWindows, moveWindow } from '../native/windows'
 import { getPreviousHwnd, hidePalette, showPalette } from '../windows/palette-window'
@@ -126,10 +126,10 @@ async function pasteTest(): Promise<void> {
 
 async function clipboardExcludeTest(): Promise<void> {
   const text = `Sure-Mate 기록 제외 시험 ${new Date().toLocaleTimeString('ko-KR')}`
-  const result = await writeExcludedFromHistory(text)
-  log('dev.clipboardExclude', { ok: result.ok, error: result.error ?? null })
+  const result = await writeClipboardText(text, { excludeFromHistory: true })
+  log('dev.clipboardExclude', { ok: result.excluded, error: result.error ?? null })
   output('클립보드 기록 제외 시험', [
-    result.ok ? `클립보드에 "${text}"를 넣었어요.` : `쓰기 실패: ${result.error}`,
+    result.excluded ? `클립보드에 "${text}"를 넣었어요.` : `기록 제외 표시를 붙이지 못해 보통으로 썼어요: ${result.error}`,
     'Win+V를 눌러 클립보드 기록에 이 글이 없으면 통과예요(Ctrl+V로는 붙여넣어져야 해요).'
   ])
 }

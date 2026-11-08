@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { WindowInfo } from '../../shared/types'
 import { runCapture, runPaste, type CaptureDeps, type ClipboardSnapshot, type PasteDeps } from './capture-flow'
+import { createClipboardGate } from './clipboard-gate'
 import type { ChordKey } from './input'
 
 /** 시계·클립보드·대상 앱을 흉내 낸다. sleep은 시계를 앞으로 돌리며 그사이 예약된 일을 실행한다. */
@@ -107,6 +108,71 @@ it('선택한 글이 없으면 클립보드를 건드리지 않는다', async ()
   expect(result).toMatchObject({ text: null, method: 'none', restored: false })
   expect(d.restores).toBe(0)
   expect(d.clip).toBe('원래 클립보드')
+})
+
+it('선택한 글이 없어 늦은 복사를 지켜보는 동안 쓴 프롬프트는 원래 클립보드로 되돌려지지 않는다', async () => {
+  const d = new FakeDesktop()
+  d.selection = null
+  const gate = createClipboardGate()
+  let watch: Promise<void> = Promise.resolve()
+  const result = await gate.tryRun(
+    async () => {
+      const { result, settled } = await runCapture(d)
+      gate.settleAfter(settled)
+      watch = settled
+      return result
+    },
+    () => null
+  )
+  expect(result).toMatchObject({ text: null, method: 'none' })
+  // 확인 화면에서 바로 Enter: 늦은 복사 지켜보기(0.5초)가 끝나기 전에 프롬프트를 쓴다
+  await gate.queue(async () => {
+    d.clip = '최종 프롬프트'
+    d.seq++
+  })
+  await watch
+  expect(d.clip).toBe('최종 프롬프트')
+  expect(d.restores).toBe(0)
+})
+
+it('가져오는 중에 부른 쓰기는 버리지 않고 끝난 뒤에 하고, 가져오기는 그동안 busy', async () => {
+  const gate = createClipboardGate()
+  const order: string[] = []
+  let release!: () => void
+  let markStarted!: () => void
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  const capture = gate.tryRun(
+    () =>
+      new Promise<string>((resolve) => {
+        markStarted()
+        release = () => {
+          order.push('가져오기 끝')
+          resolve('가져옴')
+        }
+      }),
+    () => 'busy'
+  )
+  const write = gate.queue(async () => {
+    order.push('쓰기')
+  })
+  expect(await gate.tryRun(async () => '두 번째 가져오기', () => 'busy')).toBe('busy')
+  await started
+  release()
+  await Promise.all([capture, write])
+  expect(order).toEqual(['가져오기 끝', '쓰기'])
+  expect(await gate.tryRun(async () => '다음 가져오기', () => 'busy')).toBe('다음 가져오기')
+})
+
+it('작업이 실패해도 다음 작업이 막히지 않는다', async () => {
+  const gate = createClipboardGate()
+  await expect(
+    gate.queue(async () => {
+      throw new Error('실패')
+    })
+  ).rejects.toThrow('실패')
+  expect(await gate.tryRun(async () => 'ok', () => 'busy')).toBe('ok')
 })
 
 it('Sure-Mate도 관리자 권한이면(UAC가 꺼진 PC) 관리자 권한 창에서도 가져온다', async () => {

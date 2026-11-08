@@ -1,8 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { clipboard, ClipboardItem } from 'electron'
-import { createExclusive } from '../../shared/exclusive'
 import type { CaptureResult } from '../../shared/types'
 import { runCapture, runPaste, type ClipboardSnapshot, type PasteResult } from './capture-flow'
+import { createClipboardGate } from './clipboard-gate'
 import { restoreAction } from './clipboard-logic'
 import { sendChord, waitModifiersReleased } from './input'
 import { nativeStatus, win32 } from './win32'
@@ -17,10 +17,11 @@ const sleep = async (ms: number): Promise<void> => {
   await delay(ms)
 }
 
-/** 가져오기와 붙여넣기는 클립보드를 같이 쓰므로 한 번에 하나만 */
-const exclusive = createExclusive()
-/** 늦게 끝나는 복사를 지켜보는 중이면, 다음 가져오기·붙여넣기는 그것이 끝난 뒤에 시작한다 */
-let settling: Promise<void> = Promise.resolve()
+/**
+ * 가져오기·붙여넣기·글 쓰기는 클립보드를 같이 쓰므로 한 줄로 세운다.
+ * Sure-Mate가 클립보드에 쓰는 일은 모두 이 파일의 함수를 거친다(늦은 복사 지켜보기가 우리 글을 되돌리지 않게).
+ */
+const gate = createClipboardGate()
 
 const skipped = (reason: CaptureResult['skipped']): CaptureResult => ({ text: null, method: 'none', elapsedMs: 0, restored: false, skipped: reason })
 
@@ -55,9 +56,8 @@ async function restoreClipboard(snapshot: ClipboardSnapshot): Promise<boolean> {
 /** 지금 활성 창에서 선택한 글을 가져온다(설계 문서 §10). 이미 가져오거나 붙여넣는 중이면 busy. */
 export function captureSelection(): Promise<CaptureResult> {
   if (!nativeStatus().ok) return Promise.resolve(skipped('native-unavailable'))
-  return exclusive(
+  return gate.tryRun(
     async () => {
-      await settling
       const { result, settled } = await runCapture({
         now: Date.now,
         sleep,
@@ -73,7 +73,7 @@ export function captureSelection(): Promise<CaptureResult> {
         readText: () => clipboard.readText(),
         restore: restoreClipboard
       })
-      settling = settled
+      gate.settleAfter(settled)
       return result
     },
     () => skipped('busy')
@@ -86,12 +86,11 @@ export function captureSelection(): Promise<CaptureResult> {
  */
 export async function pasteText(hwnd: string, text: string): Promise<PasteResult> {
   if (!nativeStatus().ok) {
-    await clipboard.writeText(text)
+    await writeClipboardText(text, { excludeFromHistory: false })
     return { ok: false, reason: 'native-unavailable' }
   }
-  return exclusive(
+  return gate.tryRun(
     async () => {
-      await settling
       return runPaste(
         {
           sleep,
@@ -113,12 +112,23 @@ export async function pasteText(hwnd: string, text: string): Promise<PasteResult
   )
 }
 
-/** Win+V 기록·클라우드 동기화에서 빠지도록 표시를 붙여 글을 쓴다(되돌린 원문용). */
-export async function writeExcludedFromHistory(text: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await clipboard.write([new ClipboardItem({ 'text/plain': text, [EXCLUDE_FROM_HISTORY]: new Blob([new Uint8Array([1])]) })])
-    return { ok: true }
-  } catch (e) {
-    return { ok: false, error: String(e) }
-  }
+/**
+ * 우리 글(프롬프트·되돌린 원문)을 클립보드에 쓴다. 가져오기와 늦은 복사 지켜보기가 끝날 때까지 기다렸다가 쓴다.
+ * excludeFromHistory면 Win+V 기록·클라우드 동기화에서 빠지도록 표시를 붙이고, 안 되면 보통으로라도 쓴다.
+ * excluded는 표시를 붙여 썼는지, error는 표시를 붙이지 못한 까닭.
+ */
+export function writeClipboardText(text: string, o: { excludeFromHistory: boolean }): Promise<{ excluded: boolean; error?: string }> {
+  return gate.queue(async () => {
+    if (o.excludeFromHistory) {
+      try {
+        await clipboard.write([new ClipboardItem({ 'text/plain': text, [EXCLUDE_FROM_HISTORY]: new Blob([new Uint8Array([1])]) })])
+        return { excluded: true }
+      } catch (e) {
+        clipboard.writeText(text)
+        return { excluded: false, error: String(e) }
+      }
+    }
+    clipboard.writeText(text)
+    return { excluded: false }
+  })
 }
