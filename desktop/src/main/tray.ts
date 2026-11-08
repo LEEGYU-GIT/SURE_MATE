@@ -1,11 +1,12 @@
 import { Menu, Tray, nativeImage } from 'electron'
 import icon from '../../resources/icon.png?asset'
-import { trayTooltip } from '../shared/labels'
+import { maskingModeLabel, trayTooltip } from '../shared/labels'
+import type { MaskingMode } from '../shared/types'
 
 export interface TrayOptions {
   /** 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null */
   paletteHotkey: () => string | null
-  maskingLabel: () => string
+  maskingMode: () => MaskingMode
   onOpenPalette: () => void
   /** 단축키 일시 중지를 켜고 끈다. 바뀐 뒤 상태(true = 중지됨)를 돌려준다. */
   onToggleSuspend: () => boolean
@@ -18,11 +19,11 @@ export function createTray(o: TrayOptions): { tray: Tray; refresh: () => void } 
   let suspended = false
 
   const refresh = (): void => {
-    tray.setToolTip(trayTooltip(o.paletteHotkey(), suspended))
+    tray.setToolTip(trayTooltip(o.paletteHotkey(), suspended, o.maskingMode()))
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: '팔레트 열기', click: o.onOpenPalette },
-        { label: `가명 처리: ${o.maskingLabel()}`, enabled: false },
+        { label: `가명 처리: ${maskingModeLabel(o.maskingMode())}`, enabled: false },
         { type: 'separator' },
         {
           label: '단축키 일시 중지',

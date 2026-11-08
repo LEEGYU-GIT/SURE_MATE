@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { allAiTargets, FALLBACK_AI_TARGET, sanitizeAiTargets, type AiTarget } from '../../shared/ai-targets'
+import { ALL_CATEGORIES, type MaskCategory } from '../../shared/masking/types'
 import type { MaskingMode } from '../../shared/types'
 
 export interface Settings {
@@ -8,7 +9,8 @@ export interface Settings {
   hotkeys: { palette: string; lookup: string }
   palette: { display: 'cursor' | 'primary' | 'active' }
   launchAtLogin: boolean
-  masking: { mode: MaskingMode }
+  /** 가명 처리(설계 문서 §8): 전체 기본 모드, 분류별 켜기/끄기, 사내 도메인, 대응표 보관 시간 */
+  masking: { mode: MaskingMode; categories: Record<MaskCategory, boolean>; internalDomains: string[]; ttlHours: number }
   /** 기본 AI 대상과 사용자가 더한 대상(사내 LLM 등) */
   ai: { defaultTarget: string; custom: AiTarget[] }
   onboardingDone: boolean
@@ -19,7 +21,12 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkeys: { palette: 'Ctrl+Alt+Space', lookup: 'Ctrl+Alt+W' },
   palette: { display: 'cursor' },
   launchAtLogin: true,
-  masking: { mode: 'restore' },
+  masking: {
+    mode: 'restore',
+    categories: Object.fromEntries(ALL_CATEGORIES.map((c) => [c, true])) as Record<MaskCategory, boolean>,
+    internalDomains: [],
+    ttlHours: 8
+  },
   ai: { defaultTarget: FALLBACK_AI_TARGET, custom: [] },
   onboardingDone: false
 }
@@ -45,6 +52,7 @@ export function mergeSettings(raw: unknown): Settings {
   const hotkeys = isObj(r.hotkeys) ? r.hotkeys : {}
   const palette = isObj(r.palette) ? r.palette : {}
   const masking = isObj(r.masking) ? r.masking : {}
+  const categories = isObj(masking.categories) ? masking.categories : {}
   const ai = isObj(r.ai) ? r.ai : {}
   const custom = sanitizeAiTargets(ai.custom)
   const targetIds = allAiTargets(custom).map((t) => t.id)
@@ -54,7 +62,18 @@ export function mergeSettings(raw: unknown): Settings {
     hotkeys: { palette: str(hotkeys.palette, d.hotkeys.palette), lookup: str(hotkeys.lookup, d.hotkeys.lookup) },
     palette: { display: oneOf(palette.display, DISPLAYS, d.palette.display) },
     launchAtLogin: bool(r.launchAtLogin, d.launchAtLogin),
-    masking: { mode: oneOf(masking.mode, MASKING_MODES, d.masking.mode) },
+    masking: {
+      mode: oneOf(masking.mode, MASKING_MODES, d.masking.mode),
+      categories: Object.fromEntries(ALL_CATEGORIES.map((c) => [c, bool(categories[c], true)])) as Record<MaskCategory, boolean>,
+      internalDomains: Array.isArray(masking.internalDomains)
+        ? masking.internalDomains
+            .filter((x): x is string => typeof x === 'string')
+            .map((x) => x.trim().toLowerCase())
+            .filter((x) => /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(x))
+            .slice(0, 20)
+        : [],
+      ttlHours: typeof masking.ttlHours === 'number' && Number.isFinite(masking.ttlHours) ? Math.min(24, Math.max(1, Math.round(masking.ttlHours))) : d.masking.ttlHours
+    },
     ai: { defaultTarget: oneOf(ai.defaultTarget, targetIds, d.ai.defaultTarget), custom },
     onboardingDone: bool(r.onboardingDone, d.onboardingDone)
   }

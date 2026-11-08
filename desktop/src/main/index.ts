@@ -4,7 +4,6 @@ import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
-import { maskingModeLabel } from '../shared/labels'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
@@ -92,7 +91,7 @@ async function startShell(userData: string): Promise<void> {
   let suspended = false
   shell = createTray({
     paletteHotkey,
-    maskingLabel: () => maskingModeLabel(settings.masking.mode),
+    maskingMode: () => settings.masking.mode,
     onOpenPalette: () => showPalette({ mode: 'search' }),
     onToggleSuspend: () => {
       if (suspended) {

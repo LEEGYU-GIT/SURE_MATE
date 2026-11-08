@@ -59,6 +59,30 @@ it('BOM이 붙은 설정 파일도 읽는다', async () => {
   expect((await readdir(dir)).some((f) => f.startsWith('settings.corrupt-'))).toBe(false)
 })
 
+it('가명 처리 설정 기본값: 되돌리기, 분류 모두 켬, 사내 도메인 없음, 8시간', async () => {
+  const m = (await loadSettings(dir)).masking
+  expect(m.mode).toBe('restore')
+  expect(Object.values(m.categories).every(Boolean)).toBe(true)
+  expect(Object.keys(m.categories)).toHaveLength(9)
+  expect(m.internalDomains).toEqual([])
+  expect(m.ttlHours).toBe(8)
+})
+
+it('가명 처리 설정: 분류 일부만 있으면 나머지는 켬, 도메인은 글자만 소문자로, 시간은 1~24로 자른다', async () => {
+  await writeFile(
+    join(dir, 'settings.json'),
+    JSON.stringify({ masking: { mode: 'remove', categories: { ip: false }, internalDomains: ['Intra.Example', 3, ' ', 'bad domain!'], ttlHours: 99 } })
+  )
+  const m = (await loadSettings(dir)).masking
+  expect(m.mode).toBe('remove')
+  expect(m.categories.ip).toBe(false)
+  expect(m.categories.client).toBe(true)
+  expect(m.internalDomains).toEqual(['intra.example'])
+  expect(m.ttlHours).toBe(24)
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ masking: { ttlHours: 0 } }))
+  expect((await loadSettings(dir)).masking.ttlHours).toBe(1)
+})
+
 it('AI 설정 기본값은 Claude, 사용자 대상 없음', async () => {
   expect((await loadSettings(dir)).ai).toEqual({ defaultTarget: 'claude', custom: [] })
 })

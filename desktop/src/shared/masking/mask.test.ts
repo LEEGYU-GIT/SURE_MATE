@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { findTerms, type MaskTerm } from './dictionary'
 import { MappingTable } from './mapping-table'
-import { maskPreamble, maskText, type MaskOptions } from './mask'
+import { mapRanges, maskPreamble, maskText, type MaskOptions } from './mask'
 import { findPatterns } from './patterns'
 import { ALL_CATEGORIES, type MaskCategory } from './types'
 
@@ -54,6 +54,16 @@ it('결과 글에서 가린 자리와, 키마다 한 번씩 적용 목록과 횟
     { key: 'client:xy', category: 'client', original: 'XY방산', replacement: 'CLIENT_A', count: 2 },
     { key: 'ip:10.0.3.15', category: 'ip', original: '10.0.3.15', replacement: 'IP_1', count: 1 }
   ])
+})
+
+it('원문 위치를 가린 뒤 위치로 옮긴다(넣은 글 형광펜이 가린 뒤에도 맞게)', () => {
+  const text = 'XY방산와 10.0.3.15 입력'
+  const r = maskText(text, detect(text), restore(), table())
+  expect(r.text).toBe('CLIENT_A와 IP_1 입력')
+  expect(mapRanges([[text.indexOf('입력'), text.length]], r.edits, 0)).toEqual([[r.text.indexOf('입력'), r.text.length]])
+  expect(mapRanges([[0, text.length]], r.edits, 10)).toEqual([[10, r.text.length + 10]])
+  // 가린 자리 안쪽 위치는 가린 표시의 끝으로
+  expect(mapRanges([[1, 2]], r.edits, 0)).toEqual([[0, 'CLIENT_A'.length]])
 })
 
 it('머리말(설계 문서 §8)', () => {

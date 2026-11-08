@@ -10,6 +10,13 @@ export interface MaskOptions {
   disabledKeys: string[]
 }
 
+/** 원문 [start, end)를 length 글자로 바꾼 기록(원문 위치) */
+export interface MaskEdit {
+  start: number
+  end: number
+  length: number
+}
+
 export interface AppliedMask {
   key: string
   category: MaskCategory
@@ -42,7 +49,7 @@ export function maskText(
   ds: Detection[],
   o: MaskOptions,
   table: MappingTable
-): { text: string; applied: AppliedMask[]; ranges: [number, number][] } {
+): { text: string; applied: AppliedMask[]; ranges: [number, number][]; edits: MaskEdit[] } {
   const disabled = new Set(o.disabledKeys)
   const active = resolveOverlaps(ds).filter((d) => o.categories[d.category] && !disabled.has(d.key))
   const isTaken = (token: string): boolean => text.includes(token)
@@ -64,11 +71,13 @@ export function maskText(
   let out = ''
   let pos = 0
   const ranges: [number, number][] = []
+  const edits: MaskEdit[] = []
   const applied = new Map<string, AppliedMask>()
   for (const d of active) {
     out += text.slice(pos, d.start)
     const replacement = o.mode === 'restore' ? table.tokenFor(d.category, d.key, d.original, isTaken) : removeLabel(d)
     ranges.push([out.length, out.length + replacement.length])
+    edits.push({ start: d.start, end: d.end, length: replacement.length })
     out += replacement
     pos = d.end
     const seen = applied.get(d.key)
@@ -76,7 +85,27 @@ export function maskText(
     else applied.set(d.key, { key: d.key, category: d.category, original: d.original, replacement, count: 1 })
   }
   out += text.slice(pos)
-  return { text: out, applied: [...applied.values()], ranges }
+  return { text: out, applied: [...applied.values()], ranges, edits }
+}
+
+/**
+ * 원문 위치의 구간을 가린 뒤(그리고 앞에 offset 글자를 붙인 뒤) 위치로 옮긴다.
+ * 가린 자리 안쪽 위치는 시작이면 표시의 시작, 끝이면 표시의 끝으로 맞춘다.
+ */
+export function mapRanges(ranges: [number, number][], edits: MaskEdit[], offset: number): [number, number][] {
+  const map = (x: number, isStart: boolean): number => {
+    let delta = 0
+    for (const e of edits) {
+      if (x >= e.end) {
+        delta += e.length - (e.end - e.start)
+        continue
+      }
+      if (x > e.start) return offset + e.start + delta + (isStart ? 0 : e.length)
+      break
+    }
+    return offset + x + delta
+  }
+  return ranges.map(([s, e]): [number, number] => [map(s, true), map(e, false)])
 }
 
 /** 가린 것이 있을 때 프롬프트 맨 위에 붙이는 한 줄(설계 문서 §8) */
