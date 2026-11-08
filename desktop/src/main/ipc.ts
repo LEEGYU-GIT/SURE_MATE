@@ -7,7 +7,7 @@ export interface IpcDeps {
   hide: () => void
   runItem: (id: string) => Promise<void>
   listItems: () => PaletteItem[]
-  previewPrompt: (req: PromptRequest) => PromptPreview
+  previewPrompt: (req: PromptRequest) => Promise<PromptPreview>
   runPrompt: (req: PromptRequest) => Promise<PromptRunResult>
   cancelPrompt: () => void
   getStatus: () => AppStatus
@@ -20,9 +20,20 @@ export function registerIpc(d: IpcDeps): void {
   ipcMain.on(IPC.paletteHide, () => d.hide())
   ipcMain.handle(IPC.paletteRunItem, (_e, id: unknown) => d.runItem(String(id)))
   ipcMain.handle(IPC.paletteListItems, () => d.listItems())
-  ipcMain.handle(IPC.promptPreview, (_e, raw: unknown): PromptPreview => {
+  ipcMain.handle(IPC.promptPreview, (_e, raw: unknown): Promise<PromptPreview> => {
     const req = parsePromptRequest(raw)
-    return req ? d.previewPrompt(req) : { text: '', truncated: false, inputLength: 0, warnings: [BAD_REQUEST], notes: [], highlights: [] }
+    return req
+      ? d.previewPrompt(req)
+      : Promise.resolve({
+          text: '',
+          truncated: false,
+          inputLength: 0,
+          warnings: [BAD_REQUEST],
+          notes: [],
+          highlights: [],
+          masking: { mode: 'restore', items: [] },
+          maskRanges: []
+        })
   })
   ipcMain.handle(IPC.promptRun, (_e, raw: unknown): Promise<PromptRunResult> => {
     const req = parsePromptRequest(raw)

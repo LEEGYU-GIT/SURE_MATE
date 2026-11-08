@@ -10,6 +10,8 @@ import { errorText } from './error-text'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
+import { createMaskingService, type MaskingService } from './masking/masking-service'
+import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld } from './native/input'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
@@ -30,6 +32,7 @@ process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { e
 let settings: Settings = DEFAULT_SETTINGS
 let templates: Template[] = []
 let prompts: PromptSession | null = null
+let masking: MaskingService | null = null
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 
@@ -155,7 +158,9 @@ if (!app.requestSingleInstanceLock()) {
     const loaded = await loadTemplates(userData, builtinPrompts)
     templates = loaded.templates
     if (loaded.errors.length) log('templates.loadErrors', { count: loaded.errors.length, first: errorText(loaded.errors[0]) })
-    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates })
+    const loadTerms = createTermsCache(userData, (errors) => log('masking.dictionaryErrors', { count: errors.length }))
+    masking = createMaskingService({ loadTerms, settings: () => settings.masking, now: Date.now })
+    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, masking })
     prompts = session
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다

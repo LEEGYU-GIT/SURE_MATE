@@ -3,7 +3,8 @@ import { allAiTargets, isOpenableUrl } from '../../shared/ai-targets'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import { log } from '../log'
-import { captureSelection } from '../native/selection'
+import type { MaskingService } from '../masking/masking-service'
+import { captureSelection, writeExcludedFromHistory } from '../native/selection'
 import type { Settings } from '../settings/settings-store'
 import { hidePalette, hidePaletteAndRefocus, showPalette } from '../windows/palette-window'
 import { createPromptSession, type PromptSession } from './prompt-session'
@@ -13,7 +14,12 @@ import { readReference } from './references'
 export const REFERENCE_WARN_CHARS = 4000
 
 /** 프롬프트 세션에 실제 Electron·Win32 기능을 연결한다 */
-export function createPromptRuntime(o: { userData: string; getSettings: () => Settings; getTemplates: () => Template[] }): PromptSession {
+export function createPromptRuntime(o: {
+  userData: string
+  getSettings: () => Settings
+  getTemplates: () => Template[]
+  masking: MaskingService
+}): PromptSession {
   return createPromptSession({
     findTemplate: (id) => o.getTemplates().find((t) => t.id === id) ?? null,
     hidePaletteAndRefocus,
@@ -36,7 +42,13 @@ export function createPromptRuntime(o: { userData: string; getSettings: () => Se
       const warnings = longKinds.map((k) => `기준 예시(${k})가 4,000자를 넘어요. 프롬프트가 길어져 AI가 앞부분만 읽을 수 있어요`)
       return { ...result, warnings: [...result.warnings, ...warnings] }
     },
-    writeClipboard: (text) => clipboard.writeText(text),
+    mask: (text, mo) => o.masking.mask(text, mo),
+    defaultMasking: () => o.getSettings().masking.mode,
+    writeClipboard: async (text, wo) => {
+      // 실명이 든 글은 Win+V 기록·클라우드 동기화에서 빼고, 안 되면 보통으로라도 쓴다
+      if (wo.excludeFromHistory && (await writeExcludedFromHistory(text)).ok) return
+      await clipboard.writeText(text)
+    },
     openUrl: async (url) => {
       if (!isOpenableUrl(url)) return
       // 브라우저가 앞으로 오도록 팔레트를 먼저 숨긴다(포커스를 되돌리지 않음)

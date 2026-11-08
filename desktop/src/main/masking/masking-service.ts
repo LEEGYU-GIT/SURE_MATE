@@ -3,21 +3,10 @@ import { findTerms, type MaskTerm } from '../../shared/masking/dictionary'
 import { MappingTable } from '../../shared/masking/mapping-table'
 import { mapRanges, maskPreamble, maskText } from '../../shared/masking/mask'
 import { findPatterns } from '../../shared/masking/patterns'
-import type { Detection, MaskCategory } from '../../shared/masking/types'
+import type { Detection, MaskCategory, MaskItem } from '../../shared/masking/types'
 import { unmaskText } from '../../shared/masking/unmask'
 import type { MaskingMode } from '../../shared/types'
 import type { Settings } from '../settings/settings-store'
-
-/** 확인 화면에 보여 줄 찾은 대상 하나(키마다 하나) */
-export interface MaskItem {
-  key: string
-  category: MaskCategory
-  original: string
-  /** 바꾼 표시. 끔이거나 이번 실행에서 껐으면 null */
-  replacement: string | null
-  count: number
-  enabled: boolean
-}
 
 export interface MaskResult {
   /** 머리말을 붙인 최종 글(끔이면 원문 그대로) */

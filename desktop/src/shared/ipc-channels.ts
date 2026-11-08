@@ -1,3 +1,4 @@
+import type { MaskItem } from './masking/types'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
@@ -13,6 +14,8 @@ export interface PromptDraft {
   defaultSource: PromptSource
   targets: { id: string; name: string }[]
   target: string
+  /** 시작 가명 처리 모드(템플릿 기본값, 없으면 전체 기본값) */
+  masking: MaskingMode
 }
 
 export interface PromptRequest {
@@ -20,6 +23,10 @@ export interface PromptRequest {
   /** source가 input일 때 직접 입력한 글 */
   input?: string
   target: string
+  /** 이번 실행에서 고른 가명 처리 모드(없으면 템플릿·전체 기본값) */
+  masking?: MaskingMode
+  /** 이번 실행에서 끈 항목(MaskItem.key) */
+  disabledKeys?: string[]
 }
 
 export interface PromptPreview {
@@ -32,6 +39,10 @@ export interface PromptPreview {
   notes: string[]
   /** text 안에서 넣은 글의 [시작, 끝) 위치(형광펜) */
   highlights: [number, number][]
+  /** 이번 미리 보기에 쓴 가명 처리 모드와 찾은 항목 */
+  masking: { mode: MaskingMode; items: MaskItem[] }
+  /** text 안에서 가린 표시의 [시작, 끝) 위치 */
+  maskRanges: [number, number][]
 }
 
 export interface PromptRunResult {

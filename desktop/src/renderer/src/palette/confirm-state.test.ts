@@ -15,6 +15,7 @@ const draft = (over: Partial<PromptDraft> = {}): PromptDraft => ({
     { id: 'copy', name: '복사만' }
   ],
   target: 'claude',
+  masking: 'restore',
   ...over
 })
 
