@@ -92,9 +92,12 @@ export class MappingTable {
     return this.byKey.size
   }
 
+  /**
+   * 대응표를 비운다. 글자 카운터는 남겨 앱이 켜져 있는 동안 같은 토큰을 다시 쓰지 않는다.
+   * 그래야 비운 뒤 옛 답의 CLIENT_A를 되돌릴 때 새 고객사 이름이 조용히 들어가지 않고 '모르는 표시'로 알린다.
+   */
   clear(): void {
     this.byKey.clear()
     this.byToken.clear()
-    this.counters.clear()
   }
 }

@@ -33,7 +33,7 @@ it('fork한 표에서 받은 토큰은 원래 표에 남지 않고, 원래 표�
   expect(t.lookup('CLIENT_B')).toBeUndefined()
 })
 
-it('마지막으로 쓴 뒤 ttl이 지나면 비고 토큰이 다시 A부터', () => {
+it('마지막으로 쓴 뒤 ttl이 지나면 비우되, 켜 둔 동안은 쓴 글자를 다시 쓰지 않는다(옛 답에 다른 이름이 들어가지 않게)', () => {
   let now = 0
   const t = new MappingTable({ now: () => now, ttlMs: 1000 })
   t.tokenFor('client', 'client:b', 'XY방산', never)
@@ -42,6 +42,10 @@ it('마지막으로 쓴 뒤 ttl이 지나면 비고 토큰이 다시 A부터', (
   now = 1800 // 마지막 사용(900)에서 900ms 뒤라 아직 살아 있다
   expect(t.tokenFor('client', 'client:a', '가상자동차', never)).toBe('CLIENT_B')
   now = 3000
-  expect(t.tokenFor('client', 'client:a', '가상자동차', never)).toBe('CLIENT_A')
+  expect(t.tokenFor('client', 'client:x', '다른 고객사', never)).toBe('CLIENT_C')
+  expect(t.lookup('CLIENT_A')).toBeUndefined()
   expect(t.lookup('CLIENT_B')).toBeUndefined()
+  // 직접 비워도 같다
+  t.clear()
+  expect(t.tokenFor('client', 'client:y', '또 다른 고객사', never)).toBe('CLIENT_D')
 })
