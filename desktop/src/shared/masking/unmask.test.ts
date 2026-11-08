@@ -40,6 +40,10 @@ it('CLIENT_AB를 CLIENT_A로 잘못 읽지 않는다', () => {
   expect(r.unknownTokens).toEqual(['CLIENT_AB'])
 })
 
+it('되돌린 이름 뒤 겹조사도 고친다(§8 완료 기준: 이름과 조사까지)', () => {
+  expect(unmaskText('CLIENT_B와의 회의, CLIENT_B로부터 받은 자료', table()).text).toBe('XY방산과의 회의, XY방산으로부터 받은 자료')
+})
+
 it('소괄호는 진짜 괄호 설명이라 남기고 안의 토큰만 되돌린다(대괄호는 벗긴다)', () => {
   expect(unmaskText('고객사(CLIENT_A)와 협의', table()).text).toBe('고객사(가상자동차)와 협의')
   expect(unmaskText('(CLIENT_A)와 협의', table()).text).toBe('(가상자동차)와 협의')

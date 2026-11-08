@@ -44,6 +44,15 @@ const isSyllable = (ch: string): boolean => {
 /** 낱말 첫 글자로도 흔한 한 글자 조사(이다·가장·은행·과정·로그…). 뒤에 한글이 붙으면 조사로 보지 않는다 */
 const AMBIGUOUS_SINGLE = new Set(['은', '는', '이', '가', '을', '를', '과', '와', '로'])
 
+/** 한 글자 조사 뒤에 이어져도 겹조사로 보는 것(와의·과는·로부터·로서·로써…) */
+const PARTICLE_TAILS: Record<string, readonly string[]> = {
+  와: ['의', '는', '도', '만', '부터'],
+  과: ['의', '는', '도', '만', '부터'],
+  로: ['부터', '서', '써', '는', '도', '의', '만']
+}
+
+const continuesParticle = (p: string, rest: string): boolean => (PARTICLE_TAILS[p] ?? []).some((t) => rest.startsWith(t))
+
 /**
  * 이름 바로 뒤(following의 앞머리)가 조사 짝 중 하나면, 이름의 받침에 맞는 조사와 바꿀 길이를 돌려준다(설계 문서 §8 되돌리기).
  * '라고·라는'처럼 뒤에 한글이 이어지는 게 정상인 조사도 있어서, 낱말 첫 글자로 흔한 조사만 한글이 이어지면 건드리지 않는다.
@@ -54,7 +63,7 @@ export function repickParticle(word: string, following: string): { particle: str
   for (const [withFinal, withoutFinal] of PARTICLES) {
     for (const p of [withFinal, withoutFinal]) {
       if (!following.startsWith(p)) continue
-      if (AMBIGUOUS_SINGLE.has(p) && isSyllable(following.charAt(1))) continue
+      if (AMBIGUOUS_SINGLE.has(p) && isSyllable(following.charAt(1)) && !continuesParticle(p, following.slice(p.length))) continue
       if (withFinal === '으로') return { particle: final && !endsWithRieul(word) ? '으로' : '로', length: p.length }
       return { particle: final ? withFinal : withoutFinal, length: p.length }
     }

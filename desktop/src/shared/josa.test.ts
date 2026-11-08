@@ -31,6 +31,16 @@ it('ㄹ 받침(서울, 영문 L, 숫자 1·7·8)이면 으로가 아니라 로',
   expect(repickParticle('서버 7', '으로')).toEqual({ particle: '로', length: 2 })
 })
 
+it('겹조사(와의·과는·로부터·로서·로써)도 다시 고르고, 낱말(로그·과정)은 건드리지 않는다', () => {
+  expect(repickParticle('XY방산', '와의')).toEqual({ particle: '과', length: 1 })
+  expect(repickParticle('가상자동차', '과는')).toEqual({ particle: '와', length: 1 })
+  expect(repickParticle('XY방산', '로부터')).toEqual({ particle: '으로', length: 1 })
+  expect(repickParticle('XY방산', '로서')).toEqual({ particle: '으로', length: 1 })
+  expect(repickParticle('XY방산', '로써')).toEqual({ particle: '으로', length: 1 })
+  expect(repickParticle('XY방산', '로그')).toBeNull()
+  expect(repickParticle('가상자동차', '과정')).toBeNull()
+})
+
 it('조사가 아니면 건드리지 않는다(이다·가장처럼 낱말의 일부, 짝 없는 조사)', () => {
   expect(repickParticle('가상자동차', '이다')).toBeNull()
   expect(repickParticle('XY방산', '가장')).toBeNull()
