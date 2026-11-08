@@ -2,7 +2,7 @@ import { resolveOverlaps } from '../../shared/masking/detections'
 import { findTerms } from '../../shared/masking/dictionary'
 import { MappingTable } from '../../shared/masking/mapping-table'
 import { mapRanges, maskPreamble, maskText } from '../../shared/masking/mask'
-import { findPatterns } from '../../shared/masking/patterns'
+import { findAllPatterns } from '../../shared/masking/patterns'
 import type { Detection, MaskCategory, MaskItem } from '../../shared/masking/types'
 import { unmaskText } from '../../shared/masking/unmask'
 import type { MaskingMode } from '../../shared/types'
@@ -63,17 +63,31 @@ function summarize(ds: Detection[]): { key: string; category: MaskCategory; orig
 export function createMaskingService(d: { loadDictionary(): Promise<DictionaryState>; settings(): Settings['masking']; now(): number }): MaskingService {
   const table = new MappingTable({ now: d.now, ttlMs: d.settings().ttlHours * 3_600_000 })
 
+  /** 설정에서 켠 분류의 찾은 것 전부(겹침 정리 전). 분류 끄기를 먼저 해야 끈 경로 안의 이름·IP를 놓치지 않는다 */
   const detect = async (text: string): Promise<{ found: Detection[]; dict: DictionaryState }> => {
     const s = d.settings()
     const dict = await d.loadDictionary()
-    const found = resolveOverlaps([...findTerms(text, dict.terms), ...findPatterns(text, { internalDomains: s.internalDomains })])
+    const found = [...findTerms(text, dict.terms), ...findAllPatterns(text, { internalDomains: s.internalDomains })]
     return { found: found.filter((x) => s.categories[x.category]), dict }
+  }
+
+  /**
+   * 확인 화면 목록에 보일 것: 아무것도 끄지 않았을 때 가려지는 것과, 이번에 끈 뒤 새로 드러난 것
+   * (끈 경로 안의 이름 등). 끈 항목도 다시 켤 수 있게 남긴다.
+   */
+  const shown = (found: Detection[], disabledKeys: string[]): Detection[] => {
+    const disabled = new Set(disabledKeys)
+    const byPlace = new Map<string, Detection>()
+    for (const x of [...resolveOverlaps(found), ...resolveOverlaps(found.filter((f) => !disabled.has(f.key)))]) {
+      byPlace.set(`${x.start}:${x.end}:${x.key}`, x)
+    }
+    return [...byPlace.values()].sort((a, b) => a.start - b.start)
   }
 
   return {
     async mask(input, o) {
       if (o.mode === 'off') {
-        const items = summarize((await detect(input.normalize('NFC'))).found).map((x): MaskItem => ({ ...x, replacement: null, enabled: false }))
+        const items = summarize(resolveOverlaps((await detect(input.normalize('NFC'))).found)).map((x): MaskItem => ({ ...x, replacement: null, enabled: false }))
         return { text: input, ranges: [], preamble: null, items, warnings: [], notes: [], mapRanges: (r) => r }
       }
       const text = input.normalize('NFC')
@@ -81,7 +95,7 @@ export function createMaskingService(d: { loadDictionary(): Promise<DictionarySt
       const s = d.settings()
       const r = maskText(text, ds, { mode: o.mode, categories: s.categories, disabledKeys: o.disabledKeys }, o.dryRun ? table.fork() : table)
       const replaced = new Map(r.applied.map((a) => [a.key, a.replacement]))
-      const items = summarize(ds).map((x): MaskItem => ({ ...x, replacement: replaced.get(x.key) ?? null, enabled: replaced.has(x.key) }))
+      const items = summarize(shown(ds, o.disabledKeys)).map((x): MaskItem => ({ ...x, replacement: replaced.get(x.key) ?? null, enabled: replaced.has(x.key) }))
       const preamble = r.applied.length > 0 ? maskPreamble(o.mode) : null
       const offset = preamble ? preamble.length + 2 : 0
       return {

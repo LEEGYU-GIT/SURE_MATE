@@ -51,7 +51,8 @@ export function maskText(
   table: MappingTable
 ): { text: string; applied: AppliedMask[]; ranges: [number, number][]; edits: MaskEdit[] } {
   const disabled = new Set(o.disabledKeys)
-  const active = resolveOverlaps(ds).filter((d) => o.categories[d.category] && !disabled.has(d.key))
+  // 끄기(분류·항목)는 겹침 정리보다 먼저: 끈 경로·이메일 안에 든 이름·IP는 그대로 가려야 한다
+  const active = resolveOverlaps(ds.filter((d) => o.categories[d.category] && !disabled.has(d.key)))
   const isTaken = (token: string): boolean => text.includes(token)
   const removeLabels = new Map<string, string>()
   const removeCounts = new Map<MaskCategory, number>()

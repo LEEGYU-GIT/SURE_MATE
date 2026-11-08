@@ -45,6 +45,41 @@ it('가명 사전에 오류가 있으면 미리 보기 경고로, 비었으면 �
   expect((await svc().mask('가상자동차 회의', o)).warnings).toEqual([])
 })
 
+it('분류를 끄면 그 분류만 원문: 경로를 꺼도 경로 안의 고객사 이름과 IP는 가린다', async () => {
+  const o = { mode: 'restore' as const, disabledKeys: [], dryRun: true }
+  const noPath = svc({ categories: { ...allOn, path: false } })
+  const inPath = await noPath.mask('\\\\fs01\\projects\\가상자동차\\SRS.docx 확인', o)
+  expect(inPath.text).not.toContain('가상자동차')
+  expect(inPath.items.map((i) => i.category)).toEqual(['client'])
+  const unc = await noPath.mask('\\\\10.0.3.15\\share 확인', o)
+  expect(unc.text).not.toContain('10.0.3.15')
+  expect(unc.items.map((i) => i.category)).toEqual(['ip'])
+})
+
+it('이메일을 꺼도 별칭으로 넣은 도메인 이름은 가린다', async () => {
+  const s = createMaskingService({
+    loadDictionary: async () => ({ terms: [{ id: 'g', category: 'client', canonical: '가상자동차', aliases: ['gasang'] }], errors: 0 }),
+    settings: () => ({ mode: 'restore', categories: { ...allOn, email: false }, internalDomains: [], ttlHours: 8 }),
+    now: () => 0
+  })
+  const r = await s.mask('kim@gasang.co.kr 에게', { mode: 'restore', disabledKeys: [], dryRun: true })
+  expect(r.text).not.toContain('gasang')
+})
+
+it('확인 화면에서 경로 항목만 끄면 그 안의 고객사 이름은 따로 가리고 목록에 나온다', async () => {
+  const s = svc()
+  const text = 'C:\\work\\가상자동차\\SRS.docx 확인'
+  const first = await s.mask(text, { mode: 'restore', disabledKeys: [], dryRun: true })
+  expect(first.items.map((i) => i.category)).toEqual(['path'])
+  const pathKey = first.items[0].key
+  const r = await s.mask(text, { mode: 'restore', disabledKeys: [pathKey], dryRun: true })
+  expect(r.text).not.toContain('가상자동차')
+  expect(r.items.map((i) => [i.category, i.enabled])).toEqual([
+    ['path', false],
+    ['client', true]
+  ])
+})
+
 it('끔이면 원문 그대로, 머리말 없음, 찾은 것은 목록에만 꺼진 채로', async () => {
   const r = await svc().mask('가상자동차 회의', { mode: 'off', disabledKeys: [], dryRun: false })
   expect(r.text).toBe('가상자동차 회의')

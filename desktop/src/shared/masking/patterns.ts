@@ -144,5 +144,13 @@ function findInternalUrls(text: string, domains: string[]): Detection[] {
 
 /** 글에서 패턴 분류(IP·경로·이메일·전화번호·사내 URL)를 찾는다. 겹치면 먼저 시작한 것, 시작 위치 순 */
 export function findPatterns(text: string, o: { internalDomains: string[] }): Detection[] {
-  return resolveOverlaps([...findIps(text), ...findPaths(text), ...findEmails(text), ...findPhones(text), ...findInternalUrls(text, o.internalDomains)])
+  return resolveOverlaps(findAllPatterns(text, o))
+}
+
+/**
+ * 겹침 정리 전의 패턴 찾기 결과 전부(경로 안의 IP 등 겹친 것도 남긴다).
+ * 분류를 끄면 그 분류만 원문으로 남게, 가명 처리 서비스는 분류를 먼저 거르고 겹침을 정리한다.
+ */
+export function findAllPatterns(text: string, o: { internalDomains: string[] }): Detection[] {
+  return [...findIps(text), ...findPaths(text), ...findEmails(text), ...findPhones(text), ...findInternalUrls(text, o.internalDomains)]
 }
