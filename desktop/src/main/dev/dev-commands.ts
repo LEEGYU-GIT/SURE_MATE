@@ -1,5 +1,5 @@
 import { leftHalf, pickOtherMonitor, rectDiff } from '../../shared/geometry'
-import type { CaptureSkipReason, Rect } from '../../shared/types'
+import type { CaptureSkipReason, PaletteItem, Rect } from '../../shared/types'
 import { errorText } from '../error-text'
 import { log } from '../log'
 import { getMonitors, monitorOfPhysicalRect, toPhysical } from '../native/coords'
@@ -11,6 +11,15 @@ import { getPreviousHwnd, hidePalette, showPalette } from '../windows/palette-wi
 // M1 네이티브 검증용 개발 명령. 로그에는 창 제목을 남기지 않는다(문서 이름이 들어갈 수 있음).
 
 export const isDevCommand = (id: string): boolean => id.startsWith('dev.')
+
+/** 팔레트 명령 구역에 보일 개발 명령(M1 검증용, 출품 빌드 전에 숨긴다) */
+export const DEV_COMMAND_ITEMS: PaletteItem[] = [
+  { id: 'dev.imeLogger', group: 'command', title: '개발: 한글 입력 기록기', keywords: ['ime', 'dev'] },
+  { id: 'dev.listWindows', group: 'command', title: '개발: 창 목록', keywords: ['window', 'dev'] },
+  { id: 'dev.moveToOtherMonitor', group: 'command', title: '개발: 직전 창을 다른 모니터 왼쪽 절반으로', keywords: ['monitor', 'dev'] },
+  { id: 'dev.pasteTest', group: 'command', title: '개발: 붙여넣기 시험', keywords: ['paste', 'dev'] },
+  { id: 'dev.clipboardExcludeTest', group: 'command', title: '개발: 클립보드 기록 제외 시험', keywords: ['clipboard', 'dev'] }
+]
 
 const fmt = (r: Rect): string => `${r.x},${r.y} ${r.width}×${r.height}`
 

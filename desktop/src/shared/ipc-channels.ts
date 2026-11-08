@@ -1,10 +1,11 @@
-import type { MaskingMode } from './types'
+import type { MaskingMode, PaletteItem } from './types'
 
 /** main ↔ renderer 채널 이름 */
 export const IPC = {
   paletteShown: 'palette:shown',
   paletteHide: 'palette:hide',
   paletteRunItem: 'palette:run-item',
+  paletteListItems: 'palette:list-items',
   appGetStatus: 'app:get-status',
   devSaveImeLog: 'dev:save-ime-log'
 } as const
@@ -19,6 +20,8 @@ export type AppStatus = { paletteHotkey: string | null; maskingMode: MaskingMode
 export interface SureMateApi {
   hide(): void
   runItem(id: string): Promise<void>
+  /** 팔레트에 보일 항목(프롬프트·명령 등) */
+  listItems(): Promise<PaletteItem[]>
   getStatus(): Promise<AppStatus>
   onShown(cb: (payload: ShownPayload) => void): () => void
   /** 개발용: 한글 입력 기록을 logs 폴더에 저장하고 경로를 돌려준다 */

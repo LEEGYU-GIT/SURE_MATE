@@ -2,14 +2,18 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, globalShortcut, type Tray } from 'electron'
+import builtinPrompts from '../../resources/prompts.json'
 import { maskingModeLabel } from '../shared/labels'
-import { isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
+import type { Template } from '../shared/template/types'
+import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
 import { isAcceleratorHeld } from './native/input'
 import { nativeStatus } from './native/win32'
+import { buildPaletteItems } from './prompts/palette-items'
+import { loadTemplates } from './prompts/template-store'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
@@ -22,6 +26,7 @@ process.on('unhandledRejection', (reason) => log('error.unhandledRejection', { e
 process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { error: errorText(e) }))
 
 let settings: Settings = DEFAULT_SETTINGS
+let templates: Template[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 
@@ -143,11 +148,15 @@ if (!app.requestSingleInstanceLock()) {
 
     const userData = app.getPath('userData')
     settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
+    const loaded = await loadTemplates(userData, builtinPrompts)
+    templates = loaded.templates
+    if (loaded.errors.length) log('templates.loadErrors', { count: loaded.errors.length, first: errorText(loaded.errors[0]) })
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
       hide: () => hidePalette({ restoreFocus: true }),
       runItem,
+      listItems: () => buildPaletteItems(templates, DEV_COMMAND_ITEMS),
       saveImeLog,
       getStatus: () => ({ paletteHotkey: paletteHotkey(), maskingMode: settings.masking.mode })
     })

@@ -2,9 +2,10 @@ import { Command } from 'cmdk'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
+import { PALETTE_GROUPS } from '../../../shared/palette-query'
+import type { PaletteItem } from '../../../shared/types'
 import { DevOutput } from './DevOutput'
 import { filterItems } from './filter-items'
-import { GROUPS, MOCK_ITEMS } from './mock-items'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 
@@ -13,12 +14,13 @@ const runGuard = createExecutionGuard(300)
 
 export function Palette(): React.JSX.Element {
   const [query, setQuery] = useState('')
+  const [allItems, setAllItems] = useState<PaletteItem[]>([])
   const [dev, setDev] = useState<{ title: string; text: string } | null>(null)
   const [shownCount, setShownCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   // 입력값은 그대로 두고, 목록만 지연 값으로 그린다(조합 중 입력이 끊기지 않게)
   const deferredQuery = useDeferredValue(query)
-  const items = useMemo(() => filterItems(MOCK_ITEMS, deferredQuery), [deferredQuery])
+  const items = useMemo(() => filterItems(allItems, deferredQuery), [allItems, deferredQuery])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
 
@@ -28,11 +30,16 @@ export function Palette(): React.JSX.Element {
     lastQuery.current = deferredQuery
   }, [deferredQuery, items])
 
+  useEffect(() => {
+    void window.sureMate.listItems().then(setAllItems)
+  }, [])
+
   useEffect(
     () =>
       window.sureMate.onShown((payload) => {
         setQuery('')
-        setSelected(MOCK_ITEMS[0]?.id ?? '')
+        setSelected('')
+        void window.sureMate.listItems().then(setAllItems)
         setShownCount((n) => n + 1)
         setDev(payload.mode === 'dev-output' ? { title: payload.title, text: payload.text } : null)
         requestAnimationFrame(() => inputRef.current?.focus())
@@ -73,7 +80,7 @@ export function Palette(): React.JSX.Element {
           // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 항목을 실행한다
           if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || query === deferredQuery) return
           e.preventDefault()
-          const top = filterItems(MOCK_ITEMS, query)[0]
+          const top = filterItems(allItems, query)[0]
           if (top) run(top.id)
         }}
       >
@@ -88,7 +95,7 @@ export function Palette(): React.JSX.Element {
         />
         <Command.List className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
           <Command.Empty className="px-3 py-6 text-center text-sm text-zinc-500">결과가 없어요</Command.Empty>
-          {GROUPS.map((group) => {
+          {PALETTE_GROUPS.map((group) => {
             const groupItems = items.filter((item) => item.group === group.id)
             if (groupItems.length === 0) return null
             return (

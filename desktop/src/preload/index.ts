@@ -5,6 +5,7 @@ import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels
 const api: SureMateApi = {
   hide: () => ipcRenderer.send(IPC.paletteHide),
   runItem: (id) => ipcRenderer.invoke(IPC.paletteRunItem, id),
+  listItems: () => ipcRenderer.invoke(IPC.paletteListItems),
   getStatus: () => ipcRenderer.invoke(IPC.appGetStatus),
   onShown: (cb) => {
     const listener = (_e: IpcRendererEvent, payload: ShownPayload): void => cb(payload)
