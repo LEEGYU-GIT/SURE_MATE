@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings-store'
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, updateSettings } from './settings-store'
 
 // 백신·EDR이 파일을 잡고 있어 이름 바꾸기가 실패하는 경우를 흉내 내려고 rename만 감싼다
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -51,6 +51,14 @@ it('저장은 원자적이고 이전 파일을 .bak으로 남긴다', async () =
   expect(JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')).onboardingDone).toBe(true)
   expect(JSON.parse(await readFile(join(dir, 'settings.json.bak'), 'utf8')).onboardingDone).toBe(false)
   expect(await readdir(dir)).not.toContain('settings.json.tmp')
+})
+
+it('한 값만 바꿔 저장해도 실행 중에 손으로 고친 다른 값은 지킨다(파일을 다시 읽고 고친다)', async () => {
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ masking: { internalDomains: ['intra.example'] } }))
+  const s = await updateSettings(dir, (cur) => ({ ...cur, masking: { ...cur.masking, mode: 'off' } }))
+  expect(s.masking).toMatchObject({ mode: 'off', internalDomains: ['intra.example'] })
+  const onDisk = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
+  expect(onDisk.masking).toMatchObject({ mode: 'off', internalDomains: ['intra.example'] })
 })
 
 it('BOM이 붙은 설정 파일도 읽는다', async () => {

@@ -20,7 +20,7 @@ import { buildPaletteItems } from './prompts/palette-items'
 import { createPromptRuntime } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
-import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, type Settings } from './settings/settings-store'
+import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, updateSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
@@ -194,14 +194,17 @@ if (!app.requestSingleInstanceLock()) {
       userData,
       masking,
       getMode: () => settings.masking.mode,
+      // 파일을 다시 읽어 모드만 바꾼다(실행 중에 손으로 고친 사내 도메인 등을 덮어쓰지 않게)
       setMode: async (mode) => {
-        settings = { ...settings, masking: { ...settings.masking, mode } }
-        shell?.refresh()
         try {
-          await saveSettings(userData, settings)
+          settings = await updateSettings(userData, (cur) => ({ ...cur, masking: { ...cur.masking, mode } }), (what, e) =>
+            log('settings.loadError', { what, error: errorText(e) })
+          )
         } catch (e) {
+          settings = { ...settings, masking: { ...settings.masking, mode } }
           log('settings.saveError', { error: errorText(e) })
         }
+        shell?.refresh()
       }
     })
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })

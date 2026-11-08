@@ -2,6 +2,7 @@ import { clipboard, shell } from 'electron'
 import { allAiTargets, isOpenableUrl } from '../../shared/ai-targets'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
+import { errorText } from '../error-text'
 import { log } from '../log'
 import type { MaskingService } from '../masking/masking-service'
 import { waitPickKeysReleased } from '../native/input'
@@ -51,7 +52,9 @@ export function createPromptRuntime(o: {
     defaultMasking: () => o.getSettings().masking.mode,
     writeClipboard: async (text, wo) => {
       // 실명이 든 글은 Win+V 기록·클라우드 동기화에서 뺀다. 가져오기의 늦은 복사 지켜보기가 끝난 뒤에 쓴다
-      await writeClipboardText(text, wo)
+      const r = await writeClipboardText(text, wo)
+      // 기록 제외 표시를 못 붙였으면(보통으로는 썼다) 원인을 알 수 있게 남긴다
+      if (wo.excludeFromHistory && !r.excluded) log('clipboard.excludeFailed', { error: r.error ? errorText(r.error) : null })
     },
     openUrl: async (url) => {
       if (!isOpenableUrl(url)) return

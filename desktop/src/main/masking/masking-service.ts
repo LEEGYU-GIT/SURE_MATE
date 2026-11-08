@@ -3,7 +3,7 @@ import { findTerms } from '../../shared/masking/dictionary'
 import { MappingTable } from '../../shared/masking/mapping-table'
 import { mapRanges, maskPreamble, maskText } from '../../shared/masking/mask'
 import { findAllPatterns } from '../../shared/masking/patterns'
-import type { Detection, MaskCategory, MaskItem } from '../../shared/masking/types'
+import { ALL_CATEGORIES, type Detection, type MaskCategory, type MaskItem } from '../../shared/masking/types'
 import { unmaskText } from '../../shared/masking/unmask'
 import type { MaskingMode } from '../../shared/types'
 import type { Settings } from '../settings/settings-store'
@@ -20,6 +20,8 @@ export interface MaskResult {
   warnings: string[]
   /** 흐리게 보일 안내(가명 사전이 비었음 등) */
   notes: string[]
+  /** 설정에서 끈 분류가 있어 실명이 남을 수 있음(그런 글은 Win+V 기록에서 뺀다) */
+  partial: boolean
   /** 가리기 전 위치의 구간을 text 안 위치로 옮긴다(넣은 글 형광펜용) */
   mapRanges(ranges: [number, number][]): [number, number][]
 }
@@ -88,7 +90,7 @@ export function createMaskingService(d: { loadDictionary(): Promise<DictionarySt
     async mask(input, o) {
       if (o.mode === 'off') {
         const items = summarize(resolveOverlaps((await detect(input.normalize('NFC'))).found)).map((x): MaskItem => ({ ...x, replacement: null, enabled: false }))
-        return { text: input, ranges: [], preamble: null, items, warnings: [], notes: [], mapRanges: (r) => r }
+        return { text: input, ranges: [], preamble: null, items, warnings: [], notes: [], partial: false, mapRanges: (r) => r }
       }
       const text = input.normalize('NFC')
       const { found: ds, dict } = await detect(text)
@@ -104,6 +106,7 @@ export function createMaskingService(d: { loadDictionary(): Promise<DictionarySt
         preamble,
         items,
         ...dictionaryNotices(dict),
+        partial: ALL_CATEGORIES.some((c) => !s.categories[c]),
         mapRanges: (ranges) => mapRanges(ranges, r.edits, offset)
       }
     },

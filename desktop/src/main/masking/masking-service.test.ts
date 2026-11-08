@@ -80,6 +80,12 @@ it('확인 화면에서 경로 항목만 끄면 그 안의 고객사 이름은 �
   ])
 })
 
+it('설정에서 분류를 하나라도 끄면 실명이 남을 수 있다고 알린다(partial)', async () => {
+  const o = { mode: 'restore' as const, disabledKeys: [], dryRun: true }
+  expect((await svc().mask('가상자동차 회의', o)).partial).toBe(false)
+  expect((await svc({ categories: { ...allOn, person: false } }).mask('가상자동차 회의', o)).partial).toBe(true)
+})
+
 it('끔이면 원문 그대로, 머리말 없음, 찾은 것은 목록에만 꺼진 채로', async () => {
   const r = await svc().mask('가상자동차 회의', { mode: 'off', disabledKeys: [], dryRun: false })
   expect(r.text).toBe('가상자동차 회의')

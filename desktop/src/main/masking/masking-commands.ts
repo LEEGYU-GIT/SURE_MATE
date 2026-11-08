@@ -48,6 +48,8 @@ export interface MaskingCommandDeps {
   /** excludeFromHistory면 Win+V 기록·클라우드 동기화에서 뺀다(실명이 든 글) */
   writeClipboard(text: string, o: { excludeFromHistory: boolean }): Promise<void>
   hidePalette(restoreFocus: boolean): void
+  /** 명령을 고른 Enter·보조키를 뗄 때까지 기다린다. 시간 안에 안 떼면 false(그때는 팔레트를 숨기지 않는다) */
+  waitKeysReleased(): Promise<boolean>
   /** Enter 떼기를 기다려 팔레트를 숨기고 직전 창에서 선택한 글을 가져온다 */
   captureSelection(): Promise<{ text: string | null; skipped?: CaptureSkipReason }>
   /** 사전 파일이 없으면 가상 예시로 만들고 경로를 돌려준다 */
@@ -69,8 +71,13 @@ const UNKNOWN_SHOWN = 3
 
 /** 가명 처리 단독 명령(설계 문서 §7 흐름 5단계, §8) */
 export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
+  /** 누른 채로 숨기면 자동 반복 Enter가 원래 앱으로 가므로, 뗀 것을 확인했을 때만 숨긴다 */
+  const hideAfterKeys = async (restoreFocus: boolean): Promise<void> => {
+    if (await d.waitKeysReleased()) d.hidePalette(restoreFocus)
+  }
+
   const unmask = async (): Promise<void> => {
-    d.hidePalette(true)
+    await hideAfterKeys(true)
     const text = await d.readClipboard()
     if (!text.trim()) {
       d.notify('클립보드가 비어 있어요. AI 답을 복사한 뒤 다시 실행해 주세요.')
@@ -119,7 +126,7 @@ export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
   }
 
   const cycleMode = async (): Promise<void> => {
-    d.hidePalette(true)
+    await hideAfterKeys(true)
     const next = nextMaskingMode(d.getMode())
     await d.setMode(next)
     d.notify(`가명 처리 기본값: ${maskingModeLabel(next)}${next === 'off' ? ' — 이제 원문 그대로 복사돼요' : ''}`)
@@ -127,7 +134,7 @@ export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
   }
 
   const openDictionary = async (): Promise<void> => {
-    d.hidePalette(false)
+    await hideAfterKeys(false)
     const path = await d.ensureDictionary()
     const error = await d.openFile(path)
     if (error) {

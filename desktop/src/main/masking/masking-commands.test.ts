@@ -25,6 +25,7 @@ function fake(
     masked?: { text: string; items: MaskItem[] }
     maskWarnings?: string[]
     openError?: string
+    keysHeld?: boolean
   } = {}
 ): { deps: MaskingCommandDeps; calls: Calls } {
   const calls: Calls = { writes: [], notes: [], logs: [], hides: [], masks: [], modes: [], opened: [], shown: [] }
@@ -34,7 +35,7 @@ function fake(
       mask: async (text, o) => {
         calls.masks.push({ text, mode: o.mode, dryRun: o.dryRun })
         const m = over.masked ?? { text: `[머리말]\n\n${text.replace('가상자동차', 'CLIENT_A')}`, items: [item(true)] }
-        return { text: m.text, ranges: [], preamble: '[머리말]', items: m.items, warnings: over.maskWarnings ?? [], notes: [], mapRanges: (r) => r }
+        return { text: m.text, ranges: [], preamble: '[머리말]', items: m.items, warnings: over.maskWarnings ?? [], notes: [], partial: false, mapRanges: (r) => r }
       },
       unmask: () => over.unmask ?? { text: '가상자동차와 XY방산은 씁니다', restored: 2, unknownTokens: [] },
       tableSize: () => over.tableSize ?? 3
@@ -48,6 +49,7 @@ function fake(
     writeClipboard: async (text, o) => {
       calls.writes.push({ text, excludeFromHistory: o.excludeFromHistory })
     },
+    waitKeysReleased: async () => !over.keysHeld,
     hidePalette: (restoreFocus) => {
       calls.hides.push(restoreFocus)
     },
@@ -153,6 +155,18 @@ it('가명 사전 열기: 없으면 가상 예시로 만들고 기본 프로그�
   await createMaskingCommands(noApp.deps).run('cmd.open-dictionary')
   expect(noApp.calls.shown).toEqual(['C:\\사용자\\masking-dictionary.json'])
   expect(noApp.calls.notes[0]).toContain('폴더')
+})
+
+it('Enter를 뗄 때까지 기다렸다가 팔레트를 숨기고, 계속 누르고 있으면 숨기지 않은 채 실행한다(눌린 Enter가 원래 앱으로 가지 않게)', async () => {
+  const held = fake({ keysHeld: true })
+  const commands = createMaskingCommands(held.deps)
+  await commands.run('cmd.unmask')
+  await commands.run('cmd.masking-mode')
+  await commands.run('cmd.open-dictionary')
+  expect(held.calls.hides).toEqual([])
+  expect(held.calls.writes).toHaveLength(1)
+  expect(held.calls.modes).toHaveLength(1)
+  expect(held.calls.opened).toHaveLength(1)
 })
 
 it('가명 처리 명령이 아니면 false', async () => {

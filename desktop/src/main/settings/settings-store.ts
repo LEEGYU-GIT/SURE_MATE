@@ -116,6 +116,16 @@ async function keepCorruptCopy(path: string, dest: string, onError: (what: strin
   }
 }
 
+/**
+ * 설정 파일을 다시 읽어 update로 고친 뒤 저장하고 돌려준다. 실행 중에 사용자가 파일을 손으로 고쳤어도
+ * (설정 화면이 생기기 전에는 유일한 방법) 바꾸려는 값만 바뀌고 나머지는 지켜진다.
+ */
+export async function updateSettings(dir: string, update: (current: Settings) => Settings, onError?: (what: string, e: unknown) => void): Promise<Settings> {
+  const next = update(await loadSettings(dir, onError))
+  await saveSettings(dir, next)
+  return next
+}
+
 /** 임시 파일에 쓰고, 기존 파일을 .bak으로 복사한 뒤 이름을 바꾼다. */
 export async function saveSettings(dir: string, s: Settings): Promise<void> {
   await mkdir(dir, { recursive: true })

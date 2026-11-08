@@ -1,5 +1,6 @@
 import { clipboard, shell } from 'electron'
 import type { MaskingMode } from '../../shared/types'
+import { errorText } from '../error-text'
 import { log } from '../log'
 import { waitPickKeysReleased } from '../native/input'
 import { captureSelection, writeClipboardText } from '../native/selection'
@@ -23,9 +24,11 @@ export function createMaskingCommandsRuntime(o: {
     setMode: o.setMode,
     readClipboard: async () => clipboard.readText(),
     writeClipboard: async (text, wo) => {
-      await writeClipboardText(text, wo)
+      const r = await writeClipboardText(text, wo)
+      if (wo.excludeFromHistory && !r.excluded) log('clipboard.excludeFailed', { error: r.error ? errorText(r.error) : null })
     },
     hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+    waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
     // 프롬프트 흐름과 같은 순서: 고른 Enter를 뗄 때까지 기다림 → 팔레트를 숨기고 직전 창을 앞으로 → 가져오기
     captureSelection: async () => {
       if (!(await waitPickKeysReleased(PICK_KEYS_WAIT_MS))) return { text: null, skipped: 'keys-held' }

@@ -20,7 +20,7 @@ const template: Template = {
 const SELECTED = '선택한 회의 메모'
 
 type MaskCall = { mode: MaskingMode; disabledKeys: string[]; dryRun: boolean }
-const identityMask = async (text: string): Promise<PromptMaskResult> => ({ text, ranges: [], preamble: null, items: [], warnings: [], notes: [], mapRanges: (r) => r })
+const identityMask = async (text: string): Promise<PromptMaskResult> => ({ text, ranges: [], preamble: null, items: [], warnings: [], notes: [], partial: false, mapRanges: (r) => r })
 
 function fake(
   over: {
@@ -86,9 +86,9 @@ function fake(
 /** 회의를 "X"로 바꾸고 머리말을 붙이는 가짜 가리기 */
 const fakeMask = async (text: string, o: MaskCall): Promise<PromptMaskResult> => {
   const item: MaskItem = { key: 'client:m', category: 'client', original: '회의', replacement: 'CLIENT_A', count: 1, enabled: !o.disabledKeys.includes('client:m') }
-  if (o.mode === 'off') return { text, ranges: [], preamble: null, items: [{ ...item, replacement: null, enabled: false }], warnings: [], notes: [], mapRanges: (r) => r }
+  if (o.mode === 'off') return { text, ranges: [], preamble: null, items: [{ ...item, replacement: null, enabled: false }], warnings: [], notes: [], partial: false, mapRanges: (r) => r }
   const masked = item.enabled ? text.replaceAll('회의', 'CLIENT_A') : text
-  return { text: `[머리말]\n\n${masked}`, ranges: [], preamble: '[머리말]', items: [item], warnings: [], notes: [], mapRanges: (r) => r.map(([a, b]) => [a + 7, b + 7]) }
+  return { text: `[머리말]\n\n${masked}`, ranges: [], preamble: '[머리말]', items: [item], warnings: [], notes: [], partial: false, mapRanges: (r) => r.map(([a, b]) => [a + 7, b + 7]) }
 }
 
 it('선택 글을 가져오면 기본 출처는 선택 글이고, 확인 화면에는 길이만 보낸다', async () => {
@@ -130,6 +130,14 @@ it('선택한 글이 없으면 nothing-selected', async () => {
   const f = fake({ capture: { text: null, method: 'none', elapsedMs: 800, restored: false } })
   await createPromptSession(f.deps).prepare('meeting-notes')
   expect(f.calls.drafts[0].selection).toEqual({ length: 0, skipped: 'nothing-selected' })
+})
+
+it('설정에서 끈 분류가 있으면(실명이 남을 수 있음) Win+V 기록에서 뺀다', async () => {
+  const f = fake({ mask: async (text) => ({ ...(await identityMask(text)), partial: true }) })
+  const s = createPromptSession(f.deps)
+  await s.prepare('meeting-notes')
+  await s.run({ source: 'selection', target: 'copy' })
+  expect(f.calls.writes[0].excludeFromHistory).toBe(true)
 })
 
 it('가명 처리가 낸 경고·안내(사전 오류 등)를 미리 보기에 함께 보낸다', async () => {

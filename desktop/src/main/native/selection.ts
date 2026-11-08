@@ -124,11 +124,12 @@ export function writeClipboardText(text: string, o: { excludeFromHistory: boolea
         await clipboard.write([new ClipboardItem({ 'text/plain': text, [EXCLUDE_FROM_HISTORY]: new Blob([new Uint8Array([1])]) })])
         return { excluded: true }
       } catch (e) {
-        clipboard.writeText(text)
+        await clipboard.writeText(text)
         return { excluded: false, error: String(e) }
       }
     }
-    clipboard.writeText(text)
+    // Electron 45의 writeText는 Promise다. 끝날 때까지 기다려야 클립보드 줄이 먼저 풀리지 않는다
+    await clipboard.writeText(text)
     return { excluded: false }
   })
 }

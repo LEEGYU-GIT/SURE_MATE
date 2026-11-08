@@ -23,6 +23,8 @@ export interface PromptMaskResult {
   /** 가명 처리가 낸 경고·안내(가명 사전 오류 등) */
   warnings: string[]
   notes: string[]
+  /** 설정에서 끈 분류가 있어 실명이 남을 수 있음 */
+  partial: boolean
   mapRanges(ranges: [number, number][]): [number, number][]
 }
 
@@ -162,8 +164,8 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       const filled = d.fill(s.template, input, s.clipboard)
       const masked = await d.mask(filled.text, { mode, disabledKeys: req.disabledKeys ?? [], dryRun: false })
       const maskedCount = masked.items.filter((i) => i.enabled).reduce((n, i) => n + i.count, 0)
-      // 실명이 남는 글(끔, 또는 이번에 끈 항목)은 Win+V 기록에서 뺀다
-      const excludeFromHistory = mode === 'off' || masked.items.some((i) => !i.enabled)
+      // 실명이 남는 글(끔, 설정에서 끈 분류, 이번에 끈 항목)은 Win+V 기록에서 뺀다
+      const excludeFromHistory = mode === 'off' || masked.partial || masked.items.some((i) => !i.enabled)
 
       const { list, defaultId } = d.targets()
       const target = pickAiTarget({ override: req.target, template: s.template.aiTarget, defaultId, targets: list })
