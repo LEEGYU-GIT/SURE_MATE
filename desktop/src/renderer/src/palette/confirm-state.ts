@@ -1,6 +1,12 @@
 import type { PromptDraft, PromptSource } from '../../../shared/ipc-channels'
+import { MASK_CATEGORY_LABELS } from '../../../shared/labels'
+import { ALL_CATEGORIES, type MaskItem } from '../../../shared/masking/types'
+import type { MaskingMode } from '../../../shared/types'
 
-export type ConfirmFocus = 'source' | 'target' | 'input'
+export type ConfirmFocus = 'source' | 'masking' | 'items' | 'target' | 'input'
+
+/** Alt+M·←/→로 도는 가명 처리 모드 순서(끔 → 되돌리기 → 빼기) */
+export const MASKING_MODES: MaskingMode[] = ['off', 'restore', 'remove']
 
 export interface ConfirmState {
   source: PromptSource
@@ -10,6 +16,14 @@ export interface ConfirmState {
   /** 고를 수 있는 출처(선택 글·클립보드가 비었으면 빠짐, 직접 입력은 늘 있음) */
   sources: PromptSource[]
   targets: string[]
+  /** 이번 실행의 가명 처리 모드 */
+  masking: MaskingMode
+  /** 이번 실행에서 끈 항목 키 */
+  disabledKeys: string[]
+  /** 지금 미리 보기에서 찾은 항목 키(항목 초점에서 고르는 차례) */
+  itemKeys: string[]
+  /** 항목 초점에서 고른 항목 자리 */
+  itemIndex: number
 }
 
 export type ConfirmAction =
@@ -21,6 +35,11 @@ export type ConfirmAction =
   | { type: 'set-target'; target: string }
   | { type: 'set-input'; input: string }
   | { type: 'focus'; focus: ConfirmFocus }
+  | { type: 'cycle-masking' }
+  | { type: 'set-masking'; mode: MaskingMode }
+  | { type: 'set-items'; keys: string[] }
+  /** key가 없으면 항목 초점에서 고른 항목 */
+  | { type: 'toggle-item'; key?: string }
   | { type: 'run' }
   | { type: 'back' }
 
@@ -50,11 +69,25 @@ export function initialConfirmState(draft: PromptDraft): ConfirmState {
     input: '',
     focus: source === 'input' ? 'input' : 'source',
     sources,
-    targets: draft.targets.map((t) => t.id)
+    targets: draft.targets.map((t) => t.id),
+    masking: draft.masking,
+    disabledKeys: [],
+    itemKeys: [],
+    itemIndex: 0
   }
 }
 
-const focusOrder = (s: ConfirmState): ConfirmFocus[] => (s.source === 'input' ? ['source', 'target', 'input'] : ['source', 'target'])
+/** Tab 순서: 출처 → 가명 처리 → (찾은 항목이 있고 끔이 아니면 항목) → 대상 → (직접 입력이면 입력칸) */
+function focusOrder(s: ConfirmState): ConfirmFocus[] {
+  const order: ConfirmFocus[] = ['source', 'masking']
+  if (s.masking !== 'off' && s.itemKeys.length > 0) order.push('items')
+  order.push('target')
+  if (s.source === 'input') order.push('input')
+  return order
+}
+
+/** 끔으로 바꾸거나 항목이 사라져 초점이 갈 수 없는 곳에 남으면 가명 처리 칩으로 옮긴다 */
+const settleFocus = (s: ConfirmState): ConfirmState => (focusOrder(s).includes(s.focus) ? s : { ...s, focus: 'masking' })
 
 const step = <T,>(list: T[], current: T, delta: number): T => {
   const i = list.indexOf(current)
@@ -75,8 +108,29 @@ export function confirmReducer(s: ConfirmState, a: ConfirmAction): ConfirmState 
     case 'prev-value': {
       const delta = a.type === 'next-value' ? 1 : -1
       if (s.focus === 'source') return changeSource(s, step(s.sources, s.source, delta))
+      if (s.focus === 'masking') return settleFocus({ ...s, masking: step(MASKING_MODES, s.masking, delta) })
+      if (s.focus === 'items' && s.itemKeys.length > 0) {
+        const n = s.itemKeys.length
+        return { ...s, itemIndex: (((s.itemIndex + delta) % n) + n) % n }
+      }
       if (s.focus === 'target') return { ...s, target: step(s.targets, s.target, delta) }
       return s
+    }
+    case 'cycle-masking':
+      return settleFocus({ ...s, masking: step(MASKING_MODES, s.masking, 1) })
+    case 'set-masking':
+      return settleFocus({ ...s, masking: a.mode })
+    case 'set-items':
+      return settleFocus({ ...s, itemKeys: a.keys, itemIndex: Math.min(s.itemIndex, Math.max(0, a.keys.length - 1)) })
+    case 'toggle-item': {
+      const key = a.key ?? s.itemKeys[s.itemIndex]
+      if (!key) return s
+      const at = s.itemKeys.indexOf(key)
+      return {
+        ...s,
+        itemIndex: at >= 0 ? at : s.itemIndex,
+        disabledKeys: s.disabledKeys.includes(key) ? s.disabledKeys.filter((k) => k !== key) : [...s.disabledKeys, key]
+      }
     }
     case 'set-source':
       return s.sources.includes(a.source) ? changeSource(s, a.source) : s
@@ -99,30 +153,54 @@ export const isRepeatedEnter = (k: Pick<KeyInfo, 'code' | 'key' | 'repeat'>): bo
 /**
  * 확인 화면의 키를 동작으로 바꾼다. 한글 조합 중이면 아무것도 하지 않는다(설계 문서 §6).
  * 입력칸에서는 Enter가 줄바꿈, 화살표가 커서 이동이라 넘기고 Ctrl+Enter로 실행한다.
+ * Alt+M은 어디서든 가명 처리 모드를 바꾸고, 항목 초점에서 Space는 고른 항목을 끄고 켠다.
  */
 export function keyToAction(k: KeyInfo, s: ConfirmState): ConfirmAction | null {
   if (k.isComposing) return null
   if (k.code === 'Escape' || k.key === 'Escape') return { type: 'back' }
   if (isEnter(k)) return !k.repeat && (k.ctrlKey || s.focus !== 'input') ? { type: 'run' } : null
+  if (k.code === 'KeyM' && k.altKey && !k.ctrlKey) return { type: 'cycle-masking' }
   if (k.code === 'Tab') return { type: k.shiftKey ? 'focus-prev' : 'focus-next' }
   if (s.focus === 'input') return null
+  if (k.code === 'Space' && s.focus === 'items') return { type: 'toggle-item' }
   if (k.code === 'ArrowRight' || k.code === 'ArrowDown') return { type: 'next-value' }
   if (k.code === 'ArrowLeft' || k.code === 'ArrowUp') return { type: 'prev-value' }
   return null
 }
 
-/** 미리 보기 글을 형광펜(넣은 글) 구간과 나머지로 나눈다. ranges는 겹치지 않고 앞에서부터 */
-export function splitHighlights(text: string, ranges: [number, number][]): { text: string; mark: boolean }[] {
-  const parts: { text: string; mark: boolean }[] = []
-  let pos = 0
-  for (const [start, end] of ranges) {
-    if (start > pos) parts.push({ text: text.slice(pos, start), mark: false })
-    const from = Math.max(start, pos)
-    if (end > from) parts.push({ text: text.slice(from, end), mark: true })
-    pos = Math.max(pos, end)
+export type PreviewPart = { text: string; mark: boolean; masked: boolean }
+
+const inside = (ranges: [number, number][], pos: number): boolean => ranges.some(([a, b]) => pos >= a && pos < b)
+
+/**
+ * 미리 보기 글을 조각으로 나눈다. mark는 넣은 글(형광펜), masked는 가린 표시(청록 글자).
+ * 두 구간은 서로 겹칠 수 있다(넣은 글 안의 이름을 가린 경우).
+ */
+export function splitPreview(text: string, highlights: [number, number][], masks: [number, number][]): PreviewPart[] {
+  const cuts = new Set<number>([0, text.length])
+  for (const [a, b] of [...highlights, ...masks]) {
+    if (a > 0 && a < text.length) cuts.add(a)
+    if (b > 0 && b < text.length) cuts.add(b)
   }
-  if (pos < text.length) parts.push({ text: text.slice(pos), mark: false })
+  const points = [...cuts].sort((x, y) => x - y)
+  const parts: PreviewPart[] = []
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [from, to] = [points[i], points[i + 1]]
+    const mark = inside(highlights, from)
+    const masked = inside(masks, from)
+    const last = parts[parts.length - 1]
+    if (last && last.mark === mark && last.masked === masked) last.text += text.slice(from, to)
+    else parts.push({ text: text.slice(from, to), mark, masked })
+  }
   return parts
+}
+
+/** 찾은 항목을 분류별 개수로 줄인다("고객사 2 · IP 1 · 경로 3"). 없으면 null */
+export function maskingSummary(items: MaskItem[]): string | null {
+  const parts = ALL_CATEGORIES.map((c) => ({ c, n: items.filter((i) => i.category === c).length }))
+    .filter((p) => p.n > 0)
+    .map((p) => `${MASK_CATEGORY_LABELS[p.c]} ${p.n}`)
+  return parts.length ? parts.join(' · ') : null
 }
 
 const SELECTION_NOTES: Record<NonNullable<PromptDraft['selection']['skipped']>, string> = {

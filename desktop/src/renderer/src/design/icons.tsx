@@ -74,6 +74,14 @@ export const ShieldIcon = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+export const ShieldOffIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M19.69 14a6.9 6.9 0 0 0 .31-2V5l-8-3-3.16 1.18" />
+    <path d="M4.73 4.73 4 5v7c0 6 8 10 8 10a20.29 20.29 0 0 0 5.62-4.38" />
+    <path d="m2 2 20 20" />
+  </Svg>
+)
+
 const GROUP_ICONS: Record<PaletteGroup, (p: IconProps) => React.JSX.Element> = {
   prompt: PromptIcon,
   command: CommandIcon,
