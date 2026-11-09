@@ -18,23 +18,26 @@ const commands: PaletteItem[] = [{ id: 'dev.listWindows', group: 'command', titl
 const MASKING_IDS = ['cmd.unmask', 'cmd.mask-selection', 'cmd.masking-mode', 'cmd.open-dictionary']
 /** 용어 팩 명령은 가명 처리 명령 다음 */
 const PACK_IDS = ['cmd.glossary-export', 'cmd.glossary-import']
+/** 바 모양 명령은 용어 팩 명령 다음 */
+const BAR_IDS = ['cmd.bar-shape']
 
 it('프롬프트는 템플릿 순서대로 prompt:<id>, 부제는 설명, 키워드는 별칭과 그룹, 명령은 뒤에', () => {
   const items = buildPaletteItems([t({ id: 'b', name: '나', description: '설명', aliases: ['별칭'], group: '회의' }), t({ id: 'a', name: '가' })], commands, {
     maskingMode: 'restore',
-    glossary: []
+    glossary: [],
+    barShape: 'edge'
   })
-  expect(items.map((i) => i.id)).toEqual(['prompt:b', 'prompt:a', ...MASKING_IDS, ...PACK_IDS, 'dev.listWindows'])
+  expect(items.map((i) => i.id)).toEqual(['prompt:b', 'prompt:a', ...MASKING_IDS, ...PACK_IDS, ...BAR_IDS, 'dev.listWindows'])
   expect(items[0]).toMatchObject({ group: 'prompt', title: '나', subtitle: '설명', keywords: ['별칭', '회의'] })
 })
 
 it('상용구 템플릿은 상용구 구역으로', () => {
-  expect(buildPaletteItems([t({ id: 's', kind: 'snippet', name: '결함 리포트' })], [], { maskingMode: 'restore', glossary: [] })[0]).toMatchObject({ id: 'snippet:s', group: 'snippet' })
+  expect(buildPaletteItems([t({ id: 's', kind: 'snippet', name: '결함 리포트' })], [], { maskingMode: 'restore', glossary: [], barShape: 'edge' })[0]).toMatchObject({ id: 'snippet:s', group: 'snippet' })
 })
 
 it('가명 처리 명령 4개를 명령 구역 맨 앞에 넣고, 모드 명령은 지금 모드와 누르면 바뀔 모드를 보여 준다', () => {
-  const items = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [] })
-  expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, ...PACK_IDS, 'dev.listWindows'])
+  const items = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [], barShape: 'edge' })
+  expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, ...PACK_IDS, ...BAR_IDS, 'dev.listWindows'])
   expect(items.every((i) => i.group === 'command')).toBe(true)
   expect(items.find((i) => i.id === 'cmd.masking-mode')?.subtitle).toBe('지금: 가명 후 되돌리기 · 누르면 결과에서 빼기')
   // 영문으로 쳐도 찾는다(스모크 시험은 영문만 칠 수 있다)
@@ -55,7 +58,7 @@ it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키�
       version: 1
     }
   ]
-  const items = buildPaletteItems([], [], { maskingMode: 'restore', glossary })
+  const items = buildPaletteItems([], [], { maskingMode: 'restore', glossary, barShape: 'edge' })
   expect(items.find((i) => i.id === 'wiki:mcdc')).toEqual({
     id: 'wiki:mcdc',
     group: 'wiki',
@@ -65,4 +68,9 @@ it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키�
     body: '조건마다 결정을 독립적으로 바꾸는지 보는 커버리지\n둘째 줄',
     tags: ['커버리지']
   })
+})
+
+it('바 모양 명령이 명령 구역에 있고 부제가 지금 모양을 보여 준다', () => {
+  const items = buildPaletteItems([], [], { maskingMode: 'restore', glossary: [], barShape: 'off' })
+  expect(items.find((i) => i.id === 'cmd.bar-shape')).toMatchObject({ group: 'command', subtitle: '지금: 끔 · 누르면 가장자리 띠' })
 })

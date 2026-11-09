@@ -10,6 +10,7 @@ import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
+import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
@@ -53,6 +54,14 @@ let prompts: PromptSession | null = null
 let snippets: { run(templateId: string): Promise<unknown> } | null = null
 let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
+const barCommands = createBarCommands({
+  getShape: () => settings.bar.shape,
+  setShape: setBarShape,
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  notify,
+  log
+})
 let packCommands: { run(id: string): Promise<boolean> } | null = null
 /** 지금 용어 목록. 팔레트를 열 때(목록 요청)마다 새로 읽은 것으로 바꾼다({{terms}}는 이것을 쓴다) */
 let glossaryEntries: GlossaryEntry[] = []
@@ -90,6 +99,12 @@ const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur
 
 /** 바 모양(바 메뉴). 잠시 숨김 해제는 부르는 쪽이 한다 */
 const saveBarShape = (shape: BarShape): Promise<void> => changeSettings((cur) => ({ ...cur, bar: { ...cur.bar, shape } }))
+
+/** 팔레트 명령·트레이: 모양을 저장하고 잠시 숨김을 푼다(바 메뉴 set-bar-shape와 같은 순서) */
+async function setBarShape(shape: BarShape): Promise<void> {
+  await saveBarShape(shape)
+  barRuntime?.bar.unsnooze()
+}
 
 /** 말랑 메이트 보이기·숨기기: 차례가 왔을 때 바에 보이는 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
 async function togglePet(): Promise<void> {
@@ -141,6 +156,7 @@ async function runItem(id: string): Promise<void> {
   if (isDevCommand(id)) return runDevCommand(id)
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
+  if (await barCommands.run(id)) return
   if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
   if (id.startsWith('snippet:') && snippets) {
     await snippets.run(id.slice('snippet:'.length))
@@ -209,6 +225,10 @@ async function startShell(): Promise<void> {
     paletteHotkey,
     maskingMode: () => settings.masking.mode,
     onOpenPalette: () => showPalette({ mode: 'search' }),
+    barShape: () => settings.bar.shape,
+    onBarShape: (shape) => void setBarShape(shape).catch((e) => log('bar.trayShapeError', { error: errorText(e) })),
+    barSnoozed: () => barRuntime?.bar.snoozed() ?? false,
+    onUnsnooze: () => barRuntime?.bar.unsnooze(),
     onToggleSuspend: () => {
       if (suspended) {
         const { failed } = manager.resumeAll()
@@ -365,7 +385,7 @@ if (!app.requestSingleInstanceLock()) {
         glossaryEntries = glossary
         // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
         applySettings(settings)
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
