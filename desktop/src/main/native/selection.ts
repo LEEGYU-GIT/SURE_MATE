@@ -82,7 +82,8 @@ export function captureSelection(): Promise<CaptureResult> {
 
 /**
  * 글을 클립보드에 넣고 대상 창에 붙여넣는다(설계 문서 §10). 붙여넣기 뒤 클립보드는 되돌리지 않는다.
- * 대상이 사라졌거나 관리자 권한 창이면 복사만 한다.
+ * 대상이 사라졌거나 관리자 권한 창이면 복사만 한다. 다른 가져오기·붙여넣기와 겹치면(busy) 아무것도 쓰지 않으므로,
+ * 복사만이라도 하려면 부르는 쪽이 writeClipboardText로 기다렸다 쓴다.
  */
 export async function pasteText(hwnd: string, text: string): Promise<PasteResult> {
   if (!nativeStatus().ok) {

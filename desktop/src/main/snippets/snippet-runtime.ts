@@ -4,6 +4,7 @@ import type { Template } from '../../shared/template/types'
 import { log } from '../log'
 import { waitPickKeysReleased } from '../native/input'
 import { captureSelection, pasteText, writeClipboardText } from '../native/selection'
+import { nativeStatus } from '../native/win32'
 import { notify } from '../notify'
 import { PICK_KEYS_WAIT_MS } from '../prompts/prompt-runtime'
 import { getPreviousHwnd, hidePaletteAndRefocus } from '../windows/palette-window'
@@ -16,11 +17,13 @@ export function createSnippetRuntime(o: { getTemplates: () => Template[] }): { r
     waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
     hidePaletteAndRefocus,
     previousHwnd: getPreviousHwnd,
+    nativeOk: () => nativeStatus().ok,
     capture: captureSelection,
     readClipboard: () => clipboard.readText(),
     // 상용구는 용어·기준 예시를 붙이지 않고 가명 처리도 하지 않는다(설계 문서 §12)
     fill: (body, input, clip) => fillTemplate(body, { input, clipboard: clip, now: new Date(), terms: () => [], reference: () => null }),
     paste: pasteText,
+    // 클립보드 줄(selection.ts)에 서서 앞의 가져오기·붙여넣기가 끝난 뒤에 쓴다
     writeClipboard: async (text) => {
       await writeClipboardText(text, { excludeFromHistory: false })
     },
