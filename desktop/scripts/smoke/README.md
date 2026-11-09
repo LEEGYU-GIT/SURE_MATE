@@ -31,7 +31,17 @@
 
 ### t17 결과를 눈으로 확인할 곳
 
-Windows에서 돌린 뒤 `%TEMP%\sure-mate-smoke`에 저장된 캡처 3장을 설계 문서 §14-4(색·글자·모양 토큰)와 맞춰 본다. 스크립트가 출력하는 `... = True/False` 줄은 먼저 모두 True인지 확인한다(`wiki_run`·`wiki_copy_log`·`snippet_log`는 로그 줄이며 id와 길이만 있어야 한다).
+Windows에서 돌린 뒤 `%TEMP%\sure-mate-smoke`에 저장된 캡처 3장을 설계 문서 §14-4(색·글자·모양 토큰)와 맞춰 본다. 스크립트 출력 중 아래 줄은 모두 `True`여야 한다. 하나라도 False면 그 항목이 실패한 것이다.
+
+- `expected_loaded`: 기대 글을 앱 자료에서 읽음
+- `detail_in_front`: 위키 상세 화면이 앞에 있음
+- `wiki_copy_logged_once`, `wiki_copy_log_id_length_only`: 설명 복사 로그가 한 번이고 id(mcdc)와 길이만 담음
+- `clipboard_is_definition`: 클립보드가 MC/DC 설명과 같음
+- `snippet_logged_once`, `snippet_pasted`: 상용구 실행 로그가 한 번이고 결과가 붙여넣음(id defect-report, 길이 일치)
+- `textbox_is_form`, `log_has_no_content`, `log_has_no_typed_text`: 글상자가 양식과 같고 로그에 용어·본문·입력한 글이 없음
+- `textbox_form_count`는 숫자 1이어야 한다(양식이 한 번만 들어감).
+
+`clipboard_length`·`textbox_length`는 참고용 길이이고, `info_foreground_after_wiki`·`info_foreground_after_snippet`은 참고용 창 제목이다. 시험 창 제목 `SureMate-Test`가 나오면 정상이다. 창 제목은 앱 로그에 남지 않는다.
 
 - `m4-wiki-search.png`: 위키 검색. 입력줄에 `?mcdc`가 보이고, 목록이 위키 용어만이며 맨 위 행이 MC/DC(위키 아이콘)이며 선택 강조가 되어 있다. 다른 용어(코드 커버리지 등)가 그 아래에 이어진다.
 - `m4-wiki-detail.png`: 용어 상세. 머리줄에 용어 이름·출처 표시(기본 용어)·`Esc 목록으로`, 본문에 별칭 줄·설명·사용 예 상자가 보인다. 링크가 없는 용어이므로 링크 구역은 없다. 글자 크기와 여백이 팔레트 목록과 같은 토큰이다.

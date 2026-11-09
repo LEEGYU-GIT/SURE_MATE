@@ -33,18 +33,20 @@ ShiftedKey '/'; Pump 300
 TypeAscii 'mcdc'; Pump 700
 if ((IsApp)) { Shot 'm4-wiki-search' }
 HoldEnter; Pump 900
-$r.wiki_run = (NewLogs 'palette.run' | Select-Object -Last 1)
 $r.detail_in_front = (IsApp)
 if ((IsApp)) { Shot 'm4-wiki-detail' }
 
 # 2. 상세에서 Enter → 설명 복사
 HoldEnter; Pump 900
-$r.wiki_copy_log = (NewLogs 'wiki.copy' | Select-Object -Last 1)
+$copyLogs = @(NewLogs 'wiki.copy')
+$copyLog = if ($copyLogs.Count -gt 0) { $copyLogs[-1] | ConvertFrom-Json } else { $null }
+$r.wiki_copy_logged_once = ($copyLogs.Count -eq 1)
+$r.wiki_copy_log_id_length_only = ($null -ne $copyLog -and $copyLog.id -eq 'mcdc' -and $copyLog.length -eq $expectedDef.Length)
 $clip = [System.Windows.Forms.Clipboard]::GetText()
 $r.clipboard_is_definition = ($clip -eq $expectedDef)
 $r.clipboard_length = $clip.Length
 if ((IsApp)) { Tap $VK['esc']; Pump 400; Tap $VK['esc']; Pump 700 }
-$r.foreground_after_wiki = (Fg).Title
+$r.info_foreground_after_wiki = (Fg).Title
 
 # 3. 상용구: 시험 창 글상자에서 ! + issue → Enter → 결함 리포트 양식이 한 번만
 $tb.Text = ''
@@ -54,12 +56,15 @@ ShiftedKey '1'; Pump 300
 TypeAscii 'issue'; Pump 700
 if ((IsApp)) { Shot 'm4-snippet-search' }
 HoldEnter; Pump 1800
-$r.snippet_log = (NewLogs 'snippet.run' | Select-Object -Last 1)
+$snipLogs = @(NewLogs 'snippet.run')
+$snipLog = if ($snipLogs.Count -gt 0) { $snipLogs[-1] | ConvertFrom-Json } else { $null }
+$r.snippet_logged_once = ($snipLogs.Count -eq 1)
+$r.snippet_pasted = ($null -ne $snipLog -and $snipLog.result -eq 'pasted' -and $snipLog.templateId -eq 'defect-report' -and $snipLog.length -eq $expectedBody.Length)
 $text = $tb.Text.Replace("`r`n", "`n")
 $r.textbox_is_form = ($text -eq $expectedBody)
 $r.textbox_form_count = ([regex]::Matches($text, [regex]::Escape('[결함 제목]'))).Count
 $r.textbox_length = $text.Length
-$r.foreground_after_snippet = (Fg).Title
+$r.info_foreground_after_snippet = (Fg).Title
 
 # 4. 로그에 용어·설명·본문이 없어야 한다
 $appLines = @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines) -join "`n"
