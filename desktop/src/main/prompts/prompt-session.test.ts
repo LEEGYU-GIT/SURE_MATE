@@ -35,6 +35,8 @@ function fake(
     template?: Template
     defaultMasking?: MaskingMode
     mask?: (text: string, o: MaskCall) => Promise<PromptMaskResult>
+    paletteVisible?: boolean
+    captureGate?: Promise<void>
   } = {}
 ) {
   const calls = {
@@ -59,9 +61,11 @@ function fake(
       calls.order.push('hide')
       return over.refocused ?? true
     },
+    paletteVisible: () => over.paletteVisible ?? false,
     capture: async () => {
       calls.order.push('capture')
       calls.captures++
+      if (over.captureGate) await over.captureGate
       return over.capture ?? { text: SELECTED, method: 'ctrl-insert', elapsedMs: 50, restored: true }
     },
     readClipboard: async () => over.clipboard ?? '',
@@ -326,4 +330,89 @@ it('붙인 용어 설명 속 고객사 이름도 가린다(실제 채우기·용
   expect((await s.run({ source: 'selection', target: 'copy' })).ok).toBe(true)
   expect(f.calls.writes[0].text).toContain('- HILS: CLIENT_A 제어기를')
   expect(f.calls.writes[0].text).not.toContain('가상자동차')
+})
+
+it('바: 선택 글이 있으면 확인 화면 없이 가려 복사하고 기본 대상을 연다', async () => {
+  const f = fake({ mask: fakeMask })
+  const r = await createPromptSession(f.deps).runFromBar('meeting-notes')
+  expect(r).toBe('ran')
+  expect(f.calls.writes).toHaveLength(1)
+  expect(f.calls.writes[0].text).toContain('CLIENT_A')
+  expect(f.calls.writes[0].text).toContain('선택한 CLIENT_A 메모')
+  expect(f.calls.opened).toEqual(['https://claude.ai'])
+  expect(f.calls.notes).toHaveLength(1)
+  expect(f.calls.drafts).toHaveLength(0)
+  expect(f.calls.order).toEqual(['capture'])
+  expect(f.calls.masks).toEqual([{ mode: 'restore', disabledKeys: [], dryRun: false }])
+})
+
+it('바: 팔레트가 열려 있으면 먼저 숨기고 돌아간 뒤 가져온다', async () => {
+  const f = fake({ paletteVisible: true })
+  expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('ran')
+  expect(f.calls.order).toEqual(['hide', 'capture'])
+})
+
+it('바: 팔레트가 열려 있고 직전 창이 없으면 가져오지 않고 확인 화면', async () => {
+  const f = fake({ paletteVisible: true, refocused: false })
+  expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('confirm')
+  expect(f.calls.captures).toBe(0)
+  expect(f.calls.drafts[0].selection).toEqual({ length: 0, skipped: 'no-foreground' })
+})
+
+it('바: 선택 없음이면 확인 화면(클립보드가 있으면 기본 출처 clipboard)이고 쓰기 없음', async () => {
+  const f = fake({ capture: { text: '', method: 'ctrl-insert', elapsedMs: 5, restored: true }, clipboard: '클립 글' })
+  expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('confirm')
+  expect(f.calls.drafts[0]).toMatchObject({ selection: { length: 0, skipped: 'nothing-selected' }, defaultSource: 'clipboard' })
+  expect(f.calls.writes).toHaveLength(0)
+  expect(f.calls.opened).toHaveLength(0)
+})
+
+it('바와 확인 화면: 공백·줄바꿈만 가져오면 선택 없음과 같다', async () => {
+  const blank: CaptureResult = { text: ' \n\t ', method: 'ctrl-insert', elapsedMs: 5, restored: true }
+  const f = fake({ capture: blank })
+  expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('confirm')
+  expect(f.calls.drafts[0].selection).toEqual({ length: 0, skipped: 'nothing-selected' })
+  const g = fake({ capture: blank })
+  await createPromptSession(g.deps).prepare('meeting-notes')
+  expect(g.calls.drafts[0].selection).toEqual({ length: 0, skipped: 'nothing-selected' })
+})
+
+it('바: 터미널이면 확인 화면 초안에 terminal', async () => {
+  const f = fake({ capture: { text: '', skipped: 'terminal', method: 'none', elapsedMs: 1, restored: true } as CaptureResult })
+  expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('confirm')
+  expect(f.calls.drafts[0].selection).toEqual({ length: 0, skipped: 'terminal' })
+})
+
+it('바: 없는 상용구는 missing이고 가져오기 없음', async () => {
+  const f = fake()
+  expect(await createPromptSession(f.deps).runFromBar('nope')).toBe('missing')
+  expect(f.calls.captures).toBe(0)
+})
+
+it('바: 첫 호출이 끝나기 전 두 번째 호출은 busy, 가져오기는 1회', async () => {
+  let release!: () => void
+  const f = fake({ captureGate: new Promise<void>((r) => (release = r)) })
+  const s = createPromptSession(f.deps)
+  const first = s.runFromBar('meeting-notes')
+  const second = await s.runFromBar('meeting-notes')
+  expect(second).toBe('busy')
+  release()
+  expect(await first).toBe('ran')
+  expect(f.calls.captures).toBe(1)
+  expect(f.calls.writes).toHaveLength(1)
+  expect(await s.runFromBar('meeting-notes')).toBe('ran')
+})
+
+it('바: 템플릿 가명 기본값이 off면 기록에서 뺀다', async () => {
+  const f = fake({ template: { ...template, masking: 'off' }, mask: fakeMask })
+  await createPromptSession(f.deps).runFromBar('meeting-notes')
+  expect(f.calls.writes[0].excludeFromHistory).toBe(true)
+  expect(f.calls.masks[0].mode).toBe('off')
+})
+
+it('바: 로그에 선택 글이 없다', async () => {
+  const f = fake()
+  await createPromptSession(f.deps).runFromBar('meeting-notes')
+  expect(JSON.stringify(f.calls.logs)).not.toContain(SELECTED)
+  expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes', result: 'ran', selectionLength: 9, skipped: null })
 })

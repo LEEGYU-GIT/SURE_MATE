@@ -11,7 +11,7 @@ import { waitPickKeysReleased } from '../native/input'
 import { captureSelection, writeClipboardText } from '../native/selection'
 import { notify } from '../notify'
 import type { Settings } from '../settings/settings-store'
-import { hidePalette, hidePaletteAndRefocus, showPalette } from '../windows/palette-window'
+import { hidePalette, hidePaletteAndRefocus, isPaletteVisible, showPalette } from '../windows/palette-window'
 import { createPromptSession, type PromptSession } from './prompt-session'
 import { readReference } from './references'
 
@@ -33,6 +33,7 @@ export function createPromptRuntime(o: {
     findTemplate: (id) => o.getTemplates().find((t) => t.id === id) ?? null,
     waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
     hidePaletteAndRefocus,
+    paletteVisible: isPaletteVisible,
     capture: captureSelection,
     readClipboard: () => clipboard.readText(),
     showConfirm: (draft) => showPalette({ mode: 'confirm', draft }),

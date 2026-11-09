@@ -34,6 +34,8 @@ export interface PromptSessionDeps {
   waitKeysReleased(): Promise<boolean>
   /** 팔레트를 숨기고 직전 창을 앞으로. 직전 창이 없거나 못 가져오면 false */
   hidePaletteAndRefocus(): Promise<boolean>
+  /** 팔레트가 지금 보이는지(바에서 누를 때 팔레트를 먼저 숨겨야 하는지 판단) */
+  paletteVisible(): boolean
   capture(): Promise<CaptureResult>
   readClipboard(): Promise<string>
   showConfirm(draft: PromptDraft): void
@@ -63,6 +65,8 @@ export interface PromptSession {
   prepare(templateId: string): Promise<void>
   preview(req: PromptRequest): Promise<PromptPreview>
   run(req: PromptRequest): Promise<PromptRunResult>
+  /** 바의 고정 프롬프트: 선택 글이 있으면 확인 화면 없이 실행, 없으면 확인 화면 */
+  runFromBar(templateId: string): Promise<'ran' | 'confirm' | 'missing' | 'busy'>
   cancel(): void
 }
 
@@ -76,6 +80,8 @@ const clip = (ranges: [number, number][], limit: number): [number, number][] =>
  */
 export function createPromptSession(d: PromptSessionDeps): PromptSession {
   let session: Session | null = null
+  /** 바 실행·준비 중(선택 글 가져오기 포함). 겹치는 호출을 막는다 */
+  let busy = false
 
   const current = (): Session | null => {
     if (session && d.now() - session.createdAt > SESSION_TTL_MS) session = null
@@ -87,6 +93,57 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
   const modeOf = (template: Template, req?: PromptRequest): MaskingMode =>
     req?.masking ?? (template.masking && template.masking !== 'default' ? template.masking : d.defaultMasking())
 
+  interface Grabbed {
+    selection: string
+    skipped?: PromptDraft['selection']['skipped']
+  }
+  /** 선택 글 가져오기(prepare·바 공통). hide가 true면 팔레트를 숨기고 직전 창으로 돌아간 뒤 가져온다 */
+  const grab = async (hide: boolean): Promise<Grabbed> => {
+    if (hide && !(await d.hidePaletteAndRefocus())) return { selection: '', skipped: 'no-foreground' }
+    const result = await d.capture()
+    if (result.skipped) return { selection: '', skipped: result.skipped }
+    // 공백·줄바꿈만 가져온 것은 선택이 없는 것과 같다
+    if (result.text?.trim()) return { selection: result.text }
+    return { selection: '', skipped: 'nothing-selected' }
+  }
+  /** 확인 화면 초안을 만들어 띄운다(prepare·바 공통) */
+  const showConfirmFor = async (template: Template, got: Grabbed, event: string): Promise<void> => {
+    // 가져오기가 원래 클립보드를 되돌린 뒤에 읽는다
+    const clipboard = await d.readClipboard()
+    session = { template, selection: got.selection, clipboard, createdAt: d.now() }
+    const { list, defaultId } = d.targets()
+    d.showConfirm({
+      templateId: template.id,
+      name: template.name,
+      group: template.group,
+      selection: got.skipped ? { length: 0, skipped: got.skipped } : { length: got.selection.length },
+      clipboardLength: clipboard.length,
+      defaultSource: got.selection ? 'selection' : clipboard.trim() ? 'clipboard' : 'input',
+      targets: list.map((t) => ({ id: t.id, name: t.name })),
+      target: pickAiTarget({ template: template.aiTarget, defaultId, targets: list }).id,
+      masking: modeOf(template)
+    })
+    if (event === 'prompt.prepare') d.log(event, { templateId: template.id, selectionLength: got.selection.length, skipped: got.skipped ?? null, clipboardLength: clipboard.length })
+  }
+  /** 채우기 → 가리기 → 클립보드 → AI 열기 → 알림(run·바 공통) */
+  const execute = async (template: Template, input: string, clip: string, req: PromptRequest | undefined) => {
+    const mode = modeOf(template, req)
+    const filled = d.fill(template, input, clip)
+    const masked = await d.mask(filled.text, { mode, disabledKeys: req?.disabledKeys ?? [], dryRun: false })
+    const maskedCount = masked.items.filter((i) => i.enabled).reduce((n, i) => n + i.count, 0)
+    // 실명이 남는 글(끔, 설정에서 끈 분류, 이번에 끈 항목)은 Win+V 기록에서 뺀다
+    const excludeFromHistory = mode === 'off' || masked.partial || masked.items.some((i) => !i.enabled)
+
+    const { list, defaultId } = d.targets()
+    const target = pickAiTarget({ override: req?.target, template: template.aiTarget, defaultId, targets: list })
+    await d.writeClipboard(masked.text, { excludeFromHistory })
+    if (target.url) await d.openUrl(target.url)
+    const head = `복사했어요${mode === 'off' ? '(가명 처리 꺼짐)' : ''}${mode !== 'off' && maskedCount > 0 ? ` · 가명 ${maskedCount}건` : ''}`
+    const message = target.url ? `${head} · ${withObjectParticle(target.name)} 열었어요. Ctrl+V로 붙여넣으세요.` : `${head}. 붙여넣을 곳에서 Ctrl+V를 누르세요.`
+    d.notify(message)
+    return { message, mode, maskedCount, outputLength: masked.text.length, targetId: target.id }
+  }
+
   return {
     async prepare(templateId) {
       const template = d.findTemplate(templateId)
@@ -94,36 +151,15 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         d.log('prompt.prepare.missing', { templateId })
         return
       }
-      let selection = ''
-      let skipped: PromptDraft['selection']['skipped']
-      // 키를 누른 채로 팔레트를 숨기면 자동 반복된 Enter가 원래 앱에 들어가 선택한 글을 지운다
-      if (!(await d.waitKeysReleased())) {
-        skipped = 'keys-held'
-      } else if (!(await d.hidePaletteAndRefocus())) {
-        skipped = 'no-foreground'
-      } else {
-        const result = await d.capture()
-        if (result.skipped) skipped = result.skipped
-        else if (result.text) selection = result.text
-        else skipped = 'nothing-selected'
+      if (busy) return
+      busy = true
+      try {
+        // 키를 누른 채로 팔레트를 숨기면 자동 반복된 Enter가 원래 앱에 들어가 선택한 글을 지운다
+        const got: Grabbed = (await d.waitKeysReleased()) ? await grab(true) : { selection: '', skipped: 'keys-held' }
+        await showConfirmFor(template, got, 'prompt.prepare')
+      } finally {
+        busy = false
       }
-      // 가져오기가 원래 클립보드를 되돌린 뒤에 읽는다
-      const clipboard = await d.readClipboard()
-      session = { template, selection, clipboard, createdAt: d.now() }
-
-      const { list, defaultId } = d.targets()
-      d.showConfirm({
-        templateId: template.id,
-        name: template.name,
-        group: template.group,
-        selection: skipped ? { length: 0, skipped } : { length: selection.length },
-        clipboardLength: clipboard.length,
-        defaultSource: selection ? 'selection' : clipboard.trim() ? 'clipboard' : 'input',
-        targets: list.map((t) => ({ id: t.id, name: t.name })),
-        target: pickAiTarget({ template: template.aiTarget, defaultId, targets: list }).id,
-        masking: modeOf(template)
-      })
-      d.log('prompt.prepare', { templateId, selectionLength: selection.length, skipped: skipped ?? null, clipboardLength: clipboard.length })
     },
 
     async preview(req) {
@@ -160,30 +196,45 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       // 기다리기 전에 비워 두어야 Enter를 빠르게 두 번 눌러도 한 번만 실행된다
       session = null
 
-      const mode = modeOf(s.template, req)
-      const filled = d.fill(s.template, input, s.clipboard)
-      const masked = await d.mask(filled.text, { mode, disabledKeys: req.disabledKeys ?? [], dryRun: false })
-      const maskedCount = masked.items.filter((i) => i.enabled).reduce((n, i) => n + i.count, 0)
-      // 실명이 남는 글(끔, 설정에서 끈 분류, 이번에 끈 항목)은 Win+V 기록에서 뺀다
-      const excludeFromHistory = mode === 'off' || masked.partial || masked.items.some((i) => !i.enabled)
-
-      const { list, defaultId } = d.targets()
-      const target = pickAiTarget({ override: req.target, template: s.template.aiTarget, defaultId, targets: list })
-      await d.writeClipboard(masked.text, { excludeFromHistory })
-      if (target.url) await d.openUrl(target.url)
-      const head = `복사했어요${mode === 'off' ? '(가명 처리 꺼짐)' : ''}${mode !== 'off' && maskedCount > 0 ? ` · 가명 ${maskedCount}건` : ''}`
-      const message = target.url ? `${head} · ${withObjectParticle(target.name)} 열었어요. Ctrl+V로 붙여넣으세요.` : `${head}. 붙여넣을 곳에서 Ctrl+V를 누르세요.`
-      d.notify(message)
+      const r = await execute(s.template, input, s.clipboard, req)
       d.log('prompt.run', {
         templateId: s.template.id,
         source: req.source,
         inputLength: input.length,
-        outputLength: masked.text.length,
-        target: target.id,
-        masking: mode,
-        masked: maskedCount
+        outputLength: r.outputLength,
+        target: r.targetId,
+        masking: r.mode,
+        masked: r.maskedCount
       })
-      return { ok: true, message }
+      return { ok: true, message: r.message }
+    },
+
+    async runFromBar(templateId) {
+      if (busy) {
+        d.log('prompt.bar', { templateId, result: 'busy', selectionLength: 0, skipped: null })
+        return 'busy'
+      }
+      const template = d.findTemplate(templateId)
+      if (!template) {
+        d.log('prompt.bar', { templateId, result: 'missing', selectionLength: 0, skipped: null })
+        return 'missing'
+      }
+      busy = true
+      try {
+        // 바는 포커스를 받지 않아 원래 창이 그대로 앞에 있다. 팔레트가 열려 있을 때만 숨기고 돌아간다
+        const got = await grab(d.paletteVisible())
+        if (got.selection) {
+          const clip = await d.readClipboard()
+          await execute(template, got.selection, clip, undefined)
+          d.log('prompt.bar', { templateId, result: 'ran', selectionLength: got.selection.length, skipped: null })
+          return 'ran'
+        }
+        await showConfirmFor(template, got, 'prompt.bar')
+        d.log('prompt.bar', { templateId, result: 'confirm', selectionLength: 0, skipped: got.skipped ?? null })
+        return 'confirm'
+      } finally {
+        busy = false
+      }
     },
 
     cancel() {
