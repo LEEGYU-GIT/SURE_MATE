@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BarSettings } from '../../shared/bar/bar-settings'
 import { DEFAULT_BAR_SETTINGS } from '../../shared/bar/bar-settings'
@@ -187,6 +188,20 @@ describe('createBarController', () => {
     expect(t.savePosition).toHaveBeenCalledWith('1', ratioFromTop(392, 456, WA))
     t.c.refresh()
     expect(t.lastSet().y).toBe(392)
+  })
+
+  it('위치 저장이 실패하면 오류 글의 사용자 폴더 경로를 ~로 가려 기록한다', async () => {
+    const t = make()
+    t.savePosition.mockRejectedValueOnce(new Error(`EPERM: operation not permitted, rename '${homedir()}\\AppData\\Roaming\\Sure-Mate\\settings.json.tmp'`))
+    t.c.start()
+    t.c.drag('start', 500)
+    t.c.drag('move', 600)
+    t.c.drag('end', 600)
+    await vi.waitFor(() => expect(t.log).toHaveBeenCalledWith('bar.position.save-failed', expect.anything()))
+    expect(t.log).toHaveBeenCalledWith('bar.position.save-failed', {
+      error: "EPERM: operation not permitted, rename '~\\AppData\\Roaming\\Sure-Mate\\settings.json.tmp'"
+    })
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain(homedir())
   })
 
   it('저장이 입력에 반영되면 입력 위치를 따른다', () => {

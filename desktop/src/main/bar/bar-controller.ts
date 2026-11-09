@@ -4,6 +4,7 @@ import type { BarEdge, BarSettings } from '../../shared/bar/bar-settings'
 import { needsResize } from '../../shared/palette-rules'
 import type { Template } from '../../shared/template/types'
 import type { MaskingMode, MonitorInfo, Rect } from '../../shared/types'
+import { errorText } from '../error-text'
 import type { Timers } from '../timers'
 import { createAutoHide } from './auto-hide'
 import { createTopmostKeeper } from './topmost-keeper'
@@ -302,7 +303,8 @@ export function createBarController(d: Deps): BarController {
       const { display, ratio } = memo
       placeKey = null
       placeWindow(true)
-      d.savePosition(display, ratio).catch((e: unknown) => d.log('bar.position.save-failed', { error: e instanceof Error ? e.message : String(e) }))
+      // 오류 글의 사용자 폴더 경로(실명이 들어갈 수 있음)는 errorText가 ~로 가린다
+      d.savePosition(display, ratio).catch((e: unknown) => d.log('bar.position.save-failed', { error: errorText(e) }))
     },
     setBusy(itemId) {
       busyItem = itemId

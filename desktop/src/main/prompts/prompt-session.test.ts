@@ -389,6 +389,28 @@ it('바: 없는 상용구는 missing이고 가져오기 없음', async () => {
   expect(f.calls.captures).toBe(0)
 })
 
+it('바: 프롬프트가 아닌 템플릿(상용구)은 missing이고 가져오기·확인 화면·쓰기 없음', async () => {
+  const f = fake({ template: { ...template, id: 'signature', kind: 'snippet' } })
+  expect(await createPromptSession(f.deps).runFromBar('signature')).toBe('missing')
+  expect(f.calls.captures).toBe(0)
+  expect(f.calls.drafts).toHaveLength(0)
+  expect(f.calls.writes).toHaveLength(0)
+  expect(f.calls.logs).toContainEqual({ templateId: 'signature', result: 'missing', selectionLength: 0, skipped: null })
+})
+
+it('바: 다른 클립보드 작업 중이라 가져오기가 busy면 확인 화면을 열지 않고 busy로 끝낸다(위키 카드와 같은 규칙)', async () => {
+  const f = fake({ capture: { text: null, method: 'none', elapsedMs: 0, restored: false, skipped: 'busy' }, clipboard: '클립 글' })
+  const s = createPromptSession(f.deps)
+  expect(await s.runFromBar('meeting-notes')).toBe('busy')
+  expect(f.calls.drafts).toHaveLength(0)
+  expect(f.calls.writes).toHaveLength(0)
+  expect(f.calls.opened).toHaveLength(0)
+  expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes', result: 'busy', selectionLength: 0, skipped: 'busy' })
+  // 끝나면 바로 다시 누를 수 있다
+  expect(await s.runFromBar('meeting-notes')).toBe('busy')
+  expect(f.calls.captures).toBe(2)
+})
+
 it('바: 첫 호출이 끝나기 전 두 번째 호출은 busy, 가져오기는 1회', async () => {
   let release!: () => void
   const f = fake({ captureGate: new Promise<void>((r) => (release = r)) })

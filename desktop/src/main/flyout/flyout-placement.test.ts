@@ -81,6 +81,33 @@ describe('작업 영역 안의 창 사각형', () => {
   })
 })
 
+describe('작업 표시줄이 위에 있는 모니터(작업 영역 y가 0이 아님)', () => {
+  const top = { x: 0, y: 48, width: 1920, height: 1032 }
+  const tb = { x: 1864, y: 300, width: 56, height: 456 }
+
+  it('맨 위 항목의 이름표·카드는 작업 표시줄 아래 8 DIP 안쪽에서 시작한다', () => {
+    const anchor = { ...tb, y: 40, height: 40 }
+    expect(flyoutCardRect({ size: { width: 120, height: 24 }, anchor, bar: tb, edge: 'right', workArea: top, align: 'center' }).y).toBe(56)
+    expect(flyoutCardRect({ size: { width: 260, height: 160 }, anchor, bar: tb, edge: 'right', workArea: top, align: 'top' }).y).toBe(56)
+  })
+
+  it('창의 위 그림자 여백은 작업 표시줄에 걸치지 않게 줄이고, 아래 끝은 작업 영역 아래 끝 기준이다', () => {
+    const card = flyoutCardRect({ size: { width: 260, height: 160 }, anchor: { ...tb, y: 40, height: 40 }, bar: tb, edge: 'right', workArea: top, align: 'top' })
+    const w = flyoutWindowRect(card, 'right', top)
+    expect(w.pad.top).toBe(8)
+    expect(w.window.y).toBe(48)
+    const low = flyoutCardRect({ size: { width: 260, height: 160 }, anchor: { ...tb, y: 1070, height: 40 }, bar: tb, edge: 'right', workArea: top, align: 'top' })
+    expect(low.y).toBe(48 + 1032 - 8 - 160)
+    const wl = flyoutWindowRect(low, 'right', top)
+    expect(wl.pad.bottom).toBe(8)
+    expect(wl.window.y + wl.window.height).toBe(48 + 1032)
+  })
+
+  it('바가 없을 때의 카드는 작업 표시줄 아래 12 DIP', () => {
+    expect(edgeCardRect({ size: { width: 360, height: 200 }, workArea: top, edge: 'right' })).toEqual({ x: 1548, y: 60, width: 360, height: 200 })
+  })
+})
+
 describe('작업 영역 원점이 0이 아닌 모니터', () => {
   for (const ox of [-1920, 1920]) {
     it(`원점 x=${ox}`, () => {

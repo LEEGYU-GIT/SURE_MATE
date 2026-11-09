@@ -221,7 +221,8 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         return 'busy'
       }
       const template = d.findTemplate(templateId)
-      if (!template) {
+      // 상용구 같은 프롬프트가 아닌 템플릿은 바에서 실행하지 않는다(그사이 템플릿 파일이 바뀌었을 수 있다)
+      if (!template || template.kind !== 'prompt') {
         d.log('prompt.bar', { templateId, result: 'missing', selectionLength: 0, skipped: null })
         return 'missing'
       }
@@ -230,6 +231,11 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       try {
         // 바는 포커스를 받지 않아 원래 창이 그대로 앞에 있다. 팔레트가 열려 있을 때만 숨기고 돌아간다
         const got = await grab(d.paletteVisible())
+        // 다른 클립보드 작업이 가져오기를 막았다: 선택이 없는 것이 아니므로 확인 화면을 열지 않는다(위키 카드와 같은 규칙)
+        if (got.skipped === 'busy') {
+          d.log('prompt.bar', { templateId, result: 'busy', selectionLength: 0, skipped: 'busy' })
+          return 'busy'
+        }
         selectionLength = got.selection.length
         if (got.selection) {
           const clip = await d.readClipboard()

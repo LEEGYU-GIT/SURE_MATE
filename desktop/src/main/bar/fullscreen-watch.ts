@@ -30,17 +30,19 @@ export function createFullscreenWatch(d: Deps) {
     } catch {
       state = null
     }
+    let next: boolean
     if (state === null) {
       failures += 1
-      if (failures >= MAX_CONSECUTIVE_FAILURES) {
-        d.log('bar.fullscreen.unavailable', {})
-        stop()
-      }
+      // 한두 번 읽지 못하면 앞 상태를 유지한다(슬라이드쇼 중에 바가 1초 동안 나타나지 않게)
+      if (failures < MAX_CONSECUTIVE_FAILURES) return
+      d.log('bar.fullscreen.unavailable', {})
+      stop()
+      // 멈춘 뒤에는 전체 화면이 아닌 것으로 간주한다(바가 영영 숨겨지는 쪽이 더 나쁘다)
+      next = false
     } else {
       failures = 0
+      next = isFullscreenState(state)
     }
-    // 읽지 못하면 전체 화면이 아닌 것으로 간주한다(바가 영영 숨겨지는 쪽이 더 나쁘다)
-    const next = state !== null && isFullscreenState(state)
     if (next !== fullscreen) {
       fullscreen = next
       d.onChange(next)

@@ -60,12 +60,34 @@ describe('createFullscreenWatch', () => {
     watch.stop()
   })
 
-  it('전체 화면 중 읽기 실패는 전체 화면 아님으로 간주한다', () => {
-    const { onChange, watch } = make([2, null])
+  it('전체 화면 중 한두 번 읽지 못하면 앞 상태(전체 화면)를 유지한다(슬라이드쇼에서 바가 1초 동안 나오지 않게)', () => {
+    for (const bad of [null, 'throw'] as const) {
+      const { onChange, log, watch } = make([2, bad, bad, 2, 5])
+      watch.start()
+      vi.advanceTimersByTime(2000)
+      expect(onChange.mock.calls).toEqual([[true]])
+      expect(watch.current()).toBe(true)
+      vi.advanceTimersByTime(1000)
+      expect(onChange.mock.calls).toEqual([[true]])
+      vi.advanceTimersByTime(1000)
+      expect(onChange.mock.calls).toEqual([[true], [false]])
+      expect(log).not.toHaveBeenCalled()
+      watch.stop()
+    }
+  })
+
+  it('전체 화면 중 세 번 연속 읽지 못하면 멈추고 전체 화면 아님으로 간주한다(바가 영영 숨지 않게)', () => {
+    const { onChange, log, query, watch } = make([2, null])
     watch.start()
+    vi.advanceTimersByTime(2000)
+    expect(onChange.mock.calls).toEqual([[true]])
     vi.advanceTimersByTime(1000)
     expect(onChange.mock.calls).toEqual([[true], [false]])
-    watch.stop()
+    expect(log).toHaveBeenCalledWith('bar.fullscreen.unavailable', {})
+    expect(watch.current()).toBe(false)
+    const n = query.mock.calls.length
+    vi.advanceTimersByTime(5000)
+    expect(query).toHaveBeenCalledTimes(n)
   })
 
   it('stop() 뒤에는 읽지 않는다', () => {
