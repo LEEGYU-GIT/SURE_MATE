@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react'
-import type { FlyoutAction, FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
+import type { BarEdge } from '../../../shared/bar/bar-settings'
+import type { FlyoutAction, FlyoutContent, FlyoutMessage } from '../../../shared/flyout/flyout-content'
 import { BarMenu } from './BarMenu'
 import { flyoutReducer, initialFlyoutState } from './flyout-state'
 import { Label } from './Label'
@@ -32,7 +33,7 @@ type ShownContent = Exclude<FlyoutContent, { kind: 'wiki-card' }>
  * 들어오는 움직임(§14-4): 이름표는 120ms 투명도만, 메뉴는 200ms --ease-out 투명도 + 바 쪽에서 4 DIP.
  * 닫힘·바뀜에는 움직임이 없다(data-open을 떼면 transition도 함께 빠져 바로 사라진다). 움직임 줄이기면 전역 규칙으로 바로 보인다.
  */
-function motionClass(kind: ShownContent['kind'], open: boolean, instant: boolean, from: 'left' | 'right'): string {
+function motionClass(kind: ShownContent['kind'], open: boolean, instant: boolean, from: BarEdge): string {
   if (kind === 'label') {
     if (!open) return 'opacity-0'
     return instant ? 'opacity-100' : 'opacity-100 transition-opacity duration-(--dur-hover) ease-(--ease-out)'
@@ -40,9 +41,6 @@ function motionClass(kind: ShownContent['kind'], open: boolean, instant: boolean
   if (!open) return `opacity-0 ${from === 'right' ? 'translate-x-1' : '-translate-x-1'}`
   return instant ? 'opacity-100 translate-x-0' : 'opacity-100 translate-x-0 transition-[opacity,translate] duration-(--dur-open) ease-(--ease-out)'
 }
-
-/** 바가 있는 쪽: 그림자 여백이 없는 면(오른쪽 바면 오른쪽) */
-const barSide = (pad: FlyoutPad): 'left' | 'right' => (pad.left === 0 && pad.right > 0 ? 'left' : 'right')
 
 /** #/flyout 창. main이 보낸 이름표·메뉴를 그리고, 그린 크기를 알린 뒤 shown을 받으면 들어온다. */
 export function Flyout(): React.JSX.Element | null {
@@ -121,7 +119,8 @@ function FlyoutBox({
     }
   }, [api, seq])
 
-  const side = barSide(pad)
+  // 바가 있는 쪽은 main이 알려 준다(여백에서 짐작하면 여백이 모두 0일 때 반대로 짐작한다)
+  const side = message.edge
   return (
     <div
       ref={box}

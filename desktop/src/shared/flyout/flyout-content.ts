@@ -1,5 +1,5 @@
 import type { GlossaryEntry } from '../glossary/types'
-import type { BarShape } from '../bar/bar-settings'
+import type { BarEdge, BarShape } from '../bar/bar-settings'
 import type { MaskingMode } from '../types'
 
 /** 위키 카드에 그리는 용어 한 건(링크·태그 등 카드에 쓰지 않는 값은 뺀다) */
@@ -32,14 +32,20 @@ export type FlyoutPad = { top: number; right: number; bottom: number; left: numb
 
 /**
  * main → 펼침 창 메시지. seq가 새로우면 새 내용이다.
- * 지금 seq와 같은 seq가 다시 오면 창을 작업 영역 안으로 맞추느라 면별 그림자 여백(pad)이 바뀐 것이다.
- * 그래서 화면은 pad가 달라질 때마다 seq와 상관없이 pad를 적용하고, 내용 갱신만 seq로 거른다
+ * 지금 seq와 같은 seq가 다시 오면 창을 놓으면서 면별 그림자 여백(pad)이나 바 쪽(edge)이 바뀐 것이다
+ * (작업 영역 안으로 맞추느라 여백이 줄었거나, 띄우기 전에 바가 반대쪽으로 옮겨졌다).
+ * 그래서 화면은 pad·edge가 달라질 때마다 seq와 상관없이 적용하고, 내용 갱신만 seq로 거른다
  * (renderer/src/flyout/flyout-state.ts, 시험 flyout-state.test.ts).
  */
 export interface FlyoutMessage {
   seq: number
   content: FlyoutContent
   pad: FlyoutPad
+  /**
+   * 바가 있는 쪽(바가 없으면 카드를 띄운 화면 가장자리). 화면은 그림자를 들이는 면과 들어오는 방향을 이것으로 정한다.
+   * 여백에서 짐작하지 않는 이유: 작업 영역에 맞추느라 여백이 모두 0이 되면 반대쪽으로 짐작한다.
+   */
+  edge: BarEdge
 }
 
 export type FlyoutAction =

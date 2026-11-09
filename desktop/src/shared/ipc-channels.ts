@@ -91,9 +91,9 @@ export const IPC = {
   flyoutAction: 'flyout:action'
 } as const
 
-/** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
+/** 팔레트를 보여 줄 때 renderer에 넘기는 값. search의 query는 시작 검색어(없으면 빈 칸, 바의 용어 사전 단추는 '?') */
 export type ShownPayload =
-  | { mode: 'search' }
+  | { mode: 'search'; query?: string }
   | { mode: 'dev-output'; title: string; text: string }
   | { mode: 'confirm'; draft: PromptDraft }
 

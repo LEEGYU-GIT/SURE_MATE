@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FlyoutContent, MenuContent, WikiCardView } from '../../shared/flyout/flyout-content'
+import type { BarEdge } from '../../shared/bar/bar-settings'
+import type { FlyoutMessage, MenuContent, WikiCardView } from '../../shared/flyout/flyout-content'
 import type { Rect } from '../../shared/types'
 import { globalTimers } from '../bar/test-timers'
 import { createFlyoutController } from './flyout-controller'
@@ -18,29 +19,37 @@ const maskingMenu: MenuContent = { kind: 'masking-menu', mode: 'restore' }
 const barMenu: MenuContent = { kind: 'bar-menu', shape: 'edge' }
 const view: WikiCardView = { kind: 'none', source: 'selection', query: 'x' }
 
-function make(o: { barVisible?: boolean } = {}) {
+/** 왼쪽 바면 같은 자리를 화면 왼쪽 끝으로 옮긴다 */
+const atEdge = (r: Rect, edge: BarEdge): Rect => (edge === 'right' ? r : { ...r, x: 0 })
+
+function make(o: { barVisible?: boolean; edge?: BarEdge } = {}) {
   let last: Rect = { x: 0, y: 0, width: 0, height: 0 }
   let barVisible = o.barVisible ?? true
+  let edge: BarEdge = o.edge ?? 'right'
   let cursor = { x: 1890, y: 360 }
   let button: boolean | null = false
   let drift: Rect | null = null
   const calls: string[] = []
-  const sent: { seq: number; content: FlyoutContent }[] = []
+  const sent: FlyoutMessage[] = []
   const window = {
     setBounds: vi.fn((r: Rect) => { calls.push('setBounds'); last = drift && calls.filter((c) => c === 'setBounds').length === 1 ? drift : r }),
     getBounds: vi.fn(() => last),
     showInactive: vi.fn(() => void calls.push('showInactive')),
     hide: vi.fn(() => void calls.push('hide')),
     raise: vi.fn(() => void calls.push('raise')),
-    send: vi.fn((m: { seq: number; content: FlyoutContent }) => { calls.push('send'); sent.push(m) }),
+    send: vi.fn((m: FlyoutMessage) => { calls.push('send'); sent.push(m) }),
     shown: vi.fn(() => void calls.push('shown'))
   }
   const log = vi.fn()
   const onOpenChange = vi.fn()
   const c = createFlyoutController({
     window,
-    barAnchor: (id) => (barVisible ? { bar, item: id ? items[id] ?? null : null, edge: 'right', workArea: WA } : null),
-    barEdge: () => 'right',
+    barAnchor: (id) => {
+      if (!barVisible) return null
+      const item = id ? items[id] ?? null : null
+      return { bar: atEdge(bar, edge), item: item && atEdge(item, edge), edge, workArea: WA }
+    },
+    barEdge: () => edge,
     cursorWorkArea: () => WA,
     cursor: () => cursor,
     mouseButtonDown: () => button,
@@ -54,6 +63,7 @@ function make(o: { barVisible?: boolean } = {}) {
     setCursor: (p: { x: number; y: number }) => { cursor = p },
     setButton: (b: boolean | null) => { button = b },
     setBarVisible: (v: boolean) => { barVisible = v },
+    setEdge: (e: BarEdge) => { edge = e },
     setDrift: (r: Rect | null) => { drift = r },
     lastBounds: () => window.setBounds.mock.calls.at(-1)![0] as Rect
   }
@@ -234,6 +244,40 @@ describe('작업 영역 가장자리', () => {
     expect(t.sent.at(-1)).toMatchObject({ seq: 1, pad: { top: 16, right: 0, bottom: 8, left: 24 } })
     expect(t.c.message()?.pad.bottom).toBe(8)
     expect(t.calls.indexOf('showInactive')).toBeGreaterThan(t.calls.lastIndexOf('send'))
+  })
+})
+
+describe('바 쪽(edge)을 메시지에 담는다(화면이 여백에서 짐작하지 않게)', () => {
+  it('왼쪽 바: 보낸 메시지와 지금 내용 모두 edge left, 바 쪽 면(왼쪽)에는 여백이 없다', () => {
+    const t = make({ edge: 'left' })
+    t.c.toggleMenu(maskingMenu, 'masking')
+    expect(t.sent[0]).toMatchObject({ seq: 1, edge: 'left', pad: { top: 16, right: 24, bottom: 32, left: 0 } })
+    t.c.ready(1, { width: 200, height: 140 })
+    expect(t.lastBounds()).toEqual({ x: 64, y: 328, width: 224, height: 188 })
+    expect(t.c.message()).toMatchObject({ seq: 1, edge: 'left' })
+  })
+
+  it('오른쪽 바(기본)도 edge right를 담는다', () => {
+    const t = make()
+    t.c.hover('masking'); vi.advanceTimersByTime(400)
+    expect(t.sent[0].edge).toBe('right')
+  })
+
+  it('띄우기 전에 바가 반대쪽으로 옮겨지면 같은 seq로 바 쪽과 여백을 다시 보낸다', () => {
+    const t = make()
+    t.c.toggleMenu(maskingMenu, 'masking')
+    t.setEdge('left')
+    t.c.ready(1, { width: 200, height: 140 })
+    expect(t.sent).toHaveLength(2)
+    expect(t.sent[1]).toMatchObject({ seq: 1, edge: 'left', pad: { right: 24, left: 0 } })
+    expect(t.c.message()).toMatchObject({ seq: 1, edge: 'left', pad: { right: 24, left: 0 } })
+    expect(t.calls.indexOf('showInactive')).toBeGreaterThan(t.calls.lastIndexOf('send'))
+  })
+
+  it('바가 없을 때의 카드는 설정의 바 쪽 가장자리를 담는다', () => {
+    const t = make({ barVisible: false, edge: 'left' })
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    expect(t.sent[0].edge).toBe('left')
   })
 })
 

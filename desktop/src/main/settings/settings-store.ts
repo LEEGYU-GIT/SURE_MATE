@@ -41,7 +41,9 @@ export const DEFAULT_SETTINGS: Settings = {
 /** 팔레트 단축키가 다른 앱과 겹칠 때 차례로 시도할 조합(Claude 데스크톱 앱이 Ctrl+Alt+Space를 씀) */
 export const PALETTE_HOTKEY_FALLBACKS = ['Ctrl+Alt+Space', 'Alt+`']
 
-const FILE = 'settings.json'
+/** 설정 파일 이름(사용자 데이터 폴더 안). 설정 화면 전까지 바의 설정 단추가 이 파일을 연다 */
+export const SETTINGS_FILE = 'settings.json'
+const FILE = SETTINGS_FILE
 const DISPLAYS = ['cursor', 'primary', 'active'] as const
 const MASKING_MODES = ['off', 'restore', 'remove'] as const
 

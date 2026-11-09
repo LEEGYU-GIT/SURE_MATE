@@ -1,0 +1,165 @@
+import type { BarShape } from '../../shared/bar/bar-settings'
+import { createExecutionGuard } from '../../shared/execution-guard'
+import type { FlyoutAction } from '../../shared/flyout/flyout-content'
+import type { ShownPayload } from '../../shared/ipc-channels'
+import type { MaskingMode } from '../../shared/types'
+import { errorCode } from '../error-text'
+
+/** 같은 바 단추를 이 시간 안에 두 번 누르면 한 번만 실행한다(팔레트 항목 실행과 같은 300ms) */
+export const BAR_ACTION_GUARD_MS = 300
+
+/** 바 단추·펼침 창 메뉴를 처리하지 못했을 때 알림(가명 처리·용어 팩 명령과 같은 문구) */
+export const BAR_ACTION_FAILED = '처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.'
+
+const PROMPT_PREFIX = 'prompt:'
+
+export interface BarActionDeps {
+  /** 지금 바에 있는 항목 id인지(renderer가 보낸 id는 믿지 않는다) */
+  isKnown(id: string): boolean
+  /** 팔레트를 열고 닫는다(단축키와 같음) */
+  togglePalette(): void
+  openPalette(p: ShownPayload): void
+  toggleMenu(kind: 'masking-menu' | 'workspace-menu', itemId: string): void
+  /** 고정 프롬프트를 지금 선택한 글로 실행(PromptSession.runFromBar). 실패하면 거부한다 */
+  runPrompt(templateId: string): Promise<unknown>
+  /** 실행 중 표시(바 항목 id, 끄면 null) */
+  setBusy(itemId: string | null): void
+  togglePet(): Promise<void>
+  openSettings(): Promise<void>
+  notify(message: string): void
+  /** id·길이·오류 코드만 넘긴다(선택 글·프롬프트 내용 금지) */
+  log(event: string, data: Record<string, unknown>): void
+}
+
+/**
+ * 바 단추를 누르면 하는 일(설계 §14-1 항목). 어떤 단추든 실패해도 던지지 않고 오류 코드만 기록한 뒤 알린다.
+ * 실행 중 표시는 먼저 누른 고정 프롬프트 하나만 켠다: 실행 중에 다른 프롬프트를 누르면 세션이 막고(busy),
+ * 그 단추가 먼저 누른 단추의 표시를 끄지 않게 한다.
+ */
+export function createBarActions(d: BarActionDeps, now: () => number = Date.now): { run(id: string): Promise<void> } {
+  const guard = createExecutionGuard(BAR_ACTION_GUARD_MS, now)
+  let busyItem: string | null = null
+
+  const runPrompt = async (id: string): Promise<void> => {
+    const mine = busyItem === null
+    if (mine) {
+      busyItem = id
+      d.setBusy(id)
+    }
+    try {
+      await d.runPrompt(id.slice(PROMPT_PREFIX.length))
+    } finally {
+      if (mine) {
+        busyItem = null
+        d.setBusy(null)
+      }
+    }
+  }
+
+  const handle = async (id: string): Promise<void> => {
+    switch (id) {
+      case 'logo':
+        return d.togglePalette()
+      case 'masking':
+        return d.toggleMenu('masking-menu', 'masking')
+      case 'workspace':
+        return d.toggleMenu('workspace-menu', 'workspace')
+      case 'glossary':
+        return d.openPalette({ mode: 'search', query: '?' })
+      case 'pet':
+        return d.togglePet()
+      case 'settings':
+        return d.openSettings()
+      default:
+        if (id.startsWith(PROMPT_PREFIX)) return runPrompt(id)
+    }
+  }
+
+  return {
+    async run(id) {
+      if (!d.isKnown(id)) {
+        // 모르는 id는 내용일 수 있어 길이만 남긴다
+        d.log('bar.action.unknown', { length: id.length })
+        return
+      }
+      if (!guard(id)) return
+      d.log('bar.action', { id })
+      try {
+        await handle(id)
+      } catch (e) {
+        d.log('bar.action.failed', { id, error: errorCode(e) })
+        d.notify(BAR_ACTION_FAILED)
+      }
+    }
+  }
+}
+
+export interface FlyoutActionDeps {
+  /** 가명 처리 기본값을 저장하고 트레이·바를 갱신한다 */
+  setMaskingMode(mode: MaskingMode): Promise<void>
+  /** 바 모양을 저장하고 바를 갱신한다 */
+  saveBarShape(shape: BarShape): Promise<void>
+  unsnoozeBar(): void
+  snoozeBar(): void
+  openSettings(): Promise<void>
+  /** 펼침 창을 닫는다(reason은 flyout.hide 로그에 남는다) */
+  close(reason: string): void
+  notify(message: string): void
+  log(event: string, data: Record<string, unknown>): void
+}
+
+/** 기록에 남겨도 되는 동작 값(정해진 모드·모양 이름뿐) */
+function actionLog(a: FlyoutAction): Record<string, unknown> {
+  if (a.type === 'set-masking') return { type: a.type, mode: a.mode }
+  if (a.type === 'set-bar-shape') return { type: a.type, shape: a.shape }
+  return { type: a.type }
+}
+
+/**
+ * 펼침 창 메뉴 행·단추. 처리했으면 true. 메뉴는 고르면 닫는다(포커스를 받지 않는 창이라 blur로 닫히지 않는다).
+ * 위키 카드 단추(wiki-*)는 아직 연결하지 않아 false다.
+ */
+export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction): Promise<boolean> } {
+  const handle = async (a: FlyoutAction): Promise<boolean> => {
+    switch (a.type) {
+      case 'set-masking':
+        await d.setMaskingMode(a.mode)
+        d.close('select')
+        return true
+      case 'set-bar-shape':
+        // 저장한 뒤 잠시 숨김을 푼다(모양을 고르면 바가 다시 보여야 한다)
+        await d.saveBarShape(a.shape)
+        d.unsnoozeBar()
+        d.close('select')
+        return true
+      case 'snooze-bar':
+        d.close('select')
+        d.snoozeBar()
+        return true
+      case 'open-settings':
+        d.close('select')
+        await d.openSettings()
+        return true
+      case 'close':
+        d.close('button')
+        return true
+      default:
+        return false
+    }
+  }
+
+  return {
+    async run(a) {
+      try {
+        const handled = await handle(a)
+        if (handled) d.log('flyout.action', actionLog(a))
+        return handled
+      } catch (e) {
+        d.log('flyout.action.failed', { type: a.type, error: errorCode(e) })
+        d.notify(BAR_ACTION_FAILED)
+        d.close('error')
+        return false
+      }
+    }
+  }
+}

@@ -59,6 +59,8 @@ type Deps = {
 
 type Size = { width: number; height: number }
 type Ctx = { itemId: string | null; atY?: number }
+/** 창 사각형과 그 창에 맞춘 그림자 여백, 기준으로 삼은 바 쪽 */
+type Placed = { window: Rect; pad: FlyoutPad; edge: BarEdge }
 
 const inRect = (p: { x: number; y: number }, r: Rect): boolean => p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height
 
@@ -68,6 +70,7 @@ export function createFlyoutController(d: Deps): FlyoutController {
   let content: FlyoutContent | null = null
   let ctx: Ctx = { itemId: null }
   let pad: FlyoutPad = { top: 0, right: 0, bottom: 0, left: 0 }
+  let edge: BarEdge = 'right'
   let pending: { seq: number; reshow: boolean } | null = null
   let visible = false
   let open = false
@@ -102,29 +105,34 @@ export function createFlyoutController(d: Deps): FlyoutController {
   }
 
   /** 카드 사각형을 정해 창 사각형으로 바꾼다. 놓을 곳이 없으면 null */
-  function windowFor(c: FlyoutContent, size: Size): { window: Rect; pad: FlyoutPad } | null {
+  function windowFor(c: FlyoutContent, size: Size): Placed | null {
     const a = anchorFor(c)
     let card: Rect
     if (!a) {
       if (c.kind !== 'wiki-card') return null
       const wa = d.cursorWorkArea()
-      card = edgeCardRect({ size, workArea: wa, edge: d.barEdge() })
-      return flyoutWindowRect(card, d.barEdge(), wa)
+      const e = d.barEdge()
+      card = edgeCardRect({ size, workArea: wa, edge: e })
+      return { ...flyoutWindowRect(card, e, wa), edge: e }
     }
     let anchor: Rect
     if (c.kind === 'wiki-card') anchor = a.item ?? { x: a.bar.x, y: a.bar.y, width: a.bar.width, height: 0 }
     else anchor = a.item ?? { x: a.bar.x, y: ctx.atY ?? a.bar.y, width: a.bar.width, height: 0 }
     card = flyoutCardRect({ size, anchor, bar: a.bar, edge: a.edge, workArea: a.workArea, align: c.kind === 'label' ? 'center' : 'top' })
-    return flyoutWindowRect(card, a.edge, a.workArea)
+    return { ...flyoutWindowRect(card, a.edge, a.workArea), edge: a.edge }
   }
 
-  /** 작업 영역 때문에 여백이 줄었으면 같은 seq로 여백만 바꿔 다시 보낸다(내용은 같음) */
-  function applyBounds(placed: { window: Rect; pad: FlyoutPad }): void {
+  /**
+   * 작업 영역 때문에 여백이 줄었거나 띄우기 전에 바가 반대쪽으로 옮겨졌으면
+   * 같은 seq로 여백·바 쪽만 바꿔 다시 보낸다(내용은 같음)
+   */
+  function applyBounds(placed: Placed): void {
     const win = placed.window
     const p = placed.pad
-    if (content && (p.top !== pad.top || p.right !== pad.right || p.bottom !== pad.bottom || p.left !== pad.left)) {
+    if (content && (p.top !== pad.top || p.right !== pad.right || p.bottom !== pad.bottom || p.left !== pad.left || placed.edge !== edge)) {
       pad = p
-      d.window.send({ seq, content, pad })
+      edge = placed.edge
+      d.window.send({ seq, content, pad, edge })
     }
     d.window.setBounds(win)
     const actual = d.window.getBounds()
@@ -186,7 +194,8 @@ export function createFlyoutController(d: Deps): FlyoutController {
     content = next
     ctx = nextCtx
     pending = { seq, reshow }
-    pad = flyoutWindowRect({ x: 0, y: 0, width: 0, height: 0 }, edgeFor(next)).pad
+    edge = edgeFor(next)
+    pad = flyoutWindowRect({ x: 0, y: 0, width: 0, height: 0 }, edge).pad
     const isOpen = next.kind !== 'label'
     if (isOpen && !open) {
       open = true
@@ -195,7 +204,7 @@ export function createFlyoutController(d: Deps): FlyoutController {
       open = false
       d.onOpenChange(false)
     }
-    d.window.send({ seq, content: next, pad })
+    d.window.send({ seq, content: next, pad, edge })
     const fallback = !reshow && lastSize ? lastSize : next.kind === 'wiki-card' ? { width: next.width, height: FLYOUT_FALLBACK_SIZE['wiki-card'].height } : FLYOUT_FALLBACK_SIZE[next.kind]
     readyTimer = d.timers.setTimeout(() => {
       readyTimer = null
@@ -303,7 +312,7 @@ export function createFlyoutController(d: Deps): FlyoutController {
       replace()
     },
     message() {
-      return content ? { seq, content, pad } : null
+      return content ? { seq, content, pad, edge } : null
     },
     dispose() {
       hide('dispose')

@@ -5,6 +5,7 @@ import { IPC, type ShownPayload } from '../../shared/ipc-channels'
 import { needsResize, palettePosition, shouldHideOnBlur } from '../../shared/palette-rules'
 import { log } from '../log'
 import { getForegroundWindow, setForeground } from '../native/windows'
+import { loadRoute } from './overlay-window'
 
 export type DisplayMode = 'cursor' | 'primary' | 'active'
 
@@ -42,11 +43,7 @@ export function createPaletteWindow(opts: { getDisplayMode: () => DisplayMode })
   })
   ownHwnd = win.getNativeWindowHandle().readBigUInt64LE(0).toString()
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  loadRoute(win, '')
 
   if (is.dev) {
     // 디버깅용: renderer 콘솔과 Esc 입력이 실제로 들어오는지 기록

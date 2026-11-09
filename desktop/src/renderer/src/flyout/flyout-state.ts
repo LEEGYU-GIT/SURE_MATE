@@ -36,7 +36,7 @@ function onlyPinChanged(a: FlyoutContent, b: FlyoutContent): boolean {
 
 /**
  * 펼침 창 화면 상태.
- * - 같은 seq가 다시 오면 그림자 여백(pad)만 바뀐 것이다: pad가 다르면 pad만 바꾸고 내용은 그대로 둔다.
+ * - 같은 seq가 다시 오면 그림자 여백(pad)이나 바 쪽(edge)만 바뀐 것이다: 다르면 그 둘만 바꾸고 내용은 그대로 둔다.
  * - 새 seq는 shown(seq)을 받을 때까지 감춘다(창 크기·자리가 새 내용에 맞춰지기 전에 비치지 않게). 닫힘에는 움직임이 없다.
  * - 창이 뜬 뒤 처음 물어 받은 내용은 이미 보이는 창일 수 있어 바로 보인다.
  */
@@ -50,8 +50,8 @@ export function flyoutReducer(state: FlyoutViewState, action: FlyoutViewAction):
       const m = action.message
       const cur = state.message
       if (cur && m.seq === cur.seq) {
-        if (samePad(cur.pad, m.pad)) return state
-        return { ...state, message: { ...cur, pad: m.pad } }
+        if (samePad(cur.pad, m.pad) && cur.edge === m.edge) return state
+        return { ...state, message: { ...cur, pad: m.pad, edge: m.edge } }
       }
       const inPlace = state.open && cur !== null && onlyPinChanged(cur.content, m.content)
       const chained =

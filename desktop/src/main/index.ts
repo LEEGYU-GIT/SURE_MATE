@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { access, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
+import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
+import type { MaskingMode } from '../shared/types'
+import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
 import { fileErrorNotice, type FileErrorReport } from './file-error-notice'
@@ -30,7 +33,7 @@ import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
-import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, updateSettings, type Settings } from './settings/settings-store'
+import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, SETTINGS_FILE, updateSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
@@ -42,6 +45,7 @@ app.setName('Sure-Mate')
 process.on('unhandledRejection', (reason) => log('error.unhandledRejection', { error: errorText(reason) }))
 process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { error: errorText(e) }))
 
+let userData = ''
 let settings: Settings = DEFAULT_SETTINGS
 let templates: Template[] = []
 let prompts: PromptSession | null = null
@@ -53,12 +57,107 @@ let packCommands: { run(id: string): Promise<boolean> } | null = null
 let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
+/** Sure-Mate 바와 펼침 창. 시작하지 못했거나 앱을 끝낸 뒤에는 null(팔레트·트레이는 그대로 동작) */
+let barRuntime: BarRuntime | null = null
+/** 설정 저장을 한 번에 하나씩(겹치면 한쪽 변경이 사라지고 같은 임시 파일 settings.json.tmp에 함께 쓴다) */
+let settingsWrites: Promise<void> = Promise.resolve()
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
   else showPalette({ mode: 'search' })
+}
+
+/** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그린다 */
+function applySettings(next: Settings): void {
+  settings = next
+  shell?.refresh()
+  barRuntime?.refresh()
+}
+
+const onSettingsLoadError = (what: string, e: unknown): void => log('settings.loadError', { what, error: errorText(e) })
+
+/** 설정 파일 쓰기를 한 번에 하나씩 실행한다(앞 작업이 실패해도 다음 작업은 실행한다) */
+function queueSettingsWrite<T>(job: () => Promise<T>): Promise<T> {
+  const run = settingsWrites.then(job)
+  settingsWrites = run.then(
+    () => {},
+    () => {}
+  )
+  return run
+}
+
+/**
+ * 설정 파일을 다시 읽어 바꿀 값만 고친 뒤 저장하고 적용한다(실행 중에 손으로 고친 값을 덮어쓰지 않게).
+ * 저장하지 못해도 이번 실행에는 적용한다(그때는 기록만 하고 거부하지 않는다).
+ */
+function changeSettings(update: (current: Settings) => Settings): Promise<void> {
+  return queueSettingsWrite(async () => {
+    let next: Settings
+    try {
+      next = await updateSettings(userData, update, onSettingsLoadError)
+    } catch (e) {
+      log('settings.saveError', { error: errorText(e) })
+      next = update(settings)
+    }
+    applySettings(next)
+  })
+}
+
+/** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
+const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
+
+/** 바 모양(바 메뉴). 잠시 숨김 해제는 부르는 쪽이 한다 */
+const saveBarShape = (shape: BarShape): Promise<void> => changeSettings((cur) => ({ ...cur, bar: { ...cur.bar, shape } }))
+
+/** 말랑 메이트 보이기·숨기기: 바에 보이는 지금 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
+async function togglePet(): Promise<void> {
+  const visible = !settings.pet.visible
+  await changeSettings((cur) => ({ ...cur, pet: { ...cur.pet, visible } }))
+  log('pet.visible', { visible })
+}
+
+/**
+ * 설정 화면이 생기기 전까지 바의 설정 단추·바 메뉴 "설정 열기"는 settings.json을 기본 프로그램으로 연다.
+ * 파일이 없으면 지금 설정으로 만들고, .json을 열 프로그램이 없으면 폴더를 연다(가명 사전 열기와 같은 처리).
+ */
+async function openSettings(): Promise<void> {
+  const path = join(userData, SETTINGS_FILE)
+  // 다른 설정 저장과 같은 임시 파일을 쓰므로 같은 줄에서 만든다
+  const created = await queueSettingsWrite(async () => {
+    const exists = await access(path).then(
+      () => true,
+      () => false
+    )
+    if (!exists) await saveSettings(userData, settings)
+    return !exists
+  })
+  const error = await electronShell.openPath(path)
+  if (error) {
+    electronShell.showItemInFolder(path)
+    notify('설정 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
+  }
+  log('settings.open', { opened: !error, created })
+}
+
+/** Sure-Mate 바와 펼침 창(설계 §14-1). 여기서 실패해도 팔레트·트레이는 이미 살아 있다 */
+function startBar(): void {
+  barRuntime = createBarRuntime({
+    inputs: () => ({ bar: settings.bar, maskingMode: settings.masking.mode, petVisible: settings.pet.visible, paletteHotkey: paletteHotkey(), templates }),
+    savePosition: (display, ratio) => changeSettings((cur) => ({ ...cur, bar: withPosition(cur.bar, display, ratio) })),
+    // 트레이 메뉴가 바의 잠시 숨김 상태를 보여 준다
+    onVisibleChange: () => shell?.refresh(),
+    togglePalette,
+    showPalette,
+    runPrompt: (templateId) => (prompts ? prompts.runFromBar(templateId) : Promise.resolve('missing')),
+    togglePet,
+    openSettings,
+    setMaskingMode,
+    saveBarShape,
+    notify,
+    log
+  })
 }
 
 async function runItem(id: string): Promise<void> {
@@ -116,7 +215,7 @@ function paletteHotkey(): string | null {
 }
 
 /** 트레이·전역 단축키·시작 프로그램 등록. 여기서 실패해도 팔레트 창과 IPC는 이미 살아 있다. */
-async function startShell(userData: string): Promise<void> {
+async function startShell(): Promise<void> {
   const manager = new HotkeyManager(
     {
       register: (acc, cb) => {
@@ -162,12 +261,8 @@ async function startShell(userData: string): Promise<void> {
   const bound = manager.bindFirst('palette', [...new Set([wanted, ...PALETTE_HOTKEY_FALLBACKS])], togglePalette)
   if (bound.ok && bound.acc !== wanted) {
     warn(`${wanted}는 다른 앱이 쓰고 있어 팔레트 단축키를 ${bound.acc}로 정했어요.`)
-    settings = { ...settings, hotkeys: { ...settings.hotkeys, palette: bound.acc } }
-    try {
-      await saveSettings(userData, settings)
-    } catch (e) {
-      log('settings.saveError', { error: errorText(e) })
-    }
+    const palette = bound.acc
+    await changeSettings((cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, palette } }))
   } else if (!bound.ok) {
     warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
   }
@@ -202,8 +297,8 @@ if (!app.requestSingleInstanceLock()) {
       lockNavigation(w.webContents)
     })
 
-    const userData = app.getPath('userData')
-    settings = await loadSettings(userData, (what, e) => log('settings.loadError', { what, error: errorText(e) }))
+    userData = app.getPath('userData')
+    settings = await loadSettings(userData, onSettingsLoadError)
     // 팔레트를 열 때마다(목록 요청) 템플릿 파일이 바뀌었는지 보고 다시 읽는다
     const templateCache = createTemplateCache(userData, builtinPrompts, (errors) => reportFileErrors('프롬프트 템플릿', 'templates.loadErrors', errors))
     templates = await templateCache.get()
@@ -285,18 +380,8 @@ if (!app.requestSingleInstanceLock()) {
       userData,
       masking,
       getMode: () => settings.masking.mode,
-      // 파일을 다시 읽어 모드만 바꾼다(실행 중에 손으로 고친 사내 도메인 등을 덮어쓰지 않게)
-      setMode: async (mode) => {
-        try {
-          settings = await updateSettings(userData, (cur) => ({ ...cur, masking: { ...cur.masking, mode } }), (what, e) =>
-            log('settings.loadError', { what, error: errorText(e) })
-          )
-        } catch (e) {
-          settings = { ...settings, masking: { ...settings.masking, mode } }
-          log('settings.saveError', { error: errorText(e) })
-        }
-        shell?.refresh()
-      }
+      // 파일을 다시 읽어 모드만 바꾼다(실행 중에 손으로 고친 사내 도메인 등을 덮어쓰지 않게). 트레이·바도 갱신
+      setMode: setMaskingMode
     })
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
@@ -307,6 +392,8 @@ if (!app.requestSingleInstanceLock()) {
         templates = await templateCache.get()
         const glossary = (await glossaryCache.get()).entries
         glossaryEntries = glossary
+        // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
+        applySettings(settings)
         return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
       },
       previewPrompt: (req) => session.preview(req),
@@ -323,17 +410,30 @@ if (!app.requestSingleInstanceLock()) {
         paletteHotkey: paletteHotkey(),
         maskingMode: settings.masking.mode,
         aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
-      })
+      }),
+      overlay: () => barRuntime
     })
 
     try {
-      await startShell(userData)
+      await startShell()
     } catch (e) {
       log('app.startupError', { error: errorText(e) })
+    }
+
+    // 바는 팔레트·트레이 다음에 띄운다(바가 실패해도 팔레트·트레이는 동작한다)
+    try {
+      startBar()
+    } catch (e) {
+      log('bar.startError', { error: errorText(e) })
     }
   })
 
   // 창이 모두 닫혀도 트레이에 남는다
   app.on('window-all-closed', () => {})
-  app.on('will-quit', () => globalShortcut.unregisterAll())
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll()
+    // 맨 앞 유지·전체 화면 확인·펼침 창 타이머와 화면 이벤트 구독을 멈춘다
+    barRuntime?.dispose()
+    barRuntime = null
+  })
 }

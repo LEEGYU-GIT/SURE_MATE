@@ -155,7 +155,7 @@ function placeFlyout(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutCon
  * 내용 보냄 → 화면이 그린 크기를 알림(ready) → 배치(여백이 줄면 같은 seq로 여백만 다시 보냄) → 창을 그 자리에 → shown.
  */
 function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent) {
-  let message: FlyoutMessage = { seq: 1, content, pad: flyoutWindowRect(ZERO_RECT, bar.edge).pad }
+  let message: FlyoutMessage = { seq: 1, content, pad: flyoutWindowRect(ZERO_RECT, bar.edge).pad, edge: bar.edge }
   let placed: Placed | null = null
   const contentCbs = new Set<(m: FlyoutMessage) => void>()
   const shownCbs = new Set<(seq: number) => void>()

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { BarEdge } from '../../../shared/bar/bar-settings'
 import type { FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
 import { flyoutReducer, initialFlyoutState, LABEL_CHAIN_MS, type FlyoutViewState } from './flyout-state'
 
 const PAD: FlyoutPad = { top: 16, right: 0, bottom: 32, left: 24 }
-const msg = (seq: number, content: FlyoutContent, pad: FlyoutPad = PAD): FlyoutMessage => ({ seq, content, pad })
+const msg = (seq: number, content: FlyoutContent, pad: FlyoutPad = PAD, edge: BarEdge = 'right'): FlyoutMessage => ({ seq, content, pad, edge })
 const label = (text: string): FlyoutContent => ({ kind: 'label', text })
 const masking: FlyoutContent = { kind: 'masking-menu', mode: 'restore' }
 const card = (pinned: boolean): FlyoutContent => ({
@@ -41,6 +42,26 @@ describe('그림자 여백(pad) 계약: 같은 seq로 다시 오면 여백만 �
   it('같은 seq·같은 여백이면 상태를 그대로 돌려준다(다시 그리지 않음)', () => {
     const s1 = shownState(msg(2, masking))
     expect(flyoutReducer(s1, { type: 'content', message: msg(2, masking, { ...PAD }), at: 10 })).toBe(s1)
+  })
+})
+
+describe('바 쪽(edge)은 main이 보낸 값을 쓴다(여백에서 짐작하지 않는다)', () => {
+  it('왼쪽 바면 여백이 모두 0이어도 바 쪽은 왼쪽이다', () => {
+    const zero: FlyoutPad = { top: 0, right: 0, bottom: 0, left: 0 }
+    const s = shownState(msg(1, masking, zero, 'left'))
+    expect(s.message?.edge).toBe('left')
+  })
+
+  it('같은 seq로 바 쪽이 바뀌어 오면(띄우기 전에 바가 반대쪽으로 옮김) 여백과 바 쪽을 함께 바꾸고 내용은 둔다', () => {
+    const s1 = flyoutReducer(initialFlyoutState, { type: 'content', message: msg(4, masking), at: 0 })
+    const leftPad: FlyoutPad = { top: 16, right: 24, bottom: 32, left: 0 }
+    const s2 = flyoutReducer(s1, { type: 'content', message: msg(4, masking, leftPad, 'left'), at: 5 })
+    expect(s2.message).toMatchObject({ seq: 4, pad: leftPad, edge: 'left' })
+    expect(s2.message?.content).toBe(s1.message?.content)
+    // 여백이 같아도 바 쪽이 다르면 바꾼다
+    const s3 = flyoutReducer(s2, { type: 'content', message: msg(4, masking, leftPad, 'right'), at: 6 })
+    expect(s3).not.toBe(s2)
+    expect(s3.message?.edge).toBe('right')
   })
 })
 
