@@ -325,7 +325,8 @@ export function createFlyoutController(d: Deps): FlyoutController {
     pin(p) {
       if (content?.kind !== 'wiki-card') return
       pinned = p
-      present({ ...content, pinned: p }, ctx, false)
+      // 새 카드가 아직 뜨기 전(ready 전)이면 띄우기를 이어받는다. 버리면 투명한 고정 창이 남아 아래 앱의 클릭을 막는다
+      present({ ...content, pinned: p }, ctx, pending?.reshow ?? false)
       if (p) cardTimer = clearT(cardTimer)
       else startCardTimer()
     },

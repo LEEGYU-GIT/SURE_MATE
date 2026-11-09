@@ -393,6 +393,87 @@ describe('위키 카드', () => {
   })
 })
 
+describe('커서가 그대로 카드 위에 있는 새 카드(화면이 새 seq마다 마우스 올림을 다시 알린다)', () => {
+  const note: WikiCardView = { kind: 'note', reason: 'nothing-selected', message: '선택한 글이 없어요', canUseClipboard: true }
+  const timeouts = (t: ReturnType<typeof make>): number => t.log.mock.calls.filter(([e, d]) => e === 'flyout.hide' && d.reason === 'timeout').length
+
+  it('[클립보드 글로 찾기]: 새 카드의 ready 뒤에 pointer(true)가 오면 8초가 지나도 숨지 않고, 나가면 8초 뒤 숨는다', () => {
+    const t = make()
+    t.c.showCard(note, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 120 })
+    t.c.pointer(true)
+    // main은 새 카드를 '마우스가 밖'으로 시작한다. 상자가 같은 요소라 mouseenter는 다시 오지 않는다
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    const seq = t.sent.at(-1)!.seq
+    t.c.ready(seq, { width: 360, height: 220 })
+    t.c.pointer(true)
+    vi.advanceTimersByTime(20000)
+    expect(timeouts(t)).toBe(0)
+    expect(t.window.shown).toHaveBeenLastCalledWith(seq)
+    t.c.pointer(false)
+    vi.advanceTimersByTime(7999)
+    expect(timeouts(t)).toBe(0)
+    vi.advanceTimersByTime(1)
+    expect(timeouts(t)).toBe(1)
+  })
+
+  it('보이는 카드 위에 커서를 둔 채 다시 조회해도(같은 자리의 새 카드) 숨지 않는다', () => {
+    const t = make()
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 200 })
+    t.c.pointer(true)
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 200 })
+    t.c.pointer(true)
+    vi.advanceTimersByTime(30000)
+    expect(timeouts(t)).toBe(0)
+  })
+})
+
+describe('새 카드가 뜨기 전(ready 전)에 고정해도 카드를 띄운다', () => {
+  it('ready를 받으면 띄우고 shown을 보낸다(고정한 카드는 숨지 않는다)', () => {
+    const t = make()
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.pin(true)
+    const seq = t.sent.at(-1)!.seq
+    expect(t.sent.at(-1)?.content).toMatchObject({ kind: 'wiki-card', pinned: true })
+    t.c.ready(seq, { width: 360, height: 200 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+    expect(t.window.shown).toHaveBeenCalledWith(seq)
+    vi.advanceTimersByTime(30000)
+    expect(t.window.hide).not.toHaveBeenCalled()
+  })
+
+  it('ready가 오지 않아도 300ms 뒤 기본 크기로 띄운다', () => {
+    const t = make()
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.pin(true)
+    vi.advanceTimersByTime(300)
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+  })
+
+  it('보이는 카드를 새 카드로 바꾸는 중에 고정이 와도(앞 카드의 [고정]과 겹침) 새 카드를 띄운다', () => {
+    const t = make()
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 200 })
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.pin(true)
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 240 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(2)
+    expect(t.window.shown).toHaveBeenLastCalledWith(t.sent.at(-1)!.seq)
+  })
+
+  it('보이는 카드의 고정(평소)은 다시 띄우지 않는다', () => {
+    const t = make()
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 200 })
+    t.c.pin(true)
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height: 200 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+    expect(t.window.shown).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('보이는 위키 카드의 크기가 카드 안에서 바뀌면(다른 후보·목록↔상세) 다시 띄우지 않고 자리만 맞춘다', () => {
   const show = (t: ReturnType<typeof make>, height = 200): void => {
     t.c.showCard(view, { width: 360, autoHideMs: 8000 })

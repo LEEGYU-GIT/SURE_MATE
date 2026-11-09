@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BarEdge } from '../../../shared/bar/bar-settings'
 import type { FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
-import { flyoutReducer, initialFlyoutState, LABEL_CHAIN_MS, type FlyoutViewState } from './flyout-state'
+import { flyoutReducer, hoverAfterReport, initialFlyoutState, LABEL_CHAIN_MS, type FlyoutViewState } from './flyout-state'
 
 const PAD: FlyoutPad = { top: 16, right: 0, bottom: 32, left: 24 }
 const msg = (seq: number, content: FlyoutContent, pad: FlyoutPad = PAD, edge: BarEdge = 'right'): FlyoutMessage => ({ seq, content, pad, edge })
@@ -130,5 +130,33 @@ describe('들어오는 움직임', () => {
   it('메뉴는 이름표 바로 뒤라도 움직임과 함께 들어온다', () => {
     const s1 = shownState(msg(1, label('가명 처리: 가명 후 되돌리기')), 1000)
     expect(flyoutReducer(s1, { type: 'content', message: msg(2, masking), at: 1100 }).instant).toBe(false)
+  })
+})
+
+describe('hoverAfterReport: 새 seq의 크기를 알린 직후 마우스 올림을 다시 알릴지', () => {
+  it('새 seq를 그렸을 때 상자에 마우스가 올라가 있으면 true를 한 번 보낸다(상자가 같은 요소라 mouseenter가 다시 오지 않는다)', () => {
+    expect(hoverAfterReport(null, 1, true)).toEqual({ send: true, lastSeq: 1 })
+    expect(hoverAfterReport(4, 5, true)).toEqual({ send: true, lastSeq: 5 })
+  })
+
+  it('밖이면 보내지 않는다(main은 새 카드를 밖으로 시작하고, 나갈 때는 mouseleave가 알린다)', () => {
+    expect(hoverAfterReport(null, 1, false)).toEqual({ send: false, lastSeq: 1 })
+    expect(hoverAfterReport(4, 5, false)).toEqual({ send: false, lastSeq: 5 })
+  })
+
+  it('같은 seq를 다시 알릴 때(카드 안 크기 바뀜)는 올려져 있어도 보내지 않는다', () => {
+    expect(hoverAfterReport(5, 5, true)).toEqual({ send: false, lastSeq: 5 })
+    expect(hoverAfterReport(5, 5, false)).toEqual({ send: false, lastSeq: 5 })
+  })
+
+  it('[클립보드 글로 찾기]처럼 커서가 그대로 있는 채 seq가 이어지면 seq마다 한 번씩 보낸다', () => {
+    let last: number | null = null
+    const sent: number[] = []
+    for (const [seq, hovered] of [[1, true], [1, true], [2, true], [2, true], [3, false], [4, true]] as const) {
+      const r = hoverAfterReport(last, seq, hovered)
+      last = r.lastSeq
+      if (r.send) sent.push(seq)
+    }
+    expect(sent).toEqual([1, 2, 4])
   })
 })

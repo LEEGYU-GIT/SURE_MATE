@@ -69,3 +69,15 @@ export function flyoutReducer(state: FlyoutViewState, action: FlyoutViewAction):
     }
   }
 }
+
+/**
+ * 새 내용(seq)의 크기를 알린 직후 마우스 올림을 main에 다시 알릴지(send면 flyoutPointer(true)). lastSeq: 이미 판단한 마지막 seq.
+ * main은 새 카드·메뉴를 '마우스가 밖'으로 시작하는데, 상자는 내용이 바뀌어도 같은 요소라 mouseenter가 다시 오지 않는다.
+ * 그래서 커서가 그대로 카드 위에 있으면([클립보드 글로 찾기], 카드 위에 커서를 둔 채 다시 조회) 새 카드가 8초 뒤 숨었다.
+ * seq마다 한 번, 올려져 있을 때만 보낸다(밖이면 main이 이미 밖으로 알고, 나갈 때는 mouseleave가 알린다).
+ * 같은 seq를 다시 알릴 때(카드 안에서 크기가 바뀜)는 보내지 않는다.
+ */
+export function hoverAfterReport(lastSeq: number | null, seq: number, hovered: boolean): { send: boolean; lastSeq: number } {
+  if (lastSeq === seq) return { send: false, lastSeq }
+  return { send: hovered, lastSeq: seq }
+}

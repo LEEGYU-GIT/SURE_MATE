@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'rea
 import type { BarEdge } from '../../../shared/bar/bar-settings'
 import { FLYOUT_MAX_HEIGHT, type FlyoutAction, type FlyoutContent, type FlyoutMessage, type FlyoutPad } from '../../../shared/flyout/flyout-content'
 import { BarMenu } from './BarMenu'
-import { flyoutReducer, initialFlyoutState } from './flyout-state'
+import { flyoutReducer, hoverAfterReport, initialFlyoutState } from './flyout-state'
 import { Label } from './Label'
 import { MaskingMenu } from './MaskingMenu'
 import { WikiCard, type CardSend } from './WikiCard'
@@ -128,14 +128,20 @@ function FlyoutBox({
 }): React.JSX.Element {
   const api = window.sureMate
   const box = useRef<HTMLDivElement>(null)
+  /** 마우스 올림을 다시 알릴지 판단한 마지막 seq(hoverAfterReport) */
+  const hoverSeq = useRef<number | null>(null)
   const { seq, content, pad } = message
 
-  // 지금 seq로 그린 크기를 알린다. 위키 카드는 카드 안에서 본문이 바뀔 때도 부른다(같은 seq로 다시 알림)
+  // 지금 seq로 그린 크기를 알린다. 위키 카드는 카드 안에서 본문이 바뀔 때도 부른다(같은 seq로 다시 알림).
+  // 새 seq면 이어서 실제 마우스 올림 상태를 알린다: 상자가 같은 요소라 커서가 그대로 있으면 mouseenter가 다시 오지 않는다
   const report = useCallback((): void => {
     const el = box.current
     if (!el) return
     const size = measure(el)
     api.flyoutReady(seq, size.width, size.height)
+    const hover = hoverAfterReport(hoverSeq.current, seq, el.matches(':hover'))
+    hoverSeq.current = hover.lastSeq
+    if (hover.send) api.flyoutPointer(true)
   }, [api, seq])
 
   // 새 내용을 그린 직후 크기를 재 알린다. 여백(pad)만 바뀐 같은 seq는 다시 알리지 않는다.
