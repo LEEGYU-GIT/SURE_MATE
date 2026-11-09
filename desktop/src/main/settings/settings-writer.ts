@@ -30,6 +30,8 @@ export interface SettingsWriter {
 /**
  * 실행 중 설정 저장. 한 번에 하나씩 차례로 실행한다(겹치면 한쪽 변경이 사라지고 같은 임시 파일 settings.json.tmp에 함께 쓴다).
  * 파일을 읽지 못했거나 깨졌으면 파일을 덮거나 옮기지 않고, 메모리의 설정(사내 도메인 등)에 이번 값만 바꿔 적용한다.
+ * 실행 중에 파일이 지워졌으면(없음) 기본값이 아니라 메모리의 지금 설정을 기준으로 파일을 다시 만든다.
+ * 처음 실행(시작할 때 파일이 없음)이면 메모리의 설정이 곧 기본값이라 결과가 같다.
  */
 export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
   let queue: Promise<void> = Promise.resolve()
@@ -49,7 +51,7 @@ export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
   const write = async (update: (current: Settings) => Settings): Promise<Settings> => {
     let next: Settings
     try {
-      next = await updateSettings(d.dir(), update)
+      next = await updateSettings(d.dir(), update, () => d.current())
       unreadableNoticed = false
     } catch (e) {
       if (e instanceof SettingsUnreadableError) {

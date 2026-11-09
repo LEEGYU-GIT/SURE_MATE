@@ -98,6 +98,21 @@ describe('설정 파일을 읽지 못하면 기본값으로 덮지 않는다', (
     expect(JSON.stringify(t.log.mock.calls)).not.toContain(dir)
   })
 
+  it('실행 중에 설정 파일이 지워져도(없음) 기본값이 아니라 메모리의 지금 설정을 기준으로 파일을 다시 만든다', async () => {
+    await writeFile(path, JSON.stringify({ masking: { mode: 'remove', internalDomains: ['intra.example'] } }))
+    const t = make(running())
+    await rm(path)
+
+    await t.w.change((cur) => ({ ...cur, bar: withPosition(cur.bar, '1', 0.3) }))
+
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    expect(saved.masking).toMatchObject({ mode: 'remove', internalDomains: ['intra.example'] })
+    expect(saved.bar.positions).toEqual([{ display: '1', ratio: 0.3 }])
+    expect(t.state().masking).toEqual(running().masking)
+    expect(t.state().bar.positions).toEqual([{ display: '1', ratio: 0.3 }])
+    expect(t.notify).not.toHaveBeenCalled()
+  })
+
   it('다시 읽을 수 있게 되면 그 파일에 저장하고, 그 뒤 다시 읽지 못하면 다시 알린다', async () => {
     await writeFile(path, '{oops')
     const t = make(running())

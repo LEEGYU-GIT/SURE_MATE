@@ -103,18 +103,18 @@ export class SettingsUnreadableError extends Error {
   }
 }
 
-type ReadResult = { ok: true; settings: Settings } | { ok: false; what: 'read' | 'parse'; error: unknown }
+type ReadResult = { ok: true; settings: Settings; missing: boolean } | { ok: false; what: 'read' | 'parse'; error: unknown }
 
-/** 설정 파일을 읽는다. 없으면 기본값이고, 읽지 못했거나 깨졌으면 그 까닭을 돌려준다(파일은 건드리지 않는다) */
+/** 설정 파일을 읽는다. 없으면 기본값(missing)이고, 읽지 못했거나 깨졌으면 그 까닭을 돌려준다(파일은 건드리지 않는다) */
 async function readSettingsFile(path: string): Promise<ReadResult> {
   let text: string
   try {
     text = await readFile(path, 'utf8')
   } catch (e) {
-    return isMissing(e) ? { ok: true, settings: structuredClone(DEFAULT_SETTINGS) } : { ok: false, what: 'read', error: e }
+    return isMissing(e) ? { ok: true, settings: structuredClone(DEFAULT_SETTINGS), missing: true } : { ok: false, what: 'read', error: e }
   }
   try {
-    return { ok: true, settings: parseSettingsText(text) }
+    return { ok: true, settings: parseSettingsText(text), missing: false }
   } catch (e) {
     return { ok: false, what: 'parse', error: e }
   }
@@ -157,11 +157,12 @@ async function keepCorruptCopy(path: string, dest: string, onError: (what: strin
  * (설정 화면이 생기기 전에는 유일한 방법) 바꾸려는 값만 바뀌고 나머지는 지켜진다.
  * 파일을 읽지 못했거나 깨졌으면 저장하지 않고 SettingsUnreadableError를 던진다(파일도 옮기지 않는다):
  * 기본값에 이번 값만 바꿔 저장하면 사내 도메인 같은 사용자 설정이 기본값으로 돌아간다.
+ * 파일이 없으면 whenMissing()을 기준으로 고쳐 파일을 새로 만든다(주지 않으면 기본값).
  */
-export async function updateSettings(dir: string, update: (current: Settings) => Settings): Promise<Settings> {
+export async function updateSettings(dir: string, update: (current: Settings) => Settings, whenMissing?: () => Settings): Promise<Settings> {
   const r = await readSettingsFile(join(dir, FILE))
   if (!r.ok) throw new SettingsUnreadableError(r.what, r.error)
-  const next = update(r.settings)
+  const next = update(r.missing && whenMissing ? whenMissing() : r.settings)
   await saveSettings(dir, next)
   return next
 }
