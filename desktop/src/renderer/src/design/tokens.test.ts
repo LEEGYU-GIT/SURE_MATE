@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
-const css = readFileSync(fileURLToPath(new URL('./tokens.css', import.meta.url)), 'utf8')
+const read = (path: string): string => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+const css = read('./tokens.css')
 const token = (name: string): string | undefined => new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`).exec(css)?.[1].replace(/\s+/g, '')
 
 it('설계 문서 §14-4 색 토큰', () => {
@@ -23,6 +24,18 @@ it('설계 문서 §14-4 색 토큰', () => {
   expect(token('--cheek')).toBe('#FF8FA3')
   expect(token('--lens')).toBe('#BFF3EC')
   expect(token('--mist')).toBe('#E8ECF2')
+})
+
+it('창 안에 한 단 들어간 바탕(입력칸·사용 예·미리 보기)은 --surface-inset 토큰이고, Tailwind에서는 bg-surface-inset', () => {
+  expect(token('--surface-inset')).toBe('rgba(0,0,0,0.20)')
+  expect(read('../assets/tailwind.css')).toMatch(/--color-surface-inset:\s*var\(--surface-inset\);/)
+})
+
+it('팔레트 화면은 토큰 밖의 색(bg-black/20 같은 Tailwind 기본 색)을 쓰지 않는다(설계 문서 §14-4 완료 기준)', () => {
+  const tailwindColor = /\b(?:bg|text|border|ring|outline|fill|stroke)-(?:black|white|(?:gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})\b/
+  const files = readdirSync(fileURLToPath(new URL('../palette/', import.meta.url))).filter((f) => f.endsWith('.tsx'))
+  expect(files).toContain('Confirm.tsx')
+  for (const file of files) expect(read(`../palette/${file}`), file).not.toMatch(tailwindColor)
 })
 
 it('모서리와 글자 크기 토큰', () => {

@@ -7,7 +7,7 @@ import { WikiIcon } from '../design/icons'
 import { formToDraft, saveRejected, type WikiForm } from './wiki-form'
 
 const fieldClass =
-  'w-full rounded-control border border-line bg-black/20 px-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70'
+  'w-full rounded-control border border-line bg-surface-inset px-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70'
 
 type TextField = HTMLInputElement | HTMLTextAreaElement
 

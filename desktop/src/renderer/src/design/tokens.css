@@ -16,6 +16,8 @@
   /* 팔레트는 아크릴 위에 얹으므로 반투명, 아크릴이 안 되면 solid */
   --surface-palette: rgba(30, 33, 42, 0.78);
   --surface-palette-solid: #1E212A;
+  /* 창 안에 한 단 들어간 바탕(입력칸, 사용 예, 미리 보기) */
+  --surface-inset: rgba(0, 0, 0, 0.20);
   --text-1: #F1F3F8;
   --text-2: #C9D0DD;
   --text-3: #8A93A6;

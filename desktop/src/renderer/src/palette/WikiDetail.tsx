@@ -49,7 +49,7 @@ export function WikiDetail(props: { entry: GlossaryEntry; onBack: () => void; on
         {entry.example && (
           <section className="flex flex-col gap-1.5">
             <h3 className="text-caption text-fg-3">사용 예</h3>
-            <p className="rounded-window border border-line bg-black/20 px-3 py-2 text-small leading-relaxed whitespace-pre-wrap text-fg-2 select-text">
+            <p className="rounded-window border border-line bg-surface-inset px-3 py-2 text-small leading-relaxed whitespace-pre-wrap text-fg-2 select-text">
               {entry.example}
             </p>
           </section>

@@ -6,6 +6,7 @@
   --color-surface-bar: var(--surface-bar);
   --color-surface-flyout: var(--surface-flyout);
   --color-surface-palette: var(--surface-palette);
+  --color-surface-inset: var(--surface-inset);
   --color-fg: var(--text-1);
   --color-fg-2: var(--text-2);
   --color-fg-3: var(--text-3);

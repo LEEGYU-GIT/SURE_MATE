@@ -273,7 +273,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
             onChange={(e) => dispatch({ type: 'set-input', input: e.target.value })}
             onFocus={() => focusGroup('input')}
             placeholder="여기에 글을 붙여넣거나 입력하세요. Ctrl+Enter로 실행해요."
-            className="h-24 shrink-0 resize-none rounded-window border border-line bg-black/20 p-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70"
+            className="h-24 shrink-0 resize-none rounded-window border border-line bg-surface-inset p-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70"
           />
         )}
 
@@ -284,7 +284,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
           </div>
           <div
             ref={previewRef}
-            className="relative min-h-0 flex-1 overflow-auto rounded-window border border-line bg-black/20 px-3 py-2.5 text-small leading-relaxed break-all whitespace-pre-wrap text-fg-3 select-text"
+            className="relative min-h-0 flex-1 overflow-auto rounded-window border border-line bg-surface-inset px-3 py-2.5 text-small leading-relaxed break-all whitespace-pre-wrap text-fg-3 select-text"
           >
             {preview &&
               splitPreview(preview.text, preview.highlights, preview.maskRanges).map((part, i) => {
