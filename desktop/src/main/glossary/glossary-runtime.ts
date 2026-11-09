@@ -1,5 +1,7 @@
 import { GLOSSARY_FORMAT, isHttpUrl, normalizedKey, parseGlossaryPack } from '../../shared/glossary/pack'
+import { wikiSaveErrorText } from '../../shared/glossary/save-error'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from '../../shared/glossary/types'
+import { errorCode } from '../error-text'
 
 export interface GlossaryRuntimeDeps {
   /** 지금 용어 목록(기본 팩 + 사용자 용어) */
@@ -29,7 +31,7 @@ export interface GlossaryRuntime {
   openLink(id: string, index: number): Promise<boolean>
   /**
    * 용어를 추가하거나(id 없음) 고친다(id). 새로 추가할 때 정규화 키가 같은 용어가 있으면 저장하지 않고
-   * duplicate로 먼저 보여 준다(설계 문서 §9). allowDuplicate면 둘 다 둔다.
+   * duplicate로 먼저 보여 준다(설계 문서 §9). allowDuplicate면 둘 다 둔다. 파일에 쓰지 못하면 던지지 않고 errors로 알린다.
    */
   save(draft: unknown, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
 }
@@ -80,7 +82,14 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
       if (!entry || parsed.errors.length) return { ok: false, errors: (parsed.errors.length ? parsed.errors : ['저장할 수 없는 내용이에요']).map(plainError) }
       const user = await d.userEntries()
       const next = user.some((e) => e.id === entry.id) ? user.map((e) => (e.id === entry.id ? entry : e)) : [...user, entry]
-      await d.saveUserEntries(next)
+      try {
+        await d.saveUserEntries(next)
+      } catch (e) {
+        // 백신 등이 파일을 잡아 다시 해 봐도 못 쓴 경우. 편집 화면이 적은 글을 둔 채 알리도록 결과로 돌려준다(오류 글에는 경로가 있어 코드만 남긴다)
+        const code = errorCode(e)
+        d.log('wiki.save.error', { id: entry.id, isNew: !base, code })
+        return { ok: false, errors: [wikiSaveErrorText(code)] }
+      }
       d.log('wiki.save', { id: entry.id, isNew: !base, version: entry.version })
       return { ok: true, entry }
     },

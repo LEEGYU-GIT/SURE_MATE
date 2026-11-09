@@ -1,5 +1,6 @@
 import { isHttpUrl } from '../../../shared/glossary/pack'
-import { GLOSSARY_LIMITS as L, type GlossaryEntry, type WikiDraft } from '../../../shared/glossary/types'
+import { wikiSaveErrorText } from '../../../shared/glossary/save-error'
+import { GLOSSARY_LIMITS as L, type GlossaryEntry, type WikiDraft, type WikiSaveResult } from '../../../shared/glossary/types'
 
 /** 용어 추가·수정 화면의 칸(쉼표·줄로 적는 글 그대로) */
 export interface WikiForm {
@@ -67,4 +68,13 @@ export function formToDraft(form: WikiForm): { draft?: WikiDraft; errors: string
 
   if (errors.length) return { errors }
   return { draft: { term, aliases, definition, ...(example ? { example } : {}), links, tags }, errors }
+}
+
+/**
+ * 저장 요청(saveWikiEntry)이 거부됐을 때 화면에 보일 결과(main의 예상 못 한 오류, IPC 실패).
+ * 거부 글에는 사용자 폴더 경로가 들어 있어 보이지 않고, 그 안의 오류 코드(EPERM 등)로만 문구를 고른다.
+ */
+export function saveRejected(e: unknown): WikiSaveResult {
+  const code = /\b(E[A-Z]{3,})\b/.exec(e instanceof Error ? e.message : String(e))?.[1]
+  return { ok: false, errors: [wikiSaveErrorText(code)] }
 }

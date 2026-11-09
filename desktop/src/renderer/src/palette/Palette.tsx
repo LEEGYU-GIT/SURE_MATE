@@ -1,8 +1,7 @@
 import { Command } from 'cmdk'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
-import type { GlossaryEntry } from '../../../shared/glossary/types'
 import type { PromptDraft } from '../../../shared/ipc-channels'
 import { PALETTE_GROUPS, parseQuery } from '../../../shared/palette-query'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
@@ -15,6 +14,7 @@ import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 import { WikiDetail } from './WikiDetail'
 import { WikiEdit } from './WikiEdit'
+import { NO_WIKI_VIEW, wikiViewReducer } from './wiki-state'
 
 /** 같은 항목을 300ms 안에 두 번 실행하지 않는다(한글 조합 중 Enter 중복 대비) */
 const runGuard = createExecutionGuard(300)
@@ -32,8 +32,10 @@ export function Palette(): React.JSX.Element {
   const [allItems, setAllItems] = useState<PaletteItem[]>([])
   const [dev, setDev] = useState<{ title: string; text: string } | null>(null)
   const [confirm, setConfirm] = useState<PromptDraft | null>(null)
-  const [wiki, setWiki] = useState<GlossaryEntry | null>(null)
-  const [wikiEdit, setWikiEdit] = useState<{ entry?: GlossaryEntry; term?: string } | null>(null)
+  // 용어 상세와 그 위의 추가·수정 화면. 저장하지 않은 추가·수정 글은 팔레트가 숨었다 다시 보여도 남는다
+  const [wikiView, dispatchWiki] = useReducer(wikiViewReducer, NO_WIKI_VIEW)
+  const wiki = wikiView.detail
+  const wikiEdit = wikiView.edit
   const [shownCount, setShownCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   // 입력값은 그대로 두고, 목록만 지연 값으로 그린다(조합 중 입력이 끊기지 않게)
@@ -63,8 +65,8 @@ export function Palette(): React.JSX.Element {
         setShownCount((n) => n + 1)
         setDev(payload.mode === 'dev-output' ? { title: payload.title, text: payload.text } : null)
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
-        setWiki(null)
-        setWikiEdit(null)
+        // 고치던 용어가 있으면 그 화면으로 돌아가고(커서는 WikiEdit가 마지막 칸에 둔다), 아니면 목록으로
+        dispatchWiki({ type: 'shown' })
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
     []
@@ -78,32 +80,47 @@ export function Palette(): React.JSX.Element {
   const run = (id: string): void => {
     if (!runGuard(id)) return
     if (id === WIKI_ADD_ID) {
-      setWikiEdit({ term: parseQuery(query).text })
+      dispatchWiki({ type: 'add', term: parseQuery(query).text })
       return
     }
     // 용어는 팔레트 안에서 상세를 연다(검색어는 그대로 두어 Esc로 돌아오면 같은 목록)
     if (id.startsWith('wiki:')) {
       void window.sureMate.getWikiEntry(id.slice('wiki:'.length)).then((entry) => {
-        if (entry) setWiki(entry)
+        if (entry) dispatchWiki({ type: 'open', entry })
       })
       return
     }
     void window.sureMate.runItem(id)
   }
 
+  // 개발 출력과 확인 화면은 위키 추가·수정 화면보다 위에 그린다(그 아래 저장하지 않은 글은 그대로 남는다)
   if (dev) return <DevOutput title={dev.title} text={dev.text} onClose={close} />
+  if (confirm) {
+    return (
+      <Confirm
+        key={`${confirm.templateId}-${shownCount}`}
+        draft={confirm}
+        onBack={() => {
+          setConfirm(null)
+          requestAnimationFrame(() => inputRef.current?.focus())
+        }}
+        onDone={() => setConfirm(null)}
+      />
+    )
+  }
   if (wikiEdit) {
     return (
       <WikiEdit
         entry={wikiEdit.entry}
-        prefillTerm={wikiEdit.term}
+        form={wikiEdit.form}
+        onForm={(form) => dispatchWiki({ type: 'form', form })}
+        refocusKey={shownCount}
         onCancel={() => {
-          setWikiEdit(null)
+          dispatchWiki({ type: 'cancel-edit' })
           if (!wiki) requestAnimationFrame(() => inputRef.current?.focus())
         }}
         onSaved={(entry) => {
-          setWikiEdit(null)
-          setWiki(entry)
+          dispatchWiki({ type: 'saved', entry })
           // 목록과 검색 색인에 새 용어가 들어가게
           void window.sureMate.listItems().then(setAllItems)
         }}
@@ -115,24 +132,11 @@ export function Palette(): React.JSX.Element {
       <WikiDetail
         key={wiki.id}
         entry={wiki}
-        onEdit={() => setWikiEdit({ entry: wiki })}
+        onEdit={() => dispatchWiki({ type: 'edit' })}
         onBack={() => {
-          setWiki(null)
+          dispatchWiki({ type: 'back' })
           requestAnimationFrame(() => inputRef.current?.focus())
         }}
-      />
-    )
-  }
-  if (confirm) {
-    return (
-      <Confirm
-        key={`${confirm.templateId}-${shownCount}`}
-        draft={confirm}
-        onBack={() => {
-          setConfirm(null)
-          requestAnimationFrame(() => inputRef.current?.focus())
-        }}
-        onDone={() => setConfirm(null)}
       />
     )
   }

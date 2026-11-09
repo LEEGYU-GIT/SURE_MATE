@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import { wikiSaveErrorText } from '../../../shared/glossary/save-error'
 import { GLOSSARY_LIMITS } from '../../../shared/glossary/types'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import { isImeComposing } from '../../../shared/ime'
 import { WikiIcon } from '../design/icons'
-import { entryToForm, formToDraft, type WikiForm } from './wiki-form'
+import { formToDraft, saveRejected, type WikiForm } from './wiki-form'
 
 const fieldClass =
   'w-full rounded-control border border-line bg-black/20 px-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70'
+
+type TextField = HTMLInputElement | HTMLTextAreaElement
 
 function Field(props: { label: string; hint?: string; children: React.ReactNode }): React.JSX.Element {
   return (
@@ -23,25 +26,37 @@ function Field(props: { label: string; hint?: string; children: React.ReactNode 
 /**
  * 용어 추가·수정(설계 문서 §9). Ctrl+Enter 저장, Esc 취소. 한글 조합 중에는 둘 다 하지 않는다.
  * 새로 추가할 때 같은 이름이 있으면 먼저 보여 주고, Ctrl+Enter를 한 번 더 누르면 그래도 추가한다.
+ * 적은 글(form)은 Palette가 들고 있어 팔레트가 숨었다 다시 보여도 남는다. 다시 보이면(refocusKey) 마지막으로 쓰던 칸에 커서를 둔다.
  */
-export function WikiEdit(props: { entry?: GlossaryEntry; prefillTerm?: string; onCancel: () => void; onSaved: (entry: GlossaryEntry) => void }): React.JSX.Element {
-  const [form, setForm] = useState<WikiForm>(() => entryToForm(props.entry, props.prefillTerm))
+export function WikiEdit(props: {
+  entry?: GlossaryEntry
+  form: WikiForm
+  onForm: (form: WikiForm) => void
+  /** 팔레트를 다시 보일 때마다 바뀌는 값 */
+  refocusKey: number
+  onCancel: () => void
+  onSaved: (entry: GlossaryEntry) => void
+}): React.JSX.Element {
+  const { form } = props
   const [errors, setErrors] = useState<string[]>([])
   const [duplicate, setDuplicate] = useState<Pick<GlossaryEntry, 'id' | 'term' | 'definition'> | null>(null)
   const [saving, setSaving] = useState(false)
   const termRef = useRef<HTMLInputElement>(null)
   const definitionRef = useRef<HTMLTextAreaElement>(null)
+  /** 마지막으로 커서가 있던 칸 */
+  const lastField = useRef<TextField | null>(null)
 
-  // 새 용어면 이름이 채워져 있으니 설명부터, 고칠 때는 용어부터
+  // 처음 열면 새 용어는 이름이 채워져 있으니 설명부터, 고칠 때는 용어부터. 팔레트를 다시 보이면 마지막으로 쓰던 칸으로
   useEffect(() => {
-    if (!props.entry && form.term) definitionRef.current?.focus()
-    else termRef.current?.focus()
-    // 처음 한 번만
+    const field = lastField.current ?? (!props.entry && form.term ? definitionRef.current : termRef.current)
+    const frame = requestAnimationFrame(() => field?.focus())
+    return () => cancelAnimationFrame(frame)
+    // 처음과 다시 보일 때만
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [props.refocusKey])
 
-  const set = (key: keyof WikiForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }))
+  const set = (key: keyof WikiForm) => (e: React.ChangeEvent<TextField>) => {
+    props.onForm({ ...form, [key]: e.target.value })
     setErrors([])
     // 용어를 바꾸면 같은 이름 확인을 다시 한다
     if (key === 'term') setDuplicate(null)
@@ -55,11 +70,14 @@ export function WikiEdit(props: { entry?: GlossaryEntry; prefillTerm?: string; o
       return
     }
     setSaving(true)
-    const result = await window.sureMate.saveWikiEntry(r.draft, { ...(props.entry ? { id: props.entry.id } : {}), allowDuplicate: duplicate !== null })
+    // 요청이 거부돼도(main 오류·IPC 실패) 저장 버튼을 다시 살리고, 적은 글을 둔 채 까닭을 알린다
+    const result = await window.sureMate
+      .saveWikiEntry(r.draft, { ...(props.entry ? { id: props.entry.id } : {}), allowDuplicate: duplicate !== null })
+      .catch(saveRejected)
     setSaving(false)
     if (result.ok) props.onSaved(result.entry)
     else if (result.duplicate) setDuplicate(result.duplicate)
-    else setErrors(result.errors ?? ['저장하지 못했어요'])
+    else setErrors(result.errors ?? [wikiSaveErrorText()])
   }
 
   const definitionLength = form.definition.trim().length
@@ -67,6 +85,9 @@ export function WikiEdit(props: { entry?: GlossaryEntry; prefillTerm?: string; o
   return (
     <div
       className="flex h-screen flex-col overflow-hidden bg-surface-palette font-ui text-fg"
+      onFocus={(e) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) lastField.current = e.target
+      }}
       onKeyDown={(e) => {
         if (isImeComposing(e.nativeEvent)) return
         if (e.code === 'Escape' || e.key === 'Escape') {

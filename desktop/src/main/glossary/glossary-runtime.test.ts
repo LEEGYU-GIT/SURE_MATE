@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import { wikiSaveErrorText } from '../../shared/glossary/save-error'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { createGlossaryRuntime, type GlossaryRuntimeDeps } from './glossary-runtime'
 
@@ -186,6 +187,19 @@ it('고쳐도 작성자(닉네임)는 그대로 둔다(편집 화면에는 작�
   const r = await createGlossaryRuntime(s.deps).save({ ...draft, term: '우리 팀 용어', definition: '고친 설명' }, { id: 'u1', allowDuplicate: false })
   expect(r).toMatchObject({ ok: true, entry: { id: 'u1', definition: '고친 설명', author: '검증팀', version: 2 } })
   expect(s.saved[0][0].author).toBe('검증팀')
+})
+
+it('파일 저장이 실패하면(백신이 파일을 잡음) 던지지 않고 제품 문구로 돌려주며, 로그에는 오류 코드만 남긴다', async () => {
+  const s = saving()
+  const logs: { event: string; data: Record<string, unknown> }[] = []
+  s.deps.log = (event, data) => logs.push({ event, data })
+  s.deps.saveUserEntries = async () => {
+    throw Object.assign(new Error("EPERM: operation not permitted, rename 'C:\\Users\\가상사용자\\AppData\\Roaming\\Sure-Mate\\glossary.json.1.tmp'"), { code: 'EPERM' })
+  }
+  const r = await createGlossaryRuntime(s.deps).save(draft, { allowDuplicate: false })
+  expect(r).toEqual({ ok: false, errors: [wikiSaveErrorText('EPERM')] })
+  expect(logs).toEqual([{ event: 'wiki.save.error', data: { id: '11111111-2222-4333-8444-555555555555', isNew: true, code: 'EPERM' } }])
+  expect(JSON.stringify(logs)).not.toMatch(/Users|가상사용자|정적분석/)
 })
 
 it('제한을 넘는 항목은 저장하지 않고 까닭을 돌려준다', async () => {

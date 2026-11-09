@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
+import { wikiSaveErrorText } from '../../../shared/glossary/save-error'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
-import { entryToForm, formToDraft, type WikiForm } from './wiki-form'
+import { entryToForm, formToDraft, saveRejected, type WikiForm } from './wiki-form'
 
 const form = (over: Partial<WikiForm> = {}): WikiForm => ({
   term: 'MC/DC',
@@ -40,6 +41,17 @@ it('링크는 http/https만 5개까지, 태그는 5개까지', () => {
   const six = Array.from({ length: 6 }, (_, i) => `https://example.com/${i}`).join('\n')
   expect(formToDraft(form({ links: six })).errors).toEqual([expect.stringContaining('5개')])
   expect(formToDraft(form({ tags: '1, 2, 3, 4, 5, 6' })).errors).toEqual([expect.stringContaining('5개')])
+})
+
+it('저장 요청이 거부되면(main 오류·IPC 실패) 오류 원문(사용자 폴더 경로) 대신 제품 문구로 알린다', () => {
+  const locked = new Error(
+    "Error invoking remote method 'wiki:save': Error: EPERM: operation not permitted, rename 'C:\\Users\\가상사용자\\AppData\\Roaming\\Sure-Mate\\glossary.json.1.tmp' -> 'C:\\Users\\가상사용자\\AppData\\Roaming\\Sure-Mate\\glossary.json'"
+  )
+  const r = saveRejected(locked)
+  expect(r).toEqual({ ok: false, errors: [wikiSaveErrorText('EPERM')] })
+  expect(JSON.stringify(r)).not.toMatch(/Users|가상사용자|AppData|glossary\.json|EPERM|rename/)
+  expect(saveRejected(new Error("No handler registered for 'wiki:save'"))).toEqual({ ok: false, errors: [wikiSaveErrorText()] })
+  expect(saveRejected('연결 끊김')).toEqual({ ok: false, errors: [wikiSaveErrorText()] })
 })
 
 it('고칠 항목은 폼으로, 새 항목은 검색어를 용어로 미리 채운다', () => {
