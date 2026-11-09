@@ -25,6 +25,25 @@ Electron 45.x(정확한 버전), electron-builder 26.18.x, koffi 3.x, cmdk 1.1.1
 - Win32 호출은 `src/main/native/win32.ts`의 `win32()`로만 한다. koffi는 처음 쓸 때 불러오며 회사 보안 프로그램이 막을 수 있으므로, 앱 시작·팔레트·트레이 경로는 `nativeStatus()`를 확인해 Win32 없이도 동작해야 한다.
 - 선택 글 가져오기·붙여넣기 순서는 `capture-flow.ts`(순수, 주입식)에 두고 가짜 시계로 테스트한다. 클립보드를 쓰는 작업은 `selection.ts`의 한 번에 하나 잠금을 거친다.
 
+## 디자인 작업 (사용자 지시 2026-11-06)
+
+- 업무 효율과 함께 UI/UX·디자인·재미 요소를 핵심 가치로 둔다. 색·글자·모양·움직임의 기준값은 설계 §14-4 디자인 시스템이다.
+- 화면을 새로 만들거나 크게 바꿀 때는 디자인 스킬을 먼저 호출한다. 세션마다 쓸 수 있는 스킬·MCP가 다르므로 목록을 확인하고, 없으면 사용자에게 알린다.
+  - 구현 전 방향: `impeccable` shape, `frontend-design`
+  - 움직임과 세부: `emil-design-eng`, `impeccable` animate·polish
+  - 글자와 화면 문구: `impeccable` typeset·clarify, `design:ux-copy`
+  - 재미 요소(펫·말풍선·첫 실행): `impeccable` delight·onboard
+  - 완료 점검: `design:design-critique`, `design:accessibility-review`, `impeccable` audit
+- `impeccable`의 live·generate 기능은 쓰지 않는다. 외부로 전송될 수 있다.
+- Figma 같은 외부 서비스에는 가짜 값만 올린다(§2 익명·가짜 데이터 규칙과 같다). Figma 무료 좌석은 읽기 호출이 월 20회다.
+- 로고·영상 생성 MCP는 크레딧이 들므로 사용자 승인 뒤에만 쓴다.
+
+## 리눅스 개발 서버에서 작업할 때
+
+- Node 22 이상으로 실행한다. 단위 시험(`npm test`)·타입 검사·`electron-vite build`는 되지만 Win32 호출과 Electron 창 동작은 시험할 수 없다. 그런 확인은 Windows에서 한다.
+- 셸은 bash다. PowerShell 규칙과 스모크 시험 스크립트(`scripts/smoke/*.ps1`)는 Windows 전용이다.
+- 서버에는 GitHub 자격 증명이 없다. 커밋까지 하고 푸시·내려받기는 사용자가 자기 터미널에서 한다.
+
 ## 실행 환경 함정
 
 - Claude Code(VS Code 확장)에서 띄운 셸에는 `ELECTRON_RUN_AS_NODE=1`이 넘어와 Electron이 일반 Node로 실행된다(`app`이 undefined). 앱을 실행할 때는 이 변수를 지운다. 예: `cmd /c "set ELECTRON_RUN_AS_NODE=& npm run dev"`.
