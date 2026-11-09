@@ -1,4 +1,4 @@
-import { foldForMatch, isAsciiAlnum, isHangulSyllable } from './normalize'
+import { foldForMatch, foldWidth, isAsciiAlnum, isHangulSyllable } from './normalize'
 
 /** 찾을 이름 묶음 하나(정식 이름과 별칭). key로 어느 항목인지 돌려준다 */
 export interface NameEntry {
@@ -6,6 +6,8 @@ export interface NameEntry {
   names: string[]
   /** 뒤에 글자·숫자·한글이 붙으면 찾지 않는다(짧고 흔한 이름용) */
   exactOnly?: boolean
+  /** 대소문자를 구분해 찾는다(전각·반각은 여전히 무시). {{terms}}의 영문 대문자 약어용 */
+  caseSensitive?: boolean
 }
 
 export interface NameHit {
@@ -18,32 +20,40 @@ export interface NameHit {
 
 interface Candidate {
   folded: string
+  /** caseSensitive일 때 맞춰 볼 표기(전각만 반각으로). 길이는 folded와 같다 */
+  exact: string | null
   entry: NameEntry
 }
 
 /**
  * 이름을 글에서 찾는다(설계 문서 §8 찾기 규칙, §7 {{terms}}도 같은 규칙). 글은 NFC로 맞춰 둔 상태여야 한다.
  * 왼쪽부터 가장 긴 것, 겹치지 않게. 한글로 시작하면 한글 구간의 맨 앞에서만, 영문·숫자로 시작하거나 끝나면 그쪽 이웃이 영문·숫자가 아닐 때만.
- * 한글로 끝나는 이름 뒤에는 조사가 붙어도 된다. exactOnly면 뒤에 글자·숫자·한글이 오면 안 된다. 대소문자·전각은 무시한다.
+ * 한글로 끝나는 이름 뒤에는 조사가 붙어도 된다. exactOnly면 뒤에 글자·숫자·한글이 오면 안 된다.
+ * 대소문자·전각은 무시한다. caseSensitive인 이름은 대소문자를 구분한다(전각은 그래도 무시).
  */
 export function findNames(text: string, entries: NameEntry[]): NameHit[] {
   const byFirst = new Map<string, Candidate[]>()
+  let anyExact = false
   for (const entry of entries) {
     for (const name of new Set(entry.names)) {
-      const folded = foldForMatch(name.normalize('NFC'))
+      const nfc = name.normalize('NFC')
+      const folded = foldForMatch(nfc)
       if (!folded) continue
+      const exact = entry.caseSensitive ? foldWidth(nfc) : null
+      if (exact !== null) anyExact = true
       const list = byFirst.get(folded[0]) ?? []
-      list.push({ folded, entry })
+      list.push({ folded, exact, entry })
       byFirst.set(folded[0], list)
     }
   }
   for (const list of byFirst.values()) list.sort((a, b) => b.folded.length - a.folded.length)
 
   const folded = foldForMatch(text)
+  const wide = anyExact ? foldWidth(text) : ''
   const out: NameHit[] = []
   let i = 0
   while (i < folded.length) {
-    const hit = (byFirst.get(folded[i]) ?? []).find((c) => matchesAt(folded, i, c))
+    const hit = (byFirst.get(folded[i]) ?? []).find((c) => matchesAt(folded, wide, i, c))
     if (!hit) {
       i++
       continue
@@ -55,8 +65,8 @@ export function findNames(text: string, entries: NameEntry[]): NameHit[] {
   return out
 }
 
-function matchesAt(folded: string, i: number, c: Candidate): boolean {
-  if (!folded.startsWith(c.folded, i)) return false
+function matchesAt(folded: string, wide: string, i: number, c: Candidate): boolean {
+  if (!(c.exact === null ? folded.startsWith(c.folded, i) : wide.startsWith(c.exact, i))) return false
   const first = c.folded[0]
   const last = c.folded[c.folded.length - 1]
   const prev = folded[i - 1] ?? ''

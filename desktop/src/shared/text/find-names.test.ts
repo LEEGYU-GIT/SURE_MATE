@@ -33,3 +33,20 @@ it('대소문자·전각은 무시하고 원문 표기를 돌려준다, exactOnl
   ])
   expect(hits('가상차는 가상', [{ key: 'g', names: ['가상'], exactOnly: true }])).toEqual([['g', '가상']])
 })
+
+it('caseSensitive면 대소문자는 구분하고 전각·반각은 여전히 무시한다', () => {
+  const can = [{ key: 'can', names: ['CAN'], caseSensitive: true }]
+  expect(hits('CAN 통신은 we can 하고 Can도', can)).toEqual([['can', 'CAN']])
+  expect(hits('ＣＡＮ 버스', can)).toEqual([['can', 'ＣＡＮ']])
+  // 구분하는 이름과 구분하지 않는 이름이 섞여도 가장 긴 것부터
+  const mixed = [
+    { key: 'mil', names: ['MIL'], caseSensitive: true },
+    { key: 'std', names: ['STD'], caseSensitive: true },
+    { key: 'doc', names: ['MIL-STD-498'], caseSensitive: true },
+    { key: 'loop', names: ['Model-in-the-Loop'] }
+  ]
+  expect(hits('MIL-STD-498 산출물, model-in-the-loop, mil-std', mixed)).toEqual([
+    ['doc', 'MIL-STD-498'],
+    ['loop', 'model-in-the-loop']
+  ])
+})

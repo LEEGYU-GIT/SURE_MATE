@@ -1,10 +1,13 @@
 import { expect, it } from 'vitest'
 import { BUILTIN_AI_TARGETS } from '../../shared/ai-targets'
+import { termsFor } from '../../shared/glossary/find-terms'
+import type { GlossaryEntry } from '../../shared/glossary/types'
 import type { PromptDraft } from '../../shared/ipc-channels'
-import type { MaskItem } from '../../shared/masking/types'
+import { ALL_CATEGORIES, type MaskCategory, type MaskItem } from '../../shared/masking/types'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import type { CaptureResult, MaskingMode } from '../../shared/types'
+import { createMaskingService } from '../masking/masking-service'
 import { createPromptSession, type PromptMaskResult, type PromptSessionDeps } from './prompt-session'
 
 const template: Template = {
@@ -282,4 +285,45 @@ it('가린 건수를 알림에 넣고, 끔이면 꺼짐을 알리며 Win+V 기�
   await s.prepare('meeting-notes')
   expect((await s.run({ source: 'selection', target: 'copy', masking: 'off' })).message).toBe('복사했어요(가명 처리 꺼짐). 붙여넣을 곳에서 Ctrl+V를 누르세요.')
   expect(f.calls.writes[1].excludeFromHistory).toBe(true)
+})
+
+// ── {{terms}}와 가명 처리(M4) ──────────────────────
+
+it('붙인 용어 설명 속 고객사 이름도 가린다(실제 채우기·용어 찾기·가명 처리 서비스로 복사한 프롬프트에 가상자동차가 없다)', async () => {
+  // 입력 글에는 고객사 이름이 없고, 팀이 적은 용어 설명에만 있다
+  const glossary: GlossaryEntry[] = [
+    {
+      id: 'hils',
+      term: 'HILS',
+      aliases: [],
+      definition: '가상자동차 제어기를 실제 하드웨어와 연결해 시험하는 환경',
+      links: [],
+      tags: [],
+      source: 'user',
+      updatedAt: '2026-11-09T00:00:00.000Z',
+      version: 1
+    }
+  ]
+  const allOn = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, true])) as Record<MaskCategory, boolean>
+  const masking = createMaskingService({
+    loadDictionary: async () => ({ terms: [{ id: 'g', category: 'client', canonical: '가상자동차', aliases: [] }], errors: 0 }),
+    settings: () => ({ mode: 'restore', categories: allOn, internalDomains: [], ttlHours: 8 }),
+    now: () => 0
+  })
+  const f = fake({
+    template: { ...template, body: '정리해 주세요.\n{{terms}}\n{{selection}}' },
+    capture: { text: 'HILS 시험 일정을 공유합니다', method: 'ctrl-insert', elapsedMs: 50, restored: true },
+    mask: (text, o) => masking.mask(text, o)
+  })
+  f.deps.fill = (t, input, clip) => fillTemplate(t.body, { input, clipboard: clip, now: new Date(2026, 10, 9), terms: (text) => termsFor(text, glossary), reference: () => null })
+  const s = createPromptSession(f.deps)
+  await s.prepare('meeting-notes')
+
+  const p = await s.preview({ source: 'selection', target: 'copy' })
+  expect(p.text).toContain('- HILS: CLIENT_A 제어기를')
+  expect(p.text).not.toContain('가상자동차')
+
+  expect((await s.run({ source: 'selection', target: 'copy' })).ok).toBe(true)
+  expect(f.calls.writes[0].text).toContain('- HILS: CLIENT_A 제어기를')
+  expect(f.calls.writes[0].text).not.toContain('가상자동차')
 })
