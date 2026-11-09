@@ -14,7 +14,7 @@ import type { MaskingMode } from '../shared/types'
 import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
-import { errorText } from './error-text'
+import { errorCode, errorText } from './error-text'
 import { fileErrorNotice, type FileErrorReport } from './file-error-notice'
 import { createGlossaryRuntime, type GlossaryRuntime } from './glossary/glossary-runtime'
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
@@ -36,7 +36,7 @@ import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
-import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, type Settings } from './settings/settings-store'
+import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
 import { createSettingsWriter } from './settings/settings-writer'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
@@ -77,6 +77,8 @@ let glossaryRuntime: GlossaryRuntime | null = null
 let wikiCard: WikiCard | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
+/** 시작할 때 settings.json을 읽지 못해 기본 설정으로 시작했다는 알림(트레이가 생기면 한 번 알린다) */
+let pendingSettingsNotice: string | null = null
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
@@ -90,7 +92,14 @@ function applySettings(next: Settings): void {
   barRuntime?.refresh()
 }
 
-const onSettingsLoadError = (what: string, e: unknown): void => log('settings.loadError', { what, error: errorText(e) })
+/**
+ * 시작할 때 설정 파일 문제. 깨진 JSON의 오류 글에는 파일 내용 일부가 들어가므로 오류 코드와 남긴 파일 이름만 기록한다.
+ * 기본 설정으로 시작했으면(읽지 못함·깨짐) 트레이가 생긴 뒤 한 번 알린다
+ */
+const onSettingsLoadError: SettingsLoadError = (what, e, kept) => {
+  log('settings.loadError', { what, error: errorCode(e), ...(kept ? { kept: kept.name, moved: kept.moved } : {}) })
+  if (what !== 'keep-corrupt') pendingSettingsNotice = settingsLoadNotice(what, kept ?? null)
+}
 
 /**
  * 실행 중 설정 저장(한 번에 하나씩). 파일을 다시 읽어 바꿀 값만 고치고(손으로 고친 값을 덮어쓰지 않게),
@@ -203,9 +212,11 @@ function warn(content: string): void {
   shell?.tray.displayBalloon({ iconType: 'warning', title: 'Sure-Mate', content })
 }
 
-/** 트레이가 있으면 쌓아 둔 파일 읽기 오류를 알린다 */
+/** 트레이가 있으면 쌓아 둔 설정·파일 읽기 오류를 알린다 */
 function flushFileErrors(): void {
   if (!shell) return
+  if (pendingSettingsNotice) warn(pendingSettingsNotice)
+  pendingSettingsNotice = null
   for (const p of pendingFileErrors) warn(fileErrorNotice(p))
   pendingFileErrors = []
 }

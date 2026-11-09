@@ -126,30 +126,53 @@ function parseSettingsText(text: string): Settings {
   return mergeSettings(JSON.parse(text.replace(/^\uFEFF/, '')))
 }
 
+/** 시작할 때 깨진 settings.json을 남긴 파일. name은 폴더 없는 파일 이름, moved는 옮김(true) 또는 원래 파일을 두고 사본(false) */
+export type CorruptCopy = { name: string; moved: boolean }
+
+/** 시작할 때 설정 파일 문제: 읽지 못함, JSON이 깨짐(kept: 남긴 파일, 못 남겼으면 null), 깨진 파일을 옮기지도 복사하지도 못함 */
+export type SettingsLoadError = (what: 'read' | 'parse' | 'keep-corrupt', e: unknown, kept?: CorruptCopy | null) => void
+
 /**
  * 앱을 시작할 때 읽는다. 없으면 기본값. JSON이 깨졌으면 settings.corrupt-<ms>.json으로 옮겨 두고 기본값.
- * 앱 시작을 막지 않도록 어떤 실패에도 기본값을 돌려주고, 실패는 onError로 알린다.
+ * 앱 시작을 막지 않도록 어떤 실패에도 기본값을 돌려주고, 실패는 onError로 알린다(깨진 JSON은 남긴 파일과 함께 parse로).
  */
-export async function loadSettings(dir: string, onError: (what: string, e: unknown) => void = () => {}): Promise<Settings> {
+export async function loadSettings(dir: string, onError: SettingsLoadError = () => {}): Promise<Settings> {
   const path = join(dir, FILE)
   const r = await readSettingsFile(path)
   if (r.ok) return r.settings
   if (r.what === 'read') onError('read', r.error)
-  else await keepCorruptCopy(path, join(dir, `settings.corrupt-${Date.now()}.json`), onError)
+  else {
+    const name = `settings.corrupt-${Date.now()}.json`
+    onError('parse', r.error, await keepCorruptCopy(path, join(dir, name), name, onError))
+  }
   return structuredClone(DEFAULT_SETTINGS)
 }
 
-/** 깨진 설정 파일을 옆으로 옮긴다. 백신·EDR이 잡고 있어 옮기지 못하면 사본이라도 남긴다. */
-async function keepCorruptCopy(path: string, dest: string, onError: (what: string, e: unknown) => void): Promise<void> {
+/** 깨진 설정 파일을 옆으로 옮긴다. 백신·EDR이 잡고 있어 옮기지 못하면 사본이라도 남긴다. 남긴 파일을 돌려준다 */
+async function keepCorruptCopy(path: string, dest: string, name: string, onError: SettingsLoadError): Promise<CorruptCopy | null> {
   try {
     await rename(path, dest)
+    return { name, moved: true }
   } catch {
     try {
       await copyFile(path, dest)
+      return { name, moved: false }
     } catch (e) {
       onError('keep-corrupt', e)
+      return null
     }
   }
+}
+
+/**
+ * 시작할 때 settings.json을 읽지 못해 기본 설정으로 시작했음을 알리는 트레이 글(해요체, 파일 이름만·경로 없음).
+ * 알리지 않으면 사내 도메인·가명 처리 모드가 기본값으로 돌아간 것을 모른 채 실명이 그대로 나갈 수 있다
+ */
+export function settingsLoadNotice(what: 'read' | 'parse', kept: CorruptCopy | null): string {
+  const head = 'settings.json을 읽지 못해 기본 설정으로 시작했어요.'
+  if (what === 'read') return `${head} 파일은 그대로 두었으니 앱을 다시 켜 주세요.`
+  if (!kept) return `${head} 원래 파일은 그대로 두었어요.`
+  return kept.moved ? `${head} 원래 파일은 ${kept.name}으로 옮겨 두었어요.` : `${head} 원래 파일은 그대로 두고 사본을 ${kept.name}으로 남겨 두었어요.`
 }
 
 /**

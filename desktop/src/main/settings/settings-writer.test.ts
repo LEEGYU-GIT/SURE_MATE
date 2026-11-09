@@ -128,6 +128,102 @@ describe('설정 파일을 읽지 못하면 기본값으로 덮지 않는다', (
   })
 })
 
+describe('파일에 저장하지 못하고 메모리에만 적용한 변경은 다음에 저장할 때 차례대로 다시 적용한다', () => {
+  /** 시작할 때 읽은 설정: 파일에 가명 처리 끔이 저장되어 있다 */
+  const fileOff = { masking: { mode: 'off', internalDomains: ['intra.example'] } }
+  const loadedOff = (): Settings => {
+    const s = structuredClone(DEFAULT_SETTINGS)
+    return { ...s, masking: { ...s.masking, mode: 'off', internalDomains: ['intra.example'] } }
+  }
+  const setMode = (mode: Settings['masking']['mode']) => (cur: Settings): Settings => ({ ...cur, masking: { ...cur.masking, mode } })
+
+  it('파일이 깨진 동안 되돌리기로 바꾸고 파일을 고치면, 다음 저장이 끔으로 되돌리지 않는다(손으로 고친 값도 지킨다)', async () => {
+    await writeFile(path, JSON.stringify(fileOff))
+    const t = make(loadedOff())
+    await writeFile(path, '{"masking": {"mode": "off", "internalDomains": ["intra.example"]  // 고치던 중')
+    await t.w.change(setMode('restore'))
+    expect(t.state().masking.mode).toBe('restore')
+    // 사용자가 파일을 고치면서 사내 도메인을 하나 더 넣었다
+    await writeFile(path, JSON.stringify({ masking: { mode: 'off', internalDomains: ['intra.example', 'corp.example'] } }))
+
+    await t.w.change((cur) => ({ ...cur, bar: withPosition(cur.bar, '1', 0.3) }))
+
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    expect(saved.masking).toMatchObject({ mode: 'restore', internalDomains: ['intra.example', 'corp.example'] })
+    expect(saved.bar.positions).toEqual([{ display: '1', ratio: 0.3 }])
+    expect(t.state().masking).toMatchObject({ mode: 'restore', internalDomains: ['intra.example', 'corp.example'] })
+    // 다시 적용한 건수만 기록한다(내용 없음)
+    expect(events(t.log, 'settings.replayed')).toEqual([{ count: 1 }])
+  })
+
+  it('여러 변경은 바꾼 순서대로 다시 적용하고, 한 번 저장한 뒤에는 다시 적용하지 않는다', async () => {
+    await writeFile(path, JSON.stringify(fileOff))
+    const t = make(loadedOff())
+    await writeFile(path, '{oops')
+    await t.w.change(setMode('restore'))
+    await t.w.change((cur) => ({ ...cur, bar: { ...cur.bar, shape: 'capsule' } }))
+    await t.w.change(setMode('remove'))
+    await writeFile(path, JSON.stringify(fileOff))
+
+    await t.w.change((cur) => ({ ...cur, onboardingDone: true }))
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    expect(saved.masking.mode).toBe('remove')
+    expect(saved.bar.shape).toBe('capsule')
+    expect(saved.onboardingDone).toBe(true)
+    expect(events(t.log, 'settings.replayed')).toEqual([{ count: 3 }])
+
+    // 저장한 뒤 손으로 끔으로 고치면 그 값이 남는다(앞 변경을 또 적용하지 않음)
+    await writeFile(path, JSON.stringify({ ...saved, masking: { ...saved.masking, mode: 'off' } }))
+    await t.w.change((cur) => ({ ...cur, bar: { ...cur.bar, shape: 'edge' } }))
+    expect(JSON.parse(await readFile(path, 'utf8')).masking.mode).toBe('off')
+    expect(t.state().masking.mode).toBe('off')
+    expect(events(t.log, 'settings.replayed')).toHaveLength(1)
+  })
+
+  it('저장 자체가 실패해도(쓰기 거부) 메모리에만 적용한 변경을 다음 저장에서 다시 적용한다', async () => {
+    await writeFile(path, JSON.stringify(fileOff))
+    const t = make(loadedOff())
+    vi.mocked(fsp.writeFile).mockRejectedValueOnce(Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' }))
+    await t.w.change(setMode('restore'))
+    expect(JSON.parse(await readFile(path, 'utf8')).masking.mode).toBe('off')
+    expect(t.state().masking.mode).toBe('restore')
+
+    await t.w.change((cur) => ({ ...cur, bar: { ...cur.bar, shape: 'capsule' } }))
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    expect(saved.masking.mode).toBe('restore')
+    expect(saved.bar.shape).toBe('capsule')
+  })
+
+  it('그 사이 파일이 지워졌으면 메모리의 지금 설정(이미 적용됨)으로 만들고 두 번 적용하지 않는다', async () => {
+    await writeFile(path, JSON.stringify(fileOff))
+    const t = make(loadedOff())
+    await writeFile(path, '{oops')
+    // 같은 값을 다시 적용하면 결과가 달라지는 변경(1시간 늘리기)으로 두 번 적용을 가린다
+    await t.w.change((cur) => ({ ...cur, masking: { ...cur.masking, ttlHours: cur.masking.ttlHours + 1 } }))
+    expect(t.state().masking.ttlHours).toBe(9)
+    await rm(path)
+
+    await t.w.change((cur) => ({ ...cur, onboardingDone: true }))
+    const saved = JSON.parse(await readFile(path, 'utf8'))
+    expect(saved.masking.ttlHours).toBe(9)
+    expect(t.state().masking.ttlHours).toBe(9)
+  })
+
+  it('설정 파일 열기가 지금 설정으로 파일을 새로 만들면 그 뒤에는 다시 적용하지 않는다', async () => {
+    await writeFile(path, JSON.stringify(fileOff))
+    const t = make(loadedOff())
+    await writeFile(path, '{oops')
+    await t.w.change(setMode('restore'))
+    await rm(path)
+    expect(await t.w.ensureFile()).toBe(true)
+    expect(JSON.parse(await readFile(path, 'utf8')).masking.mode).toBe('restore')
+    // 새로 만든 파일을 손으로 끔으로 고치면 그 값이 남는다
+    await writeFile(path, JSON.stringify(fileOff))
+    await t.w.change((cur) => ({ ...cur, onboardingDone: true }))
+    expect(JSON.parse(await readFile(path, 'utf8')).masking.mode).toBe('off')
+  })
+})
+
 it('펫 단추를 앞 저장이 끝나기 전에 두 번 누르면 두 번 바뀐다(차례가 왔을 때의 상태를 뒤집고, 적용한 값을 기록)', async () => {
   const t = make(structuredClone(DEFAULT_SETTINGS))
   const first = t.w.togglePet()

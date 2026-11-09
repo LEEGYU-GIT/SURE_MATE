@@ -30,13 +30,17 @@ export interface SettingsWriter {
 /**
  * 실행 중 설정 저장. 한 번에 하나씩 차례로 실행한다(겹치면 한쪽 변경이 사라지고 같은 임시 파일 settings.json.tmp에 함께 쓴다).
  * 파일을 읽지 못했거나 깨졌으면 파일을 덮거나 옮기지 않고, 메모리의 설정(사내 도메인 등)에 이번 값만 바꿔 적용한다.
- * 실행 중에 파일이 지워졌으면(없음) 기본값이 아니라 메모리의 지금 설정을 기준으로 파일을 다시 만든다.
+ * 그렇게 메모리에만 적용한 변경(저장 실패 포함)은 차례대로 남겨 두었다가, 다음에 파일을 다시 읽어 저장할 때 그 순서대로
+ * 다시 적용한다: 그러지 않으면 '이번 실행에만 적용돼요'라고 알린 변경이 같은 실행 안에서 파일의 값으로 되돌아간다.
+ * 실행 중에 파일이 지워졌으면(없음) 기본값이 아니라 메모리의 지금 설정을 기준으로 파일을 다시 만든다(남긴 변경은 이미 들어 있다).
  * 처음 실행(시작할 때 파일이 없음)이면 메모리의 설정이 곧 기본값이라 결과가 같다.
  */
 export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
   let queue: Promise<void> = Promise.resolve()
   /** 지금 이어지는 '읽지 못함'을 이미 알렸는지. 다시 저장하게 되면 다음 문제는 다시 알린다 */
   let unreadableNoticed = false
+  /** 파일에 저장하지 못하고 메모리에만 적용한 변경(바꾼 순서) */
+  let pending: ((current: Settings) => Settings)[] = []
 
   const enqueue = <T>(job: () => Promise<T>): Promise<T> => {
     const run = queue.then(job)
@@ -50,9 +54,18 @@ export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
   /** 줄에서 차례가 왔을 때 실행한다. 적용한 설정을 돌려준다 */
   const write = async (update: (current: Settings) => Settings): Promise<Settings> => {
     let next: Settings
+    // 파일이 없어 메모리의 지금 설정을 기준으로 삼으면 남긴 변경이 이미 들어 있어 다시 적용하지 않는다
+    let fromMemory = false
+    const replayed = pending.length
+    const withPending = (cur: Settings): Settings => update(fromMemory ? cur : pending.reduce((s, u) => u(s), cur))
     try {
-      next = await updateSettings(d.dir(), update, () => d.current())
+      next = await updateSettings(d.dir(), withPending, () => {
+        fromMemory = true
+        return d.current()
+      })
       unreadableNoticed = false
+      pending = []
+      if (replayed > 0 && !fromMemory) d.log('settings.replayed', { count: replayed })
     } catch (e) {
       if (e instanceof SettingsUnreadableError) {
         d.log('settings.unreadable', { what: e.what, error: errorCode(e.cause) })
@@ -63,8 +76,9 @@ export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
       } else {
         d.log('settings.saveError', { error: errorText(e) })
       }
-      // 기본값이 아니라 메모리의 지금 설정에 이번 값만 바꿔 적용한다
+      // 기본값이 아니라 메모리의 지금 설정에 이번 값만 바꿔 적용하고, 다음 저장에서 다시 적용하도록 남긴다
       next = update(d.current())
+      pending.push(update)
     }
     d.apply(next)
     return next
@@ -93,6 +107,8 @@ export function createSettingsWriter(d: SettingsWriterDeps): SettingsWriter {
           if ((e as NodeJS.ErrnoException | null)?.code !== 'ENOENT') return false
         }
         await saveSettings(d.dir(), d.current())
+        // 메모리의 지금 설정(남긴 변경 포함)을 저장했으므로 다시 적용할 것이 없다
+        pending = []
         return true
       })
   }
