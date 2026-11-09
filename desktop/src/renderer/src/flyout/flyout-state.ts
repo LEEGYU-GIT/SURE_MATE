@@ -24,6 +24,8 @@ export type FlyoutViewAction =
   | { type: 'content'; message: FlyoutMessage; at: number }
   /** main이 창을 배치하고 띄웠다(onFlyoutShown) */
   | { type: 'shown'; seq: number; at: number }
+  /** main이 창을 숨겼다(onFlyoutHidden). 창은 잠시 뒤 화면 밖으로 옮겨지므로 그 전에 내용을 바로 감춘다 */
+  | { type: 'hidden' }
 
 export const initialFlyoutState: FlyoutViewState = { message: null, open: false, instant: false, labelShownAt: null }
 
@@ -67,6 +69,9 @@ export function flyoutReducer(state: FlyoutViewState, action: FlyoutViewAction):
       if (!cur || cur.seq !== action.seq || state.open) return state
       return { ...state, open: true, labelShownAt: cur.content.kind === 'label' ? action.at : state.labelShownAt }
     }
+    case 'hidden':
+      // 움직임 없이 바로 닫는다. 다음 내용은 새 seq의 shown을 기다린다(고정만 바뀐 카드도 inPlace가 아니다)
+      return state.open || state.instant ? { ...state, open: false, instant: false } : state
   }
 }
 

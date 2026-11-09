@@ -68,6 +68,7 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     getFlyoutContent: async () => null,
     onFlyoutContent: (cb) => fx.flyout?.onContent(cb) ?? (() => {}),
     onFlyoutShown: (cb) => fx.flyout?.onShown(cb) ?? (() => {}),
+    onFlyoutHidden: () => () => {},
     flyoutReady: (seq, width, height) => fx.flyout?.ready(seq, width, height),
     flyoutPointer: () => {},
     flyoutAction: async (a) => (fx.flyout?.action ? fx.flyout.action(a) : false)

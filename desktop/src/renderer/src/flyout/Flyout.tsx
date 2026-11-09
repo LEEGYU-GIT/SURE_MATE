@@ -79,6 +79,7 @@ export function Flyout(): React.JSX.Element | null {
     // 구독을 먼저 걸고 지금 내용을 묻는다. 그 사이 도착한 새 내용을 옛 응답으로 덮지 않는다(flyoutReducer 'initial').
     const offContent = api.onFlyoutContent((message) => dispatch({ type: 'content', message, at: performance.now() }))
     const offShown = api.onFlyoutShown((seq) => dispatch({ type: 'shown', seq, at: performance.now() }))
+    const offHidden = api.onFlyoutHidden(() => dispatch({ type: 'hidden' }))
     api
       .getFlyoutContent()
       .then((message) => {
@@ -93,6 +94,7 @@ export function Flyout(): React.JSX.Element | null {
       alive = false
       offContent()
       offShown()
+      offHidden()
     }
   }, [])
 

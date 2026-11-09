@@ -160,3 +160,40 @@ describe('hoverAfterReport: 새 seq의 크기를 알린 직후 마우스 올림�
     expect(sent).toEqual([1, 2, 4])
   })
 })
+
+describe('hidden: main이 창을 숨겼다(창은 잠시 뒤 화면 밖으로 옮겨진다)', () => {
+  it('움직임 없이 바로 닫고 내용은 둔다. 같은 seq의 shown이 다시 오기 전에는 열리지 않는다', () => {
+    const s1 = shownState(msg(3, masking))
+    const s2 = flyoutReducer(s1, { type: 'hidden' })
+    expect(s2).toMatchObject({ open: false, instant: false })
+    expect(s2.message?.seq).toBe(3)
+    expect(flyoutReducer(s2, { type: 'content', message: msg(4, masking), at: 10 }).open).toBe(false)
+  })
+
+  it('이미 닫혀 있으면 같은 객체를 돌려준다', () => {
+    expect(flyoutReducer(initialFlyoutState, { type: 'hidden' })).toBe(initialFlyoutState)
+    const closed = flyoutReducer(shownState(msg(3, masking)), { type: 'hidden' })
+    expect(flyoutReducer(closed, { type: 'hidden' })).toBe(closed)
+  })
+
+  it('바로 보이던(instant) 상태도 닫으면서 instant를 푼다', () => {
+    const s = flyoutReducer(initialFlyoutState, { type: 'initial', message: msg(1, masking) })
+    expect(s).toMatchObject({ open: true, instant: true })
+    expect(flyoutReducer(s, { type: 'hidden' })).toMatchObject({ open: false, instant: false })
+  })
+
+  it('숨긴 뒤 고정만 바뀐 같은 번호 카드라도 제자리 갱신이 아니다(창을 다시 띄우므로 shown을 기다린다)', () => {
+    const c1 = flyoutReducer(shownState(msg(5, card(false))), { type: 'hidden' })
+    const next = flyoutReducer(c1, { type: 'content', message: msg(6, card(true)), at: 30 })
+    expect(next).toMatchObject({ open: false, instant: false })
+    expect(flyoutReducer(next, { type: 'shown', seq: 6, at: 40 }).open).toBe(true)
+  })
+
+  it('숨김 → 새 카드(새 seq) 순서에서도 새 seq마다 실제 마우스 올림을 한 번 다시 알린다', () => {
+    // Flyout.tsx는 report마다 hoverAfterReport(lastSeq, seq, hovered)를 쓴다. hidden은 이 판단 상태(lastSeq)를 건드리지 않는다
+    const s = flyoutReducer(shownState(msg(5, card(false, 1))), { type: 'hidden' })
+    expect(s.message?.seq).toBe(5)
+    expect(hoverAfterReport(5, 6, true)).toEqual({ send: true, lastSeq: 6 })
+    expect(hoverAfterReport(6, 6, true)).toEqual({ send: false, lastSeq: 6 })
+  })
+})
