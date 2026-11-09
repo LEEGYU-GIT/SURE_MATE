@@ -101,7 +101,8 @@ export function createBarController(d: Deps): BarController {
     timers: d.timers,
     setCollapsedBounds(c) {
       boundsCollapsed = c
-      if (isVisible) placeWindow(false)
+      // 접히고 펴지는 것은 드물어(바를 떠나고 1초, 손잡이에 0.3초) 기록한다
+      if (isVisible) placeWindow(true)
     },
     setCollapsedView(c) {
       viewCollapsed = c

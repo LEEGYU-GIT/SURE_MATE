@@ -12,8 +12,9 @@ if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 $r.hide = NewLogs 'palette.hide' | Select-Object -Last 1
 $form.Activate(); Pump 300
 Combo 'Ctrl+Alt+W'; Pump 1200
-$r.capture = NewLogs 'dev.capture' | Select-Object -Last 1
-$r.capture_palette_in_front = (IsApp)
+$r.capture = NewLogs 'wiki.card' | Select-Object -Last 1
+# 위키 카드는 포커스를 받지 않는 펼침 창이라 앞 창이 시험 창 그대로여야 한다
+$r.card_kept_focus = ((Fg).Title -eq 'SureMate-Test')
 if ((IsApp)) { Tap $VK['esc']; Pump 500 }
 $form.Close()
 $r.GetEnumerator() | ForEach-Object { "{0} = {1}" -f $_.Key, $_.Value }

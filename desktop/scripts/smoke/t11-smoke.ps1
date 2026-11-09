@@ -39,7 +39,7 @@ if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 # 2) lookup with modifiers released 0.3 s late, in a box that ignores Ctrl+Insert (needs the Ctrl+C fallback)
 $form.Activate(); $tb.Focus(); $tb.SelectAll(); Pump 200
 Key 0x11; Key 0x12; Tap 0x57; Pump 300; Key 0x12 -Up; Key 0x11 -Up; Pump 1500
-$r.late_release_capture = NewLogs 'dev.capture' | Select-Object -Last 1
+$r.late_release_capture = NewLogs 'wiki.card' | Select-Object -Last 1
 $r.clipboard_after_late = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 
@@ -47,17 +47,17 @@ if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 $form.Activate(); $tb.Focus(); $tb.SelectAll(); Pump 200
 $before = $tb.Text
 Key 0x11; Key 0x12; Tap 0x57; Pump 1200; Key 0x12 -Up; Key 0x11 -Up; Pump 800
-$r.held_capture = NewLogs 'dev.capture' | Select-Object -Last 1
+$r.held_capture = NewLogs 'wiki.card' | Select-Object -Last 1
 $r.textbox_unchanged = ($tb.Text -eq $before)
 $r.clipboard_after_held = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 
 # 4) two lookups 0.35 s apart while the first is still running -> second is busy, clipboard ends original
 $form.Activate(); $tb.Focus(); $tb.SelectAll(); Pump 200
-$c0 = CountOf 'dev.capture'
+$c0 = CountOf 'wiki.card'
 Key 0x11; Key 0x12; Tap 0x57; Pump 200; Key 0x12 -Up; Key 0x11 -Up; Pump 150
 Combo 'Ctrl+Alt+W'; Pump 2000
-$r.double_capture = (@(NewLogs 'dev.capture') | Select-Object -Skip $c0) -join ' | '
+$r.double_capture = (@(NewLogs 'wiki.card') | Select-Object -Skip $c0) -join ' | '
 $r.clipboard_after_double = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 

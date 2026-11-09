@@ -20,14 +20,14 @@ Key 0x12; [void][W]::SetForegroundWindow($form.Handle); Key 0x12 -Up; $form.Acti
 # 1) selection -> capture, clipboard restored
 $tb.SelectAll(); Pump 100
 Combo 'Ctrl+Alt+W'; Pump 1500
-$r.capture_selected = NewLogs 'dev.capture' | Select-Object -Last 1
+$r.capture_selected = NewLogs 'wiki.card' | Select-Object -Last 1
 $r.clipboard_after_capture = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 
 # 2) nothing selected -> null, clipboard untouched
 $form.Activate(); $tb.Focus(); $tb.SelectionStart = 0; $tb.SelectionLength = 0; Pump 200
 Combo 'Ctrl+Alt+W'; Pump 1500
-$r.capture_none = NewLogs 'dev.capture' | Select-Object -Last 1
+$r.capture_none = NewLogs 'wiki.card' | Select-Object -Last 1
 $r.clipboard_after_none = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 
