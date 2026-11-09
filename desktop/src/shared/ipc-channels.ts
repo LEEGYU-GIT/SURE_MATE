@@ -84,6 +84,7 @@ export const IPC = {
   flyoutContent: 'flyout:content',
   /** main → 펼침 창: 창을 배치하고 띄웠다(들어오는 움직임 시작) */
   flyoutShown: 'flyout:shown',
+  flyoutHidden: 'flyout:hidden',
   /** 펼침 창 → main(send) */
   flyoutReady: 'flyout:ready',
   flyoutPointer: 'flyout:pointer',
@@ -146,6 +147,8 @@ export interface SureMateApi {
   onFlyoutContent(cb: (m: FlyoutMessage) => void): () => void
   /** main이 그 seq의 창을 배치하고 띄웠다 */
   onFlyoutShown(cb: (seq: number) => void): () => void
+  /** main이 창을 숨겼다(창은 잠시 뒤 화면 밖으로 옮겨진다, flyout-window.ts) */
+  onFlyoutHidden(cb: () => void): () => void
   /** 그 seq의 내용을 그렸고 크기(DIP)가 이렇다 */
   flyoutReady(seq: number, width: number, height: number): void
   /** 마우스가 펼침 창 내용에 들어감·나감 */

@@ -80,6 +80,20 @@ describe('들어오는 움직임', () => {
     expect(flyoutReducer(s1, { type: 'content', message: msg(6, other), at: 100 }).open).toBe(false)
   })
 
+  it('main이 창을 숨기면(hidden) 움직임 없이 바로 사라지고, 다음 내용은 shown을 기다린다', () => {
+    const s1 = shownState(msg(3, masking))
+    const s2 = flyoutReducer(s1, { type: 'hidden' })
+    expect(s2).toMatchObject({ open: false, instant: false })
+    expect(s2.message?.seq).toBe(3)
+    const s3 = flyoutReducer(s2, { type: 'content', message: msg(4, masking), at: 10 })
+    expect(s3.open).toBe(false)
+    expect(flyoutReducer(s3, { type: 'shown', seq: 4, at: 20 }).open).toBe(true)
+    // 고정만 바뀐 카드라도 숨긴 뒤라면 제자리 갱신이 아니다(창을 다시 띄우므로 shown을 기다린다)
+    const c1 = flyoutReducer(shownState(msg(5, card(false))), { type: 'hidden' })
+    expect(flyoutReducer(c1, { type: 'content', message: msg(6, card(true)), at: 30 }).open).toBe(false)
+    expect(flyoutReducer(initialFlyoutState, { type: 'hidden' })).toBe(initialFlyoutState)
+  })
+
   it('카드 화면 열쇠(viewKey): 고정만 바뀌면 그대로 두어 카드 안에서 고른 후보가 남고, 다른 내용이면 새 seq', () => {
     const s1 = shownState(msg(5, card(false)))
     expect(s1.viewKey).toBe(5)

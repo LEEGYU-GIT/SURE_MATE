@@ -44,6 +44,11 @@ const api: SureMateApi = {
     ipcRenderer.on(IPC.flyoutShown, listener)
     return () => ipcRenderer.removeListener(IPC.flyoutShown, listener)
   },
+  onFlyoutHidden: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.flyoutHidden, listener)
+    return () => ipcRenderer.removeListener(IPC.flyoutHidden, listener)
+  },
   flyoutReady: (seq, width, height) => ipcRenderer.send(IPC.flyoutReady, seq, width, height),
   flyoutPointer: (inside) => ipcRenderer.send(IPC.flyoutPointer, inside),
   flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a)
