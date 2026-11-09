@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { createGlossaryRuntime, type GlossaryRuntimeDeps } from './glossary-runtime'
 
@@ -17,8 +17,11 @@ const entry: GlossaryEntry = {
   version: 1
 }
 
-function fake(): { deps: GlossaryRuntimeDeps; calls: { writes: string[]; hides: boolean[]; opened: string[]; logs: { event: string; data: Record<string, unknown> }[] } } {
-  const calls = { writes: [] as string[], hides: [] as boolean[], opened: [] as string[], logs: [] as { event: string; data: Record<string, unknown> }[] }
+function fake(): {
+  deps: GlossaryRuntimeDeps
+  calls: { writes: string[]; hides: boolean[]; opened: string[]; notes: string[]; logs: { event: string; data: Record<string, unknown> }[] }
+} {
+  const calls = { writes: [] as string[], hides: [] as boolean[], opened: [] as string[], notes: [] as string[], logs: [] as { event: string; data: Record<string, unknown> }[] }
   return {
     calls,
     deps: {
@@ -26,9 +29,11 @@ function fake(): { deps: GlossaryRuntimeDeps; calls: { writes: string[]; hides: 
       writeClipboard: async (text) => {
         calls.writes.push(text)
       },
+      waitKeysReleased: async () => true,
       hidePalette: (restoreFocus) => {
         calls.hides.push(restoreFocus)
       },
+      notify: (message) => calls.notes.push(message),
       openExternal: async (url) => {
         calls.opened.push(url)
       },
@@ -54,6 +59,61 @@ it('설명 복사는 설명만 쓰고 팔레트를 닫아 원래 창으로 돌�
   expect(f.calls.hides).toEqual([true])
   expect(JSON.stringify(f.calls.logs)).not.toMatch(/MC\/DC|커버리지/)
   expect(f.calls.logs[0].data).toEqual({ id: 'mcdc', length: entry.definition.length })
+})
+
+/**
+ * Enter를 holdMs 동안 누르고 있는 가짜 키보드. 진짜 waitPickKeysReleased처럼 10ms마다 확인하고,
+ * limitMs(PICK_KEYS_WAIT_MS 0.6초) 안에 떼면 true, 못 떼면 false
+ */
+const enterHeldFor =
+  (holdMs: number, limitMs = 600): (() => Promise<boolean>) =>
+  () =>
+    new Promise((resolve) => {
+      const start = Date.now()
+      const check = (): void => {
+        const held = Date.now() - start
+        if (held >= holdMs) resolve(true)
+        else if (held >= limitMs) resolve(false)
+        else setTimeout(check, 10)
+      }
+      check()
+    })
+
+it('설명 복사: 누른 Enter를 뗀 뒤에야 팔레트를 닫고 원래 창으로 돌아간다(자동 반복 Enter가 문서에 들어가지 않게)', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fake()
+    f.deps.waitKeysReleased = enterHeldFor(300)
+    const copied = createGlossaryRuntime(f.deps).copy('mcdc')
+    await vi.advanceTimersByTimeAsync(250)
+    // 복사는 했지만 Enter를 누르고 있는 동안은 팔레트가 앞에 남아 반복 Enter를 받는다
+    expect(f.calls.writes).toEqual([entry.definition])
+    expect(f.calls.hides).toEqual([])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await copied).toBe(true)
+    expect(f.calls.hides).toEqual([true])
+    expect(f.calls.notes).toEqual([])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('설명 복사: 0.6초 안에 Enter를 떼지 않으면 팔레트를 닫지 않고, 복사했다고 알린다', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fake()
+    f.deps.waitKeysReleased = enterHeldFor(1500)
+    const copied = createGlossaryRuntime(f.deps).copy('mcdc')
+    await vi.advanceTimersByTimeAsync(700)
+    expect(await copied).toBe(true)
+    expect(f.calls.writes).toEqual([entry.definition])
+    expect(f.calls.hides).toEqual([])
+    expect(f.calls.notes).toEqual([expect.stringContaining('복사했어요')])
+    expect(f.calls.logs.map((l) => l.event)).toEqual(['wiki.copy', 'wiki.copy.keysHeld'])
+    expect(JSON.stringify(f.calls.logs)).not.toMatch(/MC\/DC|커버리지/)
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('링크는 그 항목의 http/https 링크만 번호로 연다', async () => {

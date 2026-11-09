@@ -210,7 +210,9 @@ if (!app.requestSingleInstanceLock()) {
       writeClipboard: async (text) => {
         await writeClipboardText(text, { excludeFromHistory: false })
       },
+      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
       hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+      notify,
       openExternal: (url) => electronShell.openExternal(url),
       userEntries: async () => (await glossaryCache.get()).userEntries,
       saveUserEntries: async (list) => {

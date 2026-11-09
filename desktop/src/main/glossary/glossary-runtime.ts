@@ -5,7 +5,10 @@ export interface GlossaryRuntimeDeps {
   /** 지금 용어 목록(기본 팩 + 사용자 용어) */
   entries(): Promise<GlossaryEntry[]>
   writeClipboard(text: string): Promise<void>
+  /** 설명 복사를 고른 Enter·보조키가 떼어질 때까지 기다린다. 시간 안에 안 떼면 false(그때는 팔레트를 숨기지 않는다) */
+  waitKeysReleased(): Promise<boolean>
   hidePalette(restoreFocus: boolean): void
+  notify(message: string): void
   openExternal(url: string): Promise<void>
   /** 사용자 파일의 항목(저장할 때 고쳐 쓴다) */
   userEntries(): Promise<GlossaryEntry[]>
@@ -20,7 +23,7 @@ export interface GlossaryRuntimeDeps {
 
 export interface GlossaryRuntime {
   get(id: string): Promise<GlossaryEntry | null>
-  /** 설명을 클립보드에 넣고 팔레트를 닫아 원래 창으로 */
+  /** 설명을 클립보드에 넣고, 누른 Enter를 뗀 뒤 팔레트를 닫아 원래 창으로(시간 안에 안 떼면 열어 둔 채 알림) */
   copy(id: string): Promise<boolean>
   /** 그 항목의 index번째 링크(http/https만)를 연다 */
   openLink(id: string, index: number): Promise<boolean>
@@ -43,8 +46,14 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
       const entry = await find(id)
       if (!entry) return false
       await d.writeClipboard(entry.definition)
-      d.hidePalette(true)
       d.log('wiki.copy', { id, length: entry.definition.length })
+      // 누른 채로 원래 창에 돌아가면 자동 반복 Enter가 사용자 문서에 들어간다(프롬프트·상용구·용어 팩 명령과 같은 원칙)
+      if (await d.waitKeysReleased()) {
+        d.hidePalette(true)
+      } else {
+        d.notify('설명을 복사했어요. Enter를 누르고 있어 팔레트를 닫지 않았어요. Esc로 닫은 뒤 붙여넣을 곳에서 Ctrl+V를 누르세요.')
+        d.log('wiki.copy.keysHeld', { id })
+      }
       return true
     },
     async save(draft, o) {
