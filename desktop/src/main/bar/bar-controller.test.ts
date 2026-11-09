@@ -241,6 +241,8 @@ describe('createBarController', () => {
     vi.advanceTimersByTime(300)
     expect(t.lastSet()).toEqual({ x: 1914, y: 292, width: 6, height: 456 })
     expect(t.window.getBounds()).toEqual({ x: 1914, y: 292, width: 6, height: 456 })
+    // 접히고 펴진 자리도 기록한다(스모크 시험이 손잡이 너비·위치를 확인한다)
+    expect(t.log).toHaveBeenLastCalledWith('bar.place', expect.objectContaining({ bounds: { x: 1914, y: 292, width: 6, height: 456 } }))
   })
 
   it('pointer는 안팎이 바뀔 때만 넘겨 300ms 타이머가 다시 시작되지 않는다', () => {
