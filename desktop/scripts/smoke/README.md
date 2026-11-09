@@ -14,10 +14,10 @@
 | t6 | 검색 "mc"+Enter가 한 번만 실행, 다시 열면 검색어 비움 |
 | t7 | 한글 입력 기록기 열기, JSON 저장 |
 | t8 | 창 목록, 직전 창 옮기기 |
-| t9 | 선택 글 가져오기, 선택 없음, 붙여넣기, 기록 제외 형식 |
-| t11 | 사람 손 타이밍: 1.5초 누르기, 보조키 늦게 떼기, 누른 채, 연달아 두 번 |
-| t12 | koffi가 막혔을 때 팔레트와 안내 |
-| t13 | 파일만 복사된 클립보드 |
+| t9 | 선택 글 가져오기(`wiki.card` 로그를 읽음, 옛 `dev.capture` 대체), 선택 없음, 붙여넣기, 기록 제외 형식 |
+| t11 | (`wiki.card` 로그를 읽음) 사람 손 타이밍: 1.5초 누르기, 보조키 늦게 떼기, 누른 채, 연달아 두 번 |
+| t12 | (`wiki.card` 로그를 읽음) koffi가 막혔을 때 팔레트와 안내 |
+| t13 | (`wiki.card` 로그를 읽음) 파일만 복사된 클립보드 |
 | t14 | 프롬프트 흐름: 선택 → 팔레트 `/` → 확인 화면 → 복사(`t14-run.ps1`로 실행, AI 대상을 잠시 "복사만"으로), 선택 없으면 클립보드, Esc로 목록 |
 | t15 | 팔레트 화면 캡처(디자인 검토용, `%TEMP%\sure-mate-smoke\*.png`) |
 | t16 | 가명 처리: §8 예시 선택 → 확인 화면 되돌리기·빼기·끔 캡처, 항목 끄기, 복사한 프롬프트의 가명 줄·머리말, 로그에 이름 없음(`t16-run.ps1`로 실행, 가상 예시 사전과 "복사만" 대상을 잠시 넣고 되돌림) |
@@ -55,7 +55,7 @@ Windows에서 돌린 뒤 `%TEMP%\sure-mate-smoke`에 저장된 캡처 3장을 �
 
 ### t18 결과를 눈으로 확인할 곳
 
-t18은 아직 Windows에서 실행하지 않았다(2026-11-09, 리눅스 서버에서 작성). 실행: `powershell -NoProfile -ExecutionPolicy Bypass -File .\t18-run.ps1 > out.txt` (약 2~3분). 자동 숨김 끔으로 한 번, 켬(`-AutoHide`)으로 한 번 앱을 띄워 두 번 돌고, 끝나면 `settings.json`을 되돌린다. 시험 중에는 마우스와 키보드를 만지지 않는다. 시험 창과 바를 가리는 창은 닫아 둔다. 처음에는 판정 줄과 캡처를 함께 확인하고, False가 나오면 스크립트 문제인지 앱 문제인지 먼저 구분한다.
+t18은 아직 Windows에서 실행하지 않았다(2026-11-09, 리눅스 서버에서 작성). 실행: `powershell -NoProfile -ExecutionPolicy Bypass -File .\t18-run.ps1 > out.txt` (약 2~3분). 자동 숨김 끔으로 한 번, 켬(`-AutoHide`)으로 한 번 앱을 띄워 두 번 돌고, 끝나면 `settings.json`을 되돌린다. 시험 중에는 마우스와 키보드를 만지지 않는다. 시험 창과 바를 가리는 창은 닫아 둔다. 처음에는 판정 줄과 캡처를 함께 확인하고, False가 나오면 스크립트 문제인지 앱 문제인지 먼저 구분한다. 아래 판정 줄이 출력에 없거나 `error =` 줄이 있으면 그 단계는 실패한 것이다.
 
 첫 번째 실행(자동 숨김 끔)에서 아래 줄은 모두 `True`여야 한다.
 
@@ -64,8 +64,8 @@ t18은 아직 Windows에서 실행하지 않았다(2026-11-09, 리눅스 서버�
 - 가명 처리 메뉴: `masking_menu_shown`, `foreground_after_menu_is_test`, `masking_off_saved`, `masking_restore_saved`
 - 이름표: `label_shown_after_600ms`, `label_not_shown_after_300ms`
 - 위키 카드: `wiki_card_kind_best`, `wiki_card_length_5`, `wiki_card_shown`, `card_kept_focus`, `clipboard_restored_after_card`, `wiki_card_timeout_hide`(`wiki_card_visible_seconds`는 8 안팎)
-- 전체 화면: `fullscreen_hides_bar_in_1100ms`, `bar_returns_in_1100ms`(걸린 시간은 `fullscreen_hide_ms`, `bar_return_ms`)
-- 맨 위 유지: `topmost_back_within_2s`. `taskbar_rose_over_bar`가 False면 작업 표시줄이 바 위로 올라오지 않은 것이므로 이 시험은 의미가 적다.
+- 전체 화면: `fullscreen_hides_bar_in_1100ms`, `bar_returns_in_1100ms`(걸린 시간은 `fullscreen_hide_ms`, `bar_return_ms`로 근접 실패를 확인한다)
+- 맨 위 유지: `topmost_back_within_2s`(작업 표시줄이 바 위로 올라온 `taskbar_rose_over_bar`가 True일 때만 True). `taskbar_rose_over_bar`가 False면 시험이 성립하지 않은 것이다.
 - 바 메뉴: `bar_menu_shown`, `capsule_width_44`, `edge_again_width_56`
 - 끌기: `drag_bar_place_logged`, `drag_moved_120`(`drag_direction`이 down이 아니면 아래 공간이 부족해 위로 끌었다), `position_saved_ratio`
 - 로그: `log_has_no_content`, `no_mismatch_at_end`

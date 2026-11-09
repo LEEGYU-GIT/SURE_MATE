@@ -112,6 +112,14 @@ function WaitLog([string]$eventName, [int]$after, [int]$ms, [hashtable]$Match = 
 function Px([double]$dip, [double]$scale) { [int][math]::Round($dip * $scale) }
 function MoveInto([double]$x, [double]$y) { [void][W]::SetCursorPos([int]($x - 3), [int]$y); Pump 40; [void][W]::SetCursorPos([int]$x, [int]$y); Pump 120 }
 function HoverAt([double]$x, [double]$y) { MoveInto $x $y }
+# 정확한 올림 시간용: 목표에서 먼 곳으로 옮겨 가라앉힌 뒤(시간 재지 않음) 한 번에 들어가고, 들어간 시각을 돌려준다
+function HoverEnter([double]$x, [double]$y) {
+  [void][W]::SetCursorPos([int]($x - 250), [int]$y); Pump 300
+  $t = Get-Date
+  [void][W]::SetCursorPos([int]$x, [int]$y)
+  return $t
+}
+function ElapsedMs($t) { return [int]((Get-Date) - $t).TotalMilliseconds }
 function ClickAt([double]$x, [double]$y, [switch]$Right) {
   MoveInto $x $y
   $down = if ($Right) { 8 } else { 2 }

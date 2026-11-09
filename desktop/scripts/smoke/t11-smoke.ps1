@@ -54,7 +54,7 @@ if ((IsApp)) { Tap $VK['esc']; Pump 600 }
 
 # 4) two lookups 0.35 s apart while the first is still running -> second is busy, clipboard ends original
 $form.Activate(); $tb.Focus(); $tb.SelectAll(); Pump 200
-$c0 = CountOf 'dev.capture'
+$c0 = CountOf 'wiki.card'
 Key 0x11; Key 0x12; Tap 0x57; Pump 200; Key 0x12 -Up; Key 0x11 -Up; Pump 150
 Combo 'Ctrl+Alt+W'; Pump 3500
 $r.double_capture = (@(NewLogs 'wiki.card') | Select-Object -Skip $c0) -join ' | '

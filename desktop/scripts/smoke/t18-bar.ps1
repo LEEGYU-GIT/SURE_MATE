@@ -131,22 +131,25 @@ try {
         $card = MenuCard $fm2.bounds $place.edge
         ClickAt (Px ($card.x + $card.width / 2) $sc) (Px ($card.y + 4 + 28 + 52 + 26) $sc)
       }
-      $r.masking_restore_saved = WaitSetting { param($s) $s.masking.mode -eq 'restore' } 3000
+      $r.masking_restore_saved = ($r.masking_off_saved -and (WaitSetting { param($s) $s.masking.mode -eq 'restore' } 3000))
       Pump 500
     }
 
     # ---- 4. 이름표: 0.6초 올리면 나오고 0.3초면 나오지 않음 ----
     $n0 = LogCount 'flyout.show'
-    HoverAt (Px $lay.Cx $sc) (Px ($lay.Items['logo'].Cy) $sc)
-    Pump 600
+    $th = HoverEnter (Px $lay.Cx $sc) (Px ($lay.Items['logo'].Cy) $sc)
+    while ((ElapsedMs $th) -lt 600) { Pump 20 }
     $fl = WaitLog 'flyout.show' $n0 1000 @{ kind = 'label' }
     $r.label_shown_after_600ms = ($null -ne $fl)
+    $r.label_shown_dwell_ms = ElapsedMs $th
     if ($fl) { $r.cap_label = ShotRect 'm5-label' (UnionRect $fl.bounds $place.bounds) $sc }
     ParkMouse; Pump 1200
     $n0 = LogCount 'flyout.show'
-    HoverAt (Px $lay.Cx $sc) (Px ($lay.Items['logo'].Cy) $sc)
-    Pump 300
-    ParkMouse; Pump 900
+    $th = HoverEnter (Px $lay.Cx $sc) (Px ($lay.Items['logo'].Cy) $sc)
+    while ((ElapsedMs $th) -lt 300) { Pump 10 }
+    [void][W]::SetCursorPos(150, 150)
+    $r.label_short_dwell_ms = ElapsedMs $th
+    Pump 1000
     $r.label_not_shown_after_300ms = ((LogCount 'flyout.show') -eq $n0)
 
     # ---- 5. 위키 카드: MC/DC 선택 -> Ctrl+Alt+W(보조키 0.3초 늦게 떼기) ----
@@ -201,8 +204,9 @@ try {
       $r.taskbar_rose_over_bar = -not (TopmostIsApp)
       $t0 = Get-Date; $back = $false
       while (((Get-Date) - $t0).TotalMilliseconds -lt 2000) { if (TopmostIsApp) { $back = $true; break }; Pump 100 }
-      $r.topmost_back_within_2s = $back
       $r.topmost_back_ms = [int]((Get-Date) - $t0).TotalMilliseconds + 150
+      # 작업 표시줄이 바 위로 올라오지 않았다면 이 시험은 아무것도 증명하지 못하므로 False로 둔다
+      $r.topmost_back_within_2s = ($back -and $r.taskbar_rose_over_bar)
       FocusForm
     } else {
       $r.topmost_back_within_2s = 'skipped: taskbar is not at the bottom'
@@ -283,7 +287,7 @@ try {
     $hx = $wa.Right - [int]($sc * 3)
     # 먼저 한 번 꺼내 두었다가 밖으로 나가 접히는 것을 확인한다
     HoverAt $hx $cy; Pump 700
-    ParkMouse; Pump 1500
+    ParkMouse; Pump 2000
     $w = WindowRectNow $place
     $r.handle_found = ($null -ne $w)
     if ($w) {
@@ -294,16 +298,24 @@ try {
     $hr = [pscustomobject]@{ x = $wa.Right / $sc - 70; y = $place.bounds.y; width = 70; height = $place.bounds.height }
     $r.cap_bar_handle = ShotRect 'm5-bar-handle' $hr $sc
     # 0.4초 올리면 펼쳐진다
-    HoverAt $hx $cy; Pump 400
+    $th = HoverEnter $hx $cy
+    while ((ElapsedMs $th) -lt 400) { Pump 10 }
     $w = WindowRectNow $place
-    if ($null -eq $w) { Pump 250; $w = WindowRectNow $place }
+    $r.hover_expand_checked_at_ms = ElapsedMs $th
+    if ($null -eq $w -or [math]::Abs($w.Width - 56 * $sc) -gt 2) { Pump 250; $w = WindowRectNow $place }
     $r.hover_400ms_expands_to_56 = ($null -ne $w -and [math]::Abs($w.Width - 56 * $sc) -le 2)
-    ParkMouse; Pump 1700
-    $w = WindowRectNow $place
-    $r.collapsed_again = ($null -ne $w -and [math]::Abs($w.Width - 6 * $sc) -le 2)
+    # 밖으로 나가면 접힘 지연 1초 + 이동 0.3초 안에 다시 6이 된다(2초 안에 확인)
+    ParkMouse; $tp = Get-Date; $collapsedMs = -1
+    while ((ElapsedMs $tp) -lt 2000) { $w = WindowRectNow $place; if ($null -ne $w -and [math]::Abs($w.Width - 6 * $sc) -le 2) { $collapsedMs = ElapsedMs $tp; break }; Pump 100 }
+    $r.collapsed_again = ($collapsedMs -ge 0)
+    $r.collapse_ms = $collapsedMs
+    Pump 500
     # 0.2초만 올리면 그대로
-    HoverAt $hx $cy; Pump 200
-    ParkMouse; Pump 900
+    $th = HoverEnter $hx $cy
+    while ((ElapsedMs $th) -lt 200) { Pump 10 }
+    [void][W]::SetCursorPos(150, 150)
+    $r.short_hover_dwell_ms = ElapsedMs $th
+    Pump 900
     $w = WindowRectNow $place
     $r.hover_200ms_stays_6 = ($null -ne $w -and [math]::Abs($w.Width - 6 * $sc) -le 2)
     # bar.place는 자동 숨김 이동을 기록하지 않는다(placeWindow(false)). 참고로 마지막 줄만 남긴다
