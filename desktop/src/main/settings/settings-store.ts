@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { allAiTargets, FALLBACK_AI_TARGET, sanitizeAiTargets, type AiTarget } from '../../shared/ai-targets'
 import { ALL_CATEGORIES, type MaskCategory } from '../../shared/masking/types'
 import { DEFAULT_BAR_SETTINGS, sanitizeBarSettings, type BarSettings } from '../../shared/bar/bar-settings'
+import { DEFAULT_PET_SETTINGS, sanitizePetSettings, type PetSettings } from '../../shared/pet/pet-settings'
 import type { MaskingMode } from '../../shared/types'
 
 export interface Settings {
@@ -17,8 +18,8 @@ export interface Settings {
   onboardingDone: boolean
   /** 화면 가장자리 바(설계 문서 §14-1) */
   bar: BarSettings
-  /** 말랑 메이트. 나머지 필드는 M6이 더한다 */
-  pet: { visible: boolean }
+  /** 말랑 메이트(설계 문서 §14) */
+  pet: PetSettings
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -35,7 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ai: { defaultTarget: FALLBACK_AI_TARGET, custom: [] },
   onboardingDone: false,
   bar: { ...DEFAULT_BAR_SETTINGS, positions: [], pinnedPrompts: [...DEFAULT_BAR_SETTINGS.pinnedPrompts] },
-  pet: { visible: true }
+  pet: { ...DEFAULT_PET_SETTINGS }
 }
 
 /** 팔레트 단축키가 다른 앱과 겹칠 때 차례로 시도할 조합(Claude 데스크톱 앱이 Ctrl+Alt+Space를 씀) */
@@ -63,7 +64,6 @@ export function mergeSettings(raw: unknown): Settings {
   const masking = isObj(r.masking) ? r.masking : {}
   const categories = isObj(masking.categories) ? masking.categories : {}
   const ai = isObj(r.ai) ? r.ai : {}
-  const pet = isObj(r.pet) ? r.pet : {}
   const custom = sanitizeAiTargets(ai.custom)
   const targetIds = allAiTargets(custom).map((t) => t.id)
   const d = DEFAULT_SETTINGS
@@ -87,7 +87,7 @@ export function mergeSettings(raw: unknown): Settings {
     ai: { defaultTarget: oneOf(ai.defaultTarget, targetIds, d.ai.defaultTarget), custom },
     onboardingDone: bool(r.onboardingDone, d.onboardingDone),
     bar: sanitizeBarSettings(r.bar),
-    pet: { visible: bool(pet.visible, d.pet.visible) }
+    pet: sanitizePetSettings(r.pet)
   }
 }
 

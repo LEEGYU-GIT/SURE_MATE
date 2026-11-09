@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_PET_SETTINGS } from '../../shared/pet/pet-settings'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, settingsLoadNotice, SettingsUnreadableError, updateSettings } from './settings-store'
 
 // 백신·EDR이 파일을 잡고 있어 이름 바꾸기·복사가 실패하는 경우를 흉내 내려고 rename·copyFile만 감싼다(평소에는 그대로 통과)
@@ -214,12 +215,12 @@ it('바·펫 설정: 없으면 기본값(옛 설정 파일 포함), 펫 숨김�
   const { mergeSettings } = await import('./settings-store')
   const m = mergeSettings({})
   expect(m.bar).toEqual(DEFAULT_SETTINGS.bar)
-  expect(m.pet).toEqual({ visible: true })
+  expect(m.pet).toEqual(DEFAULT_PET_SETTINGS)
   await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, hotkeys: { palette: 'Alt+`' }, launchAtLogin: false, onboardingDone: true }))
   const old = await loadSettings(dir)
   expect(old.bar).toEqual(DEFAULT_SETTINGS.bar)
-  expect(old.pet.visible).toBe(true)
-  expect(mergeSettings({ pet: { visible: false } }).pet.visible).toBe(false)
+  expect(old.pet).toEqual(DEFAULT_PET_SETTINGS)
+  expect(mergeSettings({ pet: { visible: false } }).pet).toEqual({ ...DEFAULT_PET_SETTINGS, visible: false })
   expect(mergeSettings({ pet: { visible: 'no' } }).pet.visible).toBe(true)
   expect(mergeSettings({ bar: { shape: 'nope', wikiCardWidth: 9999 } }).bar).toMatchObject({ shape: 'edge', wikiCardWidth: 560 })
 })
@@ -230,4 +231,10 @@ it('바 설정을 바꿔 저장하면 읽을 때 유지된다', async () => {
   const back = await loadSettings(dir)
   expect(back.bar.shape).toBe('capsule')
   expect(back.bar.positions).toEqual([{ display: '1', ratio: 0.4 }])
+})
+
+it('펫 설정을 바꿔 저장하면 읽을 때 유지된다', async () => {
+  await updateSettings(dir, (cur) => ({ ...cur, pet: { ...cur.pet, size: 72, activity: 'lively', controlHotkey: 'Ctrl+Alt+P' } }))
+  const back = await loadSettings(dir)
+  expect(back.pet).toEqual({ ...DEFAULT_PET_SETTINGS, size: 72, activity: 'lively', controlHotkey: 'Ctrl+Alt+P' })
 })
