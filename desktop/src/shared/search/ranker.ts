@@ -31,7 +31,7 @@ export interface SearchIndex {
   docs: IndexedDoc[]
 }
 
-/** 점수(설계 문서 §9). 제목과 별칭은 앞의 두 단계에서만 다르게 친다 */
+/** 점수(설계 문서 §9). 제목과 별칭은 앞의 두 단계에서만 다르게 치고, 그 아래 단계에서 점수가 같으면 rank가 제목을 앞에 둔다 */
 const SCORE = {
   exact: 1000,
   aliasExact: 950,
@@ -112,7 +112,8 @@ function parseQuery(query: string): Query | null {
   return {
     text,
     keys,
-    cho: isChoseongOnly(text) ? text.replace(/\s+/g, '') : null,
+    // Windows IME는 모음 없이 친 ㄱ+ㅅ·ㅂ+ㅅ을 'ㄳ'·'ㅄ' 한 글자로 합쳐 보내므로 기본 자음으로 나눈다
+    cho: isChoseongOnly(text) ? disassemble(text.replace(/\s+/g, '')) : null,
     latin: /^[a-z]+$/.test(keys.compact),
     maxTypo: !hangul || jamoLength < 4 ? 0 : jamoLength >= 8 ? 2 : 1
   }
@@ -161,23 +162,32 @@ function typoScore(n: NameKeys, q: Query): number {
   return d >= 1 && d <= q.maxTypo ? SCORE.typo - 100 * d : 0
 }
 
-const best = (doc: IndexedDoc, f: (n: NameKeys, alias: boolean) => number): number =>
-  Math.max(f(doc.title, false), ...doc.aliases.map((a) => f(a, true)))
+/** 문서에서 가장 높은 점수와, 그 점수가 제목에서 나왔는지(제목과 별칭이 같은 점수면 제목) */
+function best(doc: IndexedDoc, f: (n: NameKeys, alias: boolean) => number): { score: number; title: boolean } {
+  const title = f(doc.title, false)
+  let alias = 0
+  for (const a of doc.aliases) alias = Math.max(alias, f(a, true))
+  return title >= alias ? { score: title, title: title > 0 } : { score: alias, title: false }
+}
 
 /**
  * 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(0점은 뺀다, 설계 문서 §9).
- * 같은 점수면 제목이 짧은 것, 그다음 넣은 순서.
+ * 같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저, 그다음 제목이 짧은 것, 그다음 넣은 순서.
  */
 export function rank(index: SearchIndex, query: string): { id: string; score: number }[] {
   const q = parseQuery(query)
   if (!q) return []
-  const scored = index.docs.map((doc) => ({ doc, score: best(doc, (n, alias) => scoreName(n, q, alias)) }))
+  const scored = index.docs.map((doc) => ({ doc, ...best(doc, (n, alias) => scoreName(n, q, alias)) }))
   if (q.maxTypo > 0 && scored.filter((s) => s.score > SCORE.typo).length < TYPO_GATE) {
-    for (const s of scored) if (s.score <= SCORE.typo) s.score = Math.max(s.score, best(s.doc, (n) => typoScore(n, q)))
+    for (const s of scored) {
+      if (s.score > SCORE.typo) continue
+      const typo = best(s.doc, (n) => typoScore(n, q))
+      if (typo.score > s.score) Object.assign(s, typo)
+    }
   }
   for (const s of scored) if (s.score === 0 && s.doc.body.includes(q.text)) s.score = SCORE.body
   return scored
     .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score || a.doc.titleLength - b.doc.titleLength || a.doc.order - b.doc.order)
+    .sort((a, b) => b.score - a.score || Number(b.title) - Number(a.title) || a.doc.titleLength - b.doc.titleLength || a.doc.order - b.doc.order)
     .map((s) => ({ id: s.doc.id, score: s.score }))
 }

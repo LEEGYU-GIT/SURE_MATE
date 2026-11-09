@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { PaletteItem } from '../../../shared/types'
-import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd } from './filter-items'
+import { buildPaletteIndex, filterItems, groupItems, MAX_ROWS, WIKI_ADD_ID, withWikiAdd } from './filter-items'
 
 const items: PaletteItem[] = [
   { id: 'prompt:meeting-notes', group: 'prompt', title: '회의록 정리', subtitle: '결정 사항·담당자', keywords: ['회의', 'meeting'] },
@@ -14,8 +14,46 @@ it('검색어가 비었고 범위가 없으면 위키를 뺀 나머지를 넣은
   expect(ids(filterItems(items, ''))).toEqual(['prompt:meeting-notes', 'dev.listWindows'])
 })
 
-it('?만 치면 위키 전부를 용어 순서로', () => {
+it('?만 치면 위키를 용어 순서로', () => {
   expect(ids(filterItems(items, '?'))).toEqual(['wiki:aspice', 'wiki:mcdc'])
+})
+
+it('범위 없이 한 글자(자모 하나 포함)만 치면 위키는 빼고 찾는다(용어가 목록을 덮지 않게)', () => {
+  const list: PaletteItem[] = [
+    { id: 'wiki:regression', group: 'wiki', title: '회귀 시험' },
+    { id: 'prompt:meeting-notes', group: 'prompt', title: '회의록 정리' }
+  ]
+  expect(ids(filterItems(list, '회'))).toEqual(['prompt:meeting-notes'])
+  expect(ids(filterItems(list, 'ㅎ'))).toEqual(['prompt:meeting-notes'])
+  expect(ids(filterItems(list, ' 회 '))).toEqual(['prompt:meeting-notes'])
+  // 두 글자부터, 또는 ?로 위키를 고르면 위키도 찾는다
+  expect(ids(filterItems(list, '회귀'))).toEqual(['wiki:regression'])
+  expect(ids(filterItems(list, '?회'))).toEqual(['wiki:regression'])
+  expect(ids(filterItems(list, '?ㅎ'))).toEqual(['wiki:regression'])
+})
+
+it('목록은 50개까지만 그린다(용어 2,000개에서도 검색 갱신 50ms, 설계 문서 §16)', () => {
+  const many: PaletteItem[] = [
+    { id: 'prompt:p', group: 'prompt', title: '시험 계획' },
+    ...Array.from({ length: 2000 }, (_, i): PaletteItem => ({ id: `wiki:t${i}`, group: 'wiki', title: `시험 용어 ${i}` }))
+  ]
+  expect(MAX_ROWS).toBe(50)
+  expect(filterItems(many, '?')).toHaveLength(MAX_ROWS)
+  expect(filterItems(many, '?ㅅ')).toHaveLength(MAX_ROWS)
+  expect(filterItems(many, '?시험')).toHaveLength(MAX_ROWS)
+  const unscoped = filterItems(many, '시험')
+  expect(unscoped).toHaveLength(MAX_ROWS)
+  // 자르기는 점수 순으로 줄 세운 뒤에 한다(맨 위 후보는 그대로)
+  expect(unscoped[0].id).toBe('prompt:p')
+})
+
+it('태그는 이름처럼 치지 않고 본문과 같은 마지막 단계에서만 찾는다', () => {
+  const list: PaletteItem[] = [
+    { id: 'wiki:fp', group: 'wiki', title: '오탐', tags: ['정적분석'] },
+    { id: 'wiki:sa', group: 'wiki', title: '정적분석 도구' }
+  ]
+  expect(ids(filterItems(list, '정적분석'))).toEqual(['wiki:sa', 'wiki:fp'])
+  expect(ids(filterItems(list, 'ㅈㅈㅂㅅ'))).toEqual(['wiki:sa'])
 })
 
 it('제목·키워드·부제·본문에서 찾고, 점수 높은 순으로', () => {

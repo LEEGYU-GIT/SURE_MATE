@@ -40,6 +40,8 @@ export interface PaletteItem {
   keywords?: string[]
   /** 검색 마지막 단계에서만 보는 본문(위키 설명 등) */
   body?: string
+  /** 위키 태그. 이름(제목·별칭)으로 치지 않고 본문과 같은 마지막 단계에서만 본다 */
+  tags?: string[]
 }
 
 export type MaskingMode = 'off' | 'restore' | 'remove'

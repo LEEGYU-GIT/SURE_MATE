@@ -41,7 +41,7 @@ it('가명 처리 명령 4개를 명령 구역 맨 앞에 넣고, 모드 명령�
   expect(items.find((i) => i.id === 'cmd.unmask')?.keywords).toContain('unmask')
 })
 
-it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키워드는 별칭과 태그, 본문은 설명', () => {
+it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키워드는 별칭만, 본문은 설명, 태그는 따로', () => {
   const glossary: GlossaryEntry[] = [
     {
       id: 'mcdc',
@@ -61,7 +61,8 @@ it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키�
     group: 'wiki',
     title: 'MC/DC',
     subtitle: '조건마다 결정을 독립적으로 바꾸는지 보는 커버리지',
-    keywords: ['MCDC', '커버리지'],
-    body: '조건마다 결정을 독립적으로 바꾸는지 보는 커버리지\n둘째 줄'
+    keywords: ['MCDC'],
+    body: '조건마다 결정을 독립적으로 바꾸는지 보는 커버리지\n둘째 줄',
+    tags: ['커버리지']
   })
 })

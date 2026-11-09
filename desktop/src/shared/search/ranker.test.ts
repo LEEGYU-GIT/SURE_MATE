@@ -56,12 +56,44 @@ it('C++처럼 기호를 빼면 한 글자가 되는 이름은 원형으로 맞�
   expect(scoreOf('c++', 'cpp')).toBe(1000)
 })
 
-it('오타는 앞 단계 결과가 5개 미만일 때만, 자모 4~7개면 거리 1까지', () => {
+it('오타: 검색어 자모 4~7개면 거리 1까지, 8개 이상이면 거리 2까지(300−100×거리)', () => {
+  // '검삭'은 자모 6개(ㄱㅓㅁㅅㅏㄱ): '검색'과 거리 1이면 찾고, 거리 2인 '겸삭'은 찾지 않는다
+  expect(scoreOf('검삭', 'search')).toBe(200)
+  expect(scoreOf('겸삭', 'search')).toBeUndefined()
+  // '정적분삭'·'종적분삭'은 자모 12개: 거리 1은 200, 거리 2는 100, 거리 3인 '동적분석'은 찾지 않는다
   expect(scoreOf('정적분삭', 'static')).toBe(200)
+  expect(scoreOf('종적분삭', 'static')).toBe(100)
   expect(scoreOf('정적분삭', 'dynamic')).toBeUndefined()
 })
 
-it('같은 점수면 제목이 짧은 것이 먼저, 그다음 넣은 순서. 빈 검색어는 결과 없음', () => {
+it('오타는 앞 단계(300점 넘는) 결과가 5개 미만일 때만 본다', () => {
+  const withPrefixHits = (n: number): ReturnType<typeof buildSearchIndex> =>
+    buildSearchIndex([{ id: 'typo', title: '검색', aliases: [] }, ...Array.from({ length: n }, (_, i) => ({ id: `p${i}`, title: `검삭${i}`, aliases: [] }))])
+  expect(rank(withPrefixHits(4), '검삭').find((r) => r.id === 'typo')?.score).toBe(200)
+  expect(rank(withPrefixHits(5), '검삭').find((r) => r.id === 'typo')).toBeUndefined()
+})
+
+it('Windows IME가 받침 없이 친 겹자음(ㄳ·ㅄ)을 한 글자로 보내도 초성으로 찾는다', () => {
+  const i = buildSearchIndex([...docs, { id: 'regression', title: '회귀 시험', aliases: [] }])
+  expect(rank(i, 'ㅈㅈㅄ')[0]?.id).toBe('static')
+  expect(rank(i, 'ㅎㄳㅎ')[0]?.id).toBe('regression')
+  expect(rank(i, 'ㅎㄱㅅㅎ')[0]?.id).toBe('regression')
+})
+
+it('같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저(제목이 더 길어도)', () => {
+  const i = buildSearchIndex([
+    { id: 'alias', title: '오탐', aliases: ['정적분석'] },
+    { id: 'title', title: '정적분석', aliases: [] }
+  ])
+  // 초성 일치(750)와 치는 중인 음절(650)에서 둘 다 같은 점수
+  expect(rank(i, 'ㅈㅈㅂㅅ')).toEqual([
+    { id: 'title', score: 750 },
+    { id: 'alias', score: 750 }
+  ])
+  expect(rank(i, '정ㅈ').map((r) => r.id)).toEqual(['title', 'alias'])
+})
+
+it('같은 점수·같은 자리(제목)면 제목이 짧은 것이 먼저, 그다음 넣은 순서. 빈 검색어는 결과 없음', () => {
   const i = buildSearchIndex([
     { id: 'long', title: '가나다라', aliases: [] },
     { id: 'short', title: '가나', aliases: [] },
