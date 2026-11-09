@@ -78,6 +78,32 @@ it('상세에서 Esc는 목록으로, 상세 없이 고치기와 편집 화면 �
   expect(wikiViewReducer(NO_WIKI_VIEW, { type: 'form', form: entryToForm(term) })).toBe(NO_WIKI_VIEW)
 })
 
+const other: GlossaryEntry = { ...term, id: 'sil-safety', term: 'SIL', aliases: ['Safety Integrity Level'], definition: '안전 기능이 갖춰야 할 신뢰 수준' }
+
+it("위키 카드의 '팔레트에서 열기'(show-entry): 고치는 글이 없으면 그 용어 상세를 연다", () => {
+  expect(wikiViewReducer(NO_WIKI_VIEW, { type: 'show-entry', entry: term })).toEqual({ detail: term, edit: null })
+  expect(wikiViewReducer({ detail: other, edit: null }, { type: 'show-entry', entry: term })).toEqual({ detail: term, edit: null })
+})
+
+it("위키 카드의 '팔레트에서 열기': 저장하지 않은 고치기 글은 버리지 않고 위에 둔 채, 요청한 용어 상세를 그 아래에 연다(Esc로 나오면 그 용어)", () => {
+  let v: WikiView = wikiViewReducer(NO_WIKI_VIEW, { type: 'open', entry: other })
+  v = wikiViewReducer(v, { type: 'edit' })
+  const typed = { ...entryToForm(other), definition: '고치던 설명' }
+  v = wikiViewReducer(v, { type: 'form', form: typed })
+  // 팔레트가 다시 보인 뒤(shown) 카드가 요청한 용어를 연다
+  v = wikiViewReducer(wikiViewReducer(v, { type: 'shown' }), { type: 'show-entry', entry: term })
+  expect(v).toEqual({ detail: term, edit: { entry: other, form: typed } })
+  // 고치기에서 Esc: 요청한 용어 상세로
+  expect(wikiViewReducer(v, { type: 'cancel-edit' })).toEqual({ detail: term, edit: null })
+})
+
+it("위키 카드의 '팔레트에서 열기': 새 용어 추가 글도 그대로 두고 그 아래에 상세를 연다", () => {
+  const typed = { ...entryToForm(undefined, 'HILS 랙'), definition: '가상자동차 시험 장비' }
+  let v = wikiViewReducer(wikiViewReducer(NO_WIKI_VIEW, { type: 'add', term: 'HILS 랙' }), { type: 'form', form: typed })
+  v = wikiViewReducer(wikiViewReducer(v, { type: 'shown' }), { type: 'show-entry', entry: term })
+  expect(v).toEqual({ detail: term, edit: { form: typed } })
+})
+
 it('출처 이름', () => {
   expect(sourceLabel('builtin')).toBe('기본 용어')
   expect(sourceLabel('user')).toBe('내 용어')

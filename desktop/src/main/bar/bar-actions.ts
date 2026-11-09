@@ -104,11 +104,19 @@ export interface FlyoutActionDeps {
   openSettings(): Promise<void>
   /** 펼침 창을 닫는다(reason은 flyout.hide 로그에 남는다) */
   close(reason: string): void
+  /** 위키 카드 [설명 복사]: 설명만 클립보드에 넣는다(팔레트·포커스는 그대로). 용어가 없어졌으면 false */
+  copyWiki(id: string): Promise<boolean>
+  /** 위키 카드 [고정] */
+  pinCard(pinned: boolean): void
+  /** 팔레트를 연다(용어 상세 또는 시작 검색어) */
+  openPalette(p: ShownPayload): void
+  /** 위키 카드 [클립보드 글로 찾기]: 클립보드 글로 다시 찾아 새 카드를 띄운다 */
+  lookupClipboard(): Promise<void>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
 
-/** 기록에 남겨도 되는 동작 값(정해진 모드·모양 이름뿐) */
+/** 기록에 남겨도 되는 동작 값(정해진 모드·모양 이름뿐. 위키 카드의 용어 id·검색어는 남기지 않는다) */
 function actionLog(a: FlyoutAction): Record<string, unknown> {
   if (a.type === 'set-masking') return { type: a.type, mode: a.mode }
   if (a.type === 'set-bar-shape') return { type: a.type, shape: a.shape }
@@ -117,7 +125,8 @@ function actionLog(a: FlyoutAction): Record<string, unknown> {
 
 /**
  * 펼침 창 메뉴 행·단추. 처리했으면 true. 메뉴는 고르면 닫는다(포커스를 받지 않는 창이라 blur로 닫히지 않는다).
- * 위키 카드 단추(wiki-*)는 아직 연결하지 않아 false다.
+ * 위키 카드: [설명 복사]·[고정]은 카드를 그대로 두고(복사 결과는 카드가 1.5초 보여 준다), 팔레트로 넘기는 단추는
+ * 카드를 닫은 뒤 팔레트를 연다. [클립보드 글로 찾기]는 새 카드가 지금 카드를 바꾼다.
  */
 export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction): Promise<boolean> } {
   const handle = async (a: FlyoutAction): Promise<boolean> => {
@@ -143,8 +152,24 @@ export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction)
       case 'close':
         d.close('button')
         return true
-      default:
-        return false
+      case 'wiki-copy':
+        // 결과가 그대로 카드의 표시가 된다(true: 복사했어요, false: 지워진 용어)
+        return d.copyWiki(a.id)
+      case 'wiki-pin':
+        d.pinCard(a.pinned)
+        return true
+      case 'wiki-open':
+        d.close('palette')
+        d.openPalette({ mode: 'wiki', id: a.id })
+        return true
+      case 'wiki-search':
+        // 결과가 없으면 팔레트가 "직접 추가하기"를 보여 준다
+        d.close('palette')
+        d.openPalette({ mode: 'search', query: `?${a.query}` })
+        return true
+      case 'wiki-clipboard':
+        await d.lookupClipboard()
+        return true
     }
   }
 

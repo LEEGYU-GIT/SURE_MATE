@@ -126,6 +126,26 @@ it('설명 복사 안내: 상세 화면의 Esc는 목록으로 돌아가므로 E
   expect(f.calls.notes[0]).toContain('Esc를 두 번 눌러 팔레트를 닫은 뒤')
 })
 
+it('위키 카드의 설명 복사는 설명만 쓰고 팔레트·포커스·키는 건드리지 않는다(숨은 팔레트를 닫으면 옛 창으로 포커스가 갈 수 있다)', async () => {
+  const f = fake()
+  const waited = vi.fn(async () => true)
+  f.deps.waitKeysReleased = waited
+  expect(await createGlossaryRuntime(f.deps).copyForCard('mcdc')).toBe(true)
+  expect(f.calls.writes).toEqual([entry.definition])
+  expect(f.calls.hides).toEqual([])
+  expect(waited).not.toHaveBeenCalled()
+  expect(f.calls.notes).toEqual([])
+  expect(f.calls.logs).toEqual([{ event: 'wiki.card.copy', data: { id: 'mcdc', length: entry.definition.length } }])
+})
+
+it('위키 카드의 설명 복사: 그사이 용어가 없어졌으면 쓰지 않고 false(카드가 그렇다고 알린다), 로그에는 id만', async () => {
+  const f = fake()
+  expect(await createGlossaryRuntime(f.deps).copyForCard('지운-용어')).toBe(false)
+  expect(f.calls.writes).toEqual([])
+  expect(f.calls.hides).toEqual([])
+  expect(f.calls.logs).toEqual([{ event: 'wiki.card.copy', data: { id: '지운-용어', missing: true } }])
+})
+
 it('링크는 그 항목의 http/https 링크만 번호로 연다', async () => {
   const f = fake()
   const r = createGlossaryRuntime(f.deps)

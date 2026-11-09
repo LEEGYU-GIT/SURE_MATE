@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
-import { flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
+import builtinGlossary from '../../../../resources/glossary.json'
+import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
 import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect, itemOffsets } from '../../../shared/bar/bar-layout'
-import type { FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
+import type { BarEdge } from '../../../shared/bar/bar-settings'
+import type { FlyoutContent, FlyoutMessage, FlyoutPad, WikiCardView } from '../../../shared/flyout/flyout-content'
+import { parseGlossaryPack } from '../../../shared/glossary/pack'
+import type { GlossaryEntry } from '../../../shared/glossary/types'
+import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/glossary/wiki-lookup'
+import { CAPTURE_NOTES } from '../../../shared/labels'
 import type { MaskingMode, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
@@ -124,19 +130,28 @@ function pair(id: string, title: string, o: BarOptions, backdrop?: React.ReactNo
   }
 }
 
-/** 펼침 창의 기준: 바 항목(이름표·메뉴), 또는 바 창 안에서 오른쪽 클릭한 세로 위치(바 메뉴) */
-type FlyoutAnchor = { itemId: string } | { clickY: number }
+/**
+ * 펼침 창의 기준: 바 항목(이름표·메뉴·위키 카드는 용어 사전 항목), 바 창 안에서 오른쪽 클릭한 세로 위치(바 메뉴),
+ * 또는 바를 끈 화면의 바 쪽 가장자리(위키 카드)
+ */
+type FlyoutAnchor = { itemId: string } | { clickY: number } | { barOff: BarEdge }
 type Placed = { window: Rect; pad: FlyoutPad }
 
 const ZERO_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 }
 const samePad = (a: FlyoutPad, b: FlyoutPad): boolean => a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left
+const sameRect = (a: Rect, b: Rect): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 
 /** 바 창 사각형(main의 barRect와 같은 자리) */
 const barWindowRect = (s: BarViewState): Rect =>
   barRect({ workArea: WORK_AREA, shape: s.shape, edge: s.edge, size: barSize(s.items, s.shape), ratio: DEFAULT_BAR_RATIO })
 
-/** 펼침 창 배치: main과 같은 flyoutCardRect(바 안쪽 8 DIP)·flyoutWindowRect(그림자 여백, 작업 영역 안) */
-function placeFlyout(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent, size: { width: number; height: number }): Placed {
+/**
+ * 펼침 창 배치: main과 같은 flyoutCardRect(바 안쪽 8 DIP)·edgeCardRect(바 끔: 가장자리 위쪽)·
+ * flyoutWindowRect(그림자 여백, 작업 영역 안)
+ */
+function placeFlyout(bar: BarViewState | null, anchor: FlyoutAnchor, content: FlyoutContent, size: { width: number; height: number }): Placed {
+  if ('barOff' in anchor) return flyoutWindowRect(edgeCardRect({ size, workArea: WORK_AREA, edge: anchor.barOff }), anchor.barOff, WORK_AREA)
+  if (!bar) throw new Error('바 없이 바 기준으로 놓을 수 없음')
   const r = barWindowRect(bar)
   let at: Rect
   if ('itemId' in anchor) {
@@ -153,13 +168,19 @@ function placeFlyout(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutCon
 /**
  * 미리 보기용 펼침 창 컨트롤러. main의 표시 순서를 따른다:
  * 내용 보냄 → 화면이 그린 크기를 알림(ready) → 배치(여백이 줄면 같은 seq로 여백만 다시 보냄) → 창을 그 자리에 → shown.
+ * main처럼 지금 seq로 다시 알린 크기(카드 안에서 바뀐 크기)에도 창을 다시 놓고, 카드의 [설명 복사]·[고정]에 답한다.
  */
-function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent) {
-  let message: FlyoutMessage = { seq: 1, content, pad: flyoutWindowRect(ZERO_RECT, bar.edge).pad, edge: bar.edge }
+function createFlyoutDriver(bar: BarViewState | null, anchor: FlyoutAnchor, content: FlyoutContent) {
+  const edge: BarEdge = 'barOff' in anchor ? anchor.barOff : (bar?.edge ?? 'right')
+  let message: FlyoutMessage = { seq: 1, content, pad: flyoutWindowRect(ZERO_RECT, edge).pad, edge }
   let placed: Placed | null = null
   const contentCbs = new Set<(m: FlyoutMessage) => void>()
   const shownCbs = new Set<(seq: number) => void>()
   const placedCbs = new Set<(p: Placed) => void>()
+  const send = (m: FlyoutMessage): void => {
+    message = m
+    for (const cb of contentCbs) cb(m)
+  }
   const host: FakeFlyoutHost = {
     onContent(cb) {
       contentCbs.add(cb)
@@ -173,14 +194,21 @@ function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: Fl
       return () => shownCbs.delete(cb)
     },
     ready(seq, width, height) {
-      if (seq !== message.seq || placed) return
-      const p = placeFlyout(bar, anchor, content, { width, height })
+      if (seq !== message.seq) return
+      const p = placeFlyout(bar, anchor, message.content, { width, height })
+      if (placed && sameRect(placed.window, p.window) && samePad(placed.pad, p.pad)) return
       placed = p
-      if (!samePad(p.pad, message.pad)) {
-        message = { ...message, pad: p.pad }
-        for (const cb of contentCbs) cb(message)
-      }
+      if (!samePad(p.pad, message.pad)) send({ ...message, pad: p.pad })
       for (const cb of placedCbs) cb(p)
+    },
+    async action(a) {
+      const c = message.content
+      if (c.kind !== 'wiki-card') return false
+      if (a.type === 'wiki-copy') return true
+      if (a.type !== 'wiki-pin') return false
+      // main의 pin처럼 고정만 바꾼 새 seq(카드는 열린 채 그대로)
+      send({ ...message, seq: message.seq + 1, content: { ...c, pinned: a.pinned } })
+      return true
     }
   }
   return {
@@ -196,20 +224,23 @@ function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: Fl
   }
 }
 
-/** 펼침 창 장면: 바와 그 옆 펼침 창(투명 창 사각형 밖은 잘린다 — 그림자가 창 안에 들어오는지 확인) */
-function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<typeof createFlyoutDriver> }): React.JSX.Element {
+/**
+ * 펼침 창 장면: 바와 그 옆 펼침 창(투명 창 사각형 밖은 잘린다 — 그림자가 창 안에 들어오는지 확인).
+ * bar가 null이면 바를 끈 화면(edge는 카드를 띄울 가장자리)
+ */
+function FlyoutStage({ bar, edge, driver }: { bar: BarViewState | null; edge: BarEdge; driver: ReturnType<typeof createFlyoutDriver> }): React.JSX.Element {
   const [placed, setPlaced] = useState<Placed | null>(null)
   useEffect(() => driver.onPlaced(setPlaced), [driver])
-  // 창을 자리에 놓은 뒤 shown(main의 showInactive → shown 순서)
+  // 창을 자리에 놓은 뒤 shown(main의 showInactive → shown 순서). 다시 놓을 때의 shown은 화면이 무시한다
   useEffect(() => {
     if (placed) driver.shown()
   }, [placed, driver])
   const win = placed?.window ?? ZERO_RECT
   return (
-    <Desktop edge={bar.edge}>
+    <Desktop edge={edge}>
       <Stage>
-        <AppWindow side={bar.edge === 'right' ? 'left' : 'right'} />
-        <BarWindow state={bar} />
+        <AppWindow side={edge === 'right' ? 'left' : 'right'} />
+        {bar ? <BarWindow state={bar} /> : null}
         <div
           data-flyout-window=""
           style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height, overflow: 'hidden', visibility: placed ? 'visible' : 'hidden' }}
@@ -221,10 +252,53 @@ function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<ty
   )
 }
 
-function flyoutScene(id: string, title: string, bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
+function flyoutScene(id: string, title: string, bar: BarViewState | null, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
   const driver = createFlyoutDriver(bar, anchor, content)
-  return { id, title, fixtures: { flyout: driver.host }, render: () => <FlyoutStage bar={bar} driver={driver} /> }
+  const edge: BarEdge = 'barOff' in anchor ? anchor.barOff : (bar?.edge ?? 'right')
+  return { id, title, fixtures: { flyout: driver.host }, render: () => <FlyoutStage bar={bar} edge={edge} driver={driver} /> }
 }
+
+// ── 위키 카드 장면: 기본 용어 팩(resources/glossary.json)을 앱과 같은 찾기 규칙(wikiCardView)으로 ──────────────
+
+const PACK = parseGlossaryPack(builtinGlossary, 'builtin').entries
+const PACK_INDEX = buildGlossaryIndex(PACK)
+const packView = (text: string): WikiCardView => wikiCardView(text, 'selection', PACK, PACK_INDEX)
+const packEntry = (id: string): GlossaryEntry => {
+  const e = PACK.find((x) => x.id === id)
+  if (!e) throw new Error(`기본 팩에 없는 용어: ${id}`)
+  return e
+}
+const card = (view: WikiCardView, pinned = false): FlyoutContent => ({ kind: 'wiki-card', view, pinned, width: 360 })
+
+/** 회의 메모 한 줄(가상): 정적분석·MC/DC·커버리지·SIL(두 뜻)·ASIL·MISRA C·위반 소명 */
+const MEETING_NOTE = '정적분석 결과에서 MC/DC 커버리지가 부족했고 SIL 2 요구사항과 ASIL B 기준, MISRA C 위반 소명이 필요합니다'
+
+/** 사용자가 추가한 가상의 팀 용어: 설명이 길어 카드 안에서 스크롤된다(최대 높이 560) */
+const RACK: GlossaryEntry = {
+  id: 'u-hil-rack',
+  term: 'HIL 랙',
+  aliases: ['시험 랙', 'XY방산 HIL 벤치'],
+  definition: [
+    '가상자동차 제어기를 실제 차량 대신 실시간 시뮬레이터에 연결해 시험하는 장비 묶음이에요. 랙 하나에 시뮬레이터, 신호 변환 보드, 전원 공급기, 고장 주입 장치가 들어 있어요.',
+    '',
+    '시험 전에 할 일',
+    '1. 시험 계획서의 랙 번호와 소프트웨어 버전이 맞는지 확인해요.',
+    '2. 고장 주입 채널이 모두 꺼져 있는지 보고, 전원은 시험 담당자가 켜요.',
+    '3. 측정 로그는 공용 폴더의 날짜 폴더에 저장해요.',
+    '',
+    '시험이 끝나면 고장 주입 채널을 끄고 랙 예약표에 사용 시간과 특이 사항을 적어요. 다른 팀이 바로 이어 쓰는 일이 많으니 케이블 연결을 시험 전 상태로 되돌려 주세요.',
+    '',
+    'XY방산 과제의 랙은 보안 구역에 있어 출입 기록을 남겨야 하고, 외부 저장 장치를 쓸 수 없어요. 측정 로그를 밖으로 옮길 때는 보안 담당자에게 반출 신청을 해요.'
+  ].join('\n'),
+  example: '랙 3번은 매주 화요일 오전에 XY방산 통합 시험으로 예약돼 있어요.',
+  links: [],
+  tags: ['시험 장비'],
+  source: 'user',
+  updatedAt: '2026-11-09T00:00:00.000Z',
+  version: 2
+}
+const RACK_VIEW: WikiCardView = { kind: 'best', source: 'selection', best: toCardEntry(RACK), others: [toCardEntry(packEntry('hils')), toCardEntry(packEntry('sil-software'))] }
+
 
 const EDGE_RIGHT = barState({ paletteHotkey: 'Ctrl+Alt+Space' })
 const EDGE_RIGHT_OFF = barState({ masking: 'off', paletteHotkey: 'Ctrl+Alt+Space' })
@@ -233,6 +307,29 @@ const labelOf = (s: BarViewState, itemId: string): string => {
   const item = s.items.find((i) => i.id === itemId)
   return item && 'label' in item ? item.label : itemId
 }
+
+const CARD_SCENES: Scene[] = [
+  flyoutScene('card-best', '위키 카드: 가장 맞는 항목(MC/DC, 사용 예)과 다른 뜻·비슷한 용어 2개', EDGE_RIGHT, { itemId: 'glossary' }, card(packView('MC/DC'))),
+  flyoutScene('card-found', '위키 카드: 긴 글에 나온 용어 목록(처음 나온 순서, SIL은 두 뜻)', EDGE_RIGHT, { itemId: 'glossary' }, card(packView(MEETING_NOTE))),
+  flyoutScene('card-none', '위키 카드: 짧은 글에 맞는 용어 없음, 팔레트에서 찾기', EDGE_RIGHT, { itemId: 'glossary' }, card(packView('XY방산 시험 규격'))),
+  flyoutScene(
+    'card-note',
+    '위키 카드: 터미널이라 가져오지 않음, 클립보드 글로 찾기',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card({ kind: 'note', message: CAPTURE_NOTES.terminal, canUseClipboard: true })
+  ),
+  flyoutScene('card-pinned', '위키 카드: 고정, 내 용어의 긴 설명이 카드 안에서 스크롤(최대 높이 560)', EDGE_RIGHT, { itemId: 'glossary' }, card(RACK_VIEW, true)),
+  flyoutScene('card-edge', '위키 카드: 바 끔, 화면 가장자리 위쪽(같은 이름의 두 뜻 SIL)', null, { barOff: 'right' }, card(packView('SIL'))),
+  flyoutScene(
+    'card-note-empty',
+    '위키 카드: 선택한 글도 클립보드 글도 없음(다음에 할 일 안내)',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card({ kind: 'note', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: false })
+  ),
+  flyoutScene('card-none-long', '위키 카드: 긴 글에 나온 용어 없음', EDGE_RIGHT, { itemId: 'glossary' }, card(packView('오늘 오후에 다음 주 일정과 담당자를 정했습니다')))
+]
 
 export const SCENES: Scene[] = [
   {
@@ -277,5 +374,6 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-masking-off', '펼침 창: 가명 처리 기본값 메뉴(끔 — 글과 주황으로)', EDGE_RIGHT_OFF, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'off' }),
   flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
-  flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' })
+  flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
+  ...CARD_SCENES
 ]

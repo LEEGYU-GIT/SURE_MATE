@@ -156,6 +156,64 @@ export const PlusIcon = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+/** 위키 카드 고정 */
+export const PinIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M12 17v5" />
+    <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+  </Svg>
+)
+
+/** 닫기 */
+export const XIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </Svg>
+)
+
+/** 설명 복사 */
+export const CopyIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </Svg>
+)
+
+/** ‹ 목록 */
+export const ChevronLeftIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="m15 18-6-6 6-6" />
+  </Svg>
+)
+
+/** 목록 행: 누르면 상세 */
+export const ChevronRightIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="m9 18 6-6-6-6" />
+  </Svg>
+)
+
+/** 클립보드 글로 찾기 */
+export const ClipboardPasteIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M11 14h10" />
+    <path d="M16 4h2a2 2 0 0 1 2 2v1.344" />
+    <path d="m17 18 4-4-4-4" />
+    <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
+  </Svg>
+)
+
+/** 팔레트에서 열기(더 큰 창에서 보기) */
+export const OpenOutIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" />
+    <path d="m21 3-9 9" />
+    <path d="M15 3h6v6" />
+  </Svg>
+)
+
 /**
  * 이름 첫 글자 칸(Lucide에 맞는 아이콘이 없는 고정 프롬프트). 둥근 네모 테두리는 다른 아이콘과 같은 선 굵기로 그리고,
  * 글자는 SVG가 아니라 글자 크기 토큰(letterClassName)으로 그려 작은 아이콘에서도 12px 아래로 줄지 않게 한다.

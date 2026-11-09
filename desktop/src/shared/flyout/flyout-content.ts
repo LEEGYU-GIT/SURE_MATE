@@ -2,6 +2,12 @@ import type { GlossaryEntry } from '../glossary/types'
 import type { BarEdge, BarShape } from '../bar/bar-settings'
 import type { MaskingMode } from '../types'
 
+/**
+ * 펼침 창 내용(카드)의 최대 높이(DIP). main은 창을 이보다 크게 놓지 않고(flyout-placement.ts),
+ * 위키 카드는 이 높이를 넘는 설명을 카드 안에서 스크롤한다(renderer/src/flyout/WikiCard.tsx).
+ */
+export const FLYOUT_MAX_HEIGHT = 560
+
 /** 위키 카드에 그리는 용어 한 건(링크·태그 등 카드에 쓰지 않는 값은 뺀다) */
 export interface WikiCardEntry {
   id: string

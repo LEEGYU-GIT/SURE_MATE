@@ -27,6 +27,12 @@ export interface GlossaryRuntime {
   get(id: string): Promise<GlossaryEntry | null>
   /** 설명을 클립보드에 넣고, 누른 Enter를 뗀 뒤 팔레트를 닫아 원래 창으로(시간 안에 안 떼면 열어 둔 채 알림) */
   copy(id: string): Promise<boolean>
+  /**
+   * 위키 카드의 [설명 복사]: 설명만 클립보드에 넣는다. 팔레트를 숨기거나 창을 앞으로 가져오거나 키를 기다리지 않는다
+   * (카드는 포커스를 받지 않는 창이라 쓰던 창이 그대로 앞에 있다. 숨은 팔레트를 닫으면 옛 창이 앞으로 올 수 있다).
+   * 그사이 용어가 없어졌으면 false(카드가 그렇다고 알린다)
+   */
+  copyForCard(id: string): Promise<boolean>
   /** 그 항목의 index번째 링크(http/https만)를 연다 */
   openLink(id: string, index: number): Promise<boolean>
   /**
@@ -57,6 +63,16 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
         d.notify('설명을 복사했어요. Enter를 누르고 있어 팔레트를 닫지 않았어요. Esc를 두 번 눌러 팔레트를 닫은 뒤 붙여넣을 곳에서 Ctrl+V를 누르세요.')
         d.log('wiki.copy.keysHeld', { id })
       }
+      return true
+    },
+    async copyForCard(id) {
+      const entry = await find(id)
+      if (!entry) {
+        d.log('wiki.card.copy', { id, missing: true })
+        return false
+      }
+      await d.writeClipboard(entry.definition)
+      d.log('wiki.card.copy', { id, length: entry.definition.length })
       return true
     },
     async save(draft, o) {

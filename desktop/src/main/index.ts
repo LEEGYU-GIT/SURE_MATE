@@ -7,17 +7,19 @@ import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
+import type { WikiCardView } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
 import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
-import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
+import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
 import { errorText } from './error-text'
 import { fileErrorNotice, type FileErrorReport } from './file-error-notice'
-import { createGlossaryRuntime } from './glossary/glossary-runtime'
+import { createGlossaryRuntime, type GlossaryRuntime } from './glossary/glossary-runtime'
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
+import { createWikiCard, type WikiCard } from './glossary/wiki-card'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -26,7 +28,7 @@ import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
-import { writeClipboardText } from './native/selection'
+import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
@@ -69,6 +71,10 @@ let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** Sure-Mate 바와 펼침 창. 시작하지 못했거나 앱을 끝낸 뒤에는 null(팔레트·트레이는 그대로 동작) */
 let barRuntime: BarRuntime | null = null
+/** 팔레트 위키와 위키 카드의 설명 복사(앱이 준비되면 만든다) */
+let glossaryRuntime: GlossaryRuntime | null = null
+/** 선택 텍스트 위키 카드(조회 단축키, 카드의 [클립보드 글로 찾기]) */
+let wikiCard: WikiCard | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
@@ -143,9 +149,25 @@ function startBar(): void {
     openSettings,
     setMaskingMode,
     saveBarShape,
+    copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
+    lookupClipboard: () => (wikiCard ? wikiCard.lookupClipboard() : Promise.resolve()),
     notify,
     log
   })
+}
+
+/**
+ * 위키 카드를 바 옆 펼침 창에 띄운다(바를 꺼 두었으면 커서가 있는 모니터의 바 쪽 가장자리 위쪽, 설계 §9).
+ * 바와 펼침 창을 시작하지 못했으면 팔레트를 위키 범위(?)로 연다.
+ */
+function showWikiCard(view: WikiCardView): void {
+  if (barRuntime) barRuntime.flyout.showCard(view, { width: settings.bar.wikiCardWidth, autoHideMs: settings.bar.wikiCardMs })
+  else showPalette({ mode: 'search', query: '?' })
+}
+
+/** 조회 단축키: 선택한 글로 위키 카드를 띄운다. 가져오기 수치·카드 종류는 로그 wiki.card 한 줄 */
+function lookupSelection(): void {
+  wikiCard?.lookupSelection().catch((e) => log('wiki.card.error', { error: errorText(e) }))
 }
 
 async function runItem(id: string): Promise<void> {
@@ -266,9 +288,9 @@ async function startShell(): Promise<void> {
     warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
   }
 
-  // 조회 단축키: M1에서는 선택 텍스트 가져오기 검증용(M4에서 사이드 패널로 바꾼다)
+  // 조회 단축키(기본 Ctrl+Alt+W): 팔레트가 보이지 않을 때 선택한 글로 위키 카드를 띄운다(설계 §9)
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
-    if (!isPaletteVisible()) showCaptureResult().catch((e) => log('dev.capture.error', { error: errorText(e) }))
+    if (!isPaletteVisible()) lookupSelection()
   })
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
@@ -319,6 +341,15 @@ if (!app.requestSingleInstanceLock()) {
       },
       newId: () => randomUUID(),
       now: () => new Date().toISOString(),
+      log
+    })
+    glossaryRuntime = wiki
+    // 선택 텍스트 위키 카드: 가져오기·클립보드 읽기는 selection.ts의 한 줄(clipboard-gate)을 거친다
+    wikiCard = createWikiCard({
+      capture: captureSelection,
+      readClipboard: readClipboardText,
+      entries: async () => (await glossaryCache.get()).entries,
+      show: showWikiCard,
       log
     })
     // 용어 팩 내보내기·가져오기(설계 문서 §9). 대화상자는 팔레트를 숨긴 뒤 부모 창 없이 띄운다

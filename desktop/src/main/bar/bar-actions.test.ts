@@ -128,6 +128,13 @@ function makeFlyout() {
     snoozeBar: vi.fn(() => void calls.push('snoozeBar')),
     openSettings: vi.fn(async () => void calls.push('openSettings')),
     close: vi.fn((reason: string) => void calls.push(`close ${reason}`)),
+    copyWiki: vi.fn(async (id: string) => {
+      calls.push(`copyWiki ${id}`)
+      return id !== 'gone'
+    }),
+    pinCard: vi.fn((pinned: boolean) => void calls.push(`pinCard ${pinned}`)),
+    openPalette: vi.fn((p: unknown) => void calls.push(`openPalette ${JSON.stringify(p)}`)),
+    lookupClipboard: vi.fn(async () => void calls.push('lookupClipboard')),
     notify,
     log
   }
@@ -156,18 +163,68 @@ describe('createFlyoutActions: 펼침 창 메뉴 행', () => {
     expect(t.calls).toEqual(['close select', 'snoozeBar', 'close select', 'openSettings', 'close button'])
   })
 
-  it('위키 카드 단추는 아직 연결하지 않아 false(아무것도 하지 않음, 검색어는 기록하지 않음)', async () => {
+  it('위키 카드 [설명 복사]: 설명만 복사하고 카드는 그대로 둔다(결과 true). 용어가 없어졌으면 false(카드가 알린다)', async () => {
+    const t = makeFlyout()
+    expect(await t.actions.run({ type: 'wiki-copy', id: 'mcdc' })).toBe(true)
+    expect(await t.actions.run({ type: 'wiki-copy', id: 'gone' })).toBe(false)
+    expect(t.calls).toEqual(['copyWiki mcdc', 'copyWiki gone'])
+    expect(t.log).toHaveBeenCalledWith('flyout.action', { type: 'wiki-copy' })
+    expect(t.notify).not.toHaveBeenCalled()
+  })
+
+  it('위키 카드 [고정]: 펼침 창 고정을 바꾸고 카드는 그대로', async () => {
+    const t = makeFlyout()
+    expect(await t.actions.run({ type: 'wiki-pin', pinned: true })).toBe(true)
+    expect(await t.actions.run({ type: 'wiki-pin', pinned: false })).toBe(true)
+    expect(t.calls).toEqual(['pinCard true', 'pinCard false'])
+  })
+
+  it('위키 카드 [팔레트에서 열기]: 카드를 닫고 팔레트가 그 용어 상세를 연다', async () => {
+    const t = makeFlyout()
+    expect(await t.actions.run({ type: 'wiki-open', id: 'mcdc' })).toBe(true)
+    expect(t.calls).toEqual(['close palette', `openPalette ${JSON.stringify({ mode: 'wiki', id: 'mcdc' })}`])
+  })
+
+  it('위키 카드 [팔레트에서 찾기]: 카드를 닫고 ?검색어로 팔레트를 연다(검색어가 없으면 ?만)', async () => {
+    const t = makeFlyout()
+    expect(await t.actions.run({ type: 'wiki-search', query: 'XY방산 시험' })).toBe(true)
+    expect(await t.actions.run({ type: 'wiki-search', query: '' })).toBe(true)
+    expect(t.calls).toEqual([
+      'close palette',
+      `openPalette ${JSON.stringify({ mode: 'search', query: '?XY방산 시험' })}`,
+      'close palette',
+      `openPalette ${JSON.stringify({ mode: 'search', query: '?' })}`
+    ])
+    // 검색어(선택한 글일 수 있다)는 기록하지 않는다
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain('XY방산')
+  })
+
+  it('위키 카드 [클립보드 글로 찾기]: 클립보드 글로 다시 찾는다(새 카드가 이 카드를 바꾼다)', async () => {
+    const t = makeFlyout()
+    expect(await t.actions.run({ type: 'wiki-clipboard' })).toBe(true)
+    expect(t.calls).toEqual(['lookupClipboard'])
+  })
+
+  it('위키 카드 단추가 실패하면 false, 카드를 닫고 오류 코드만 기록하고 알린다', async () => {
+    const t = makeFlyout()
+    t.d.copyWiki.mockRejectedValueOnce(Object.assign(new Error('clipboard busy: 가상자동차'), { code: 'EBUSY' }))
+    expect(await t.actions.run({ type: 'wiki-copy', id: 'mcdc' })).toBe(false)
+    expect(t.log).toHaveBeenCalledWith('flyout.action.failed', { type: 'wiki-copy', error: 'EBUSY' })
+    expect(t.calls.at(-1)).toBe('close error')
+    expect(t.notify).toHaveBeenCalledWith(BAR_ACTION_FAILED)
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain('가상자동차')
+  })
+
+  it('모든 위키 카드 동작이 처리된다(빠진 것이 없다)', async () => {
     const t = makeFlyout()
     const wiki: FlyoutAction[] = [
       { type: 'wiki-copy', id: 'mcdc' },
       { type: 'wiki-pin', pinned: true },
       { type: 'wiki-open', id: 'mcdc' },
-      { type: 'wiki-search', query: 'XY방산 시험' },
+      { type: 'wiki-search', query: 'mcdc' },
       { type: 'wiki-clipboard' }
     ]
-    for (const a of wiki) expect(await t.actions.run(a), a.type).toBe(false)
-    expect(t.calls).toEqual([])
-    expect(JSON.stringify(t.log.mock.calls)).not.toContain('XY방산')
+    for (const a of wiki) expect(await t.actions.run(a), a.type).toBe(true)
   })
 
   it('처리하다 실패하면 false, 메뉴를 닫고 오류 코드만 기록하고 알린다', async () => {

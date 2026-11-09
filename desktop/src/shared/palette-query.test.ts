@@ -45,3 +45,7 @@ it('shownView: 팔레트를 보일 때 시작 검색어(바의 용어 사전 단
   ).toEqual({ query: '', wikiId: null })
   expect(shownView({ mode: 'dev-output', title: '창 목록', text: '' })).toEqual({ query: '', wikiId: null })
 })
+
+it("shownView: 위키 카드의 '팔레트에서 열기'는 빈 검색어로 그 용어 상세를 연다", () => {
+  expect(shownView({ mode: 'wiki', id: 'mcdc' })).toEqual({ query: '', wikiId: 'mcdc' })
+})

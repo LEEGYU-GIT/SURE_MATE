@@ -33,6 +33,10 @@ export interface BarRuntimeOptions {
   setMaskingMode(mode: MaskingMode): Promise<void>
   /** 바 모양 저장 → 트레이·바 갱신 */
   saveBarShape(shape: BarShape): Promise<void>
+  /** 위키 카드 [설명 복사]: 설명만 클립보드에(GlossaryRuntime.copyForCard). 용어가 없어졌으면 false */
+  copyWiki(id: string): Promise<boolean>
+  /** 위키 카드 [클립보드 글로 찾기](WikiCard.lookupClipboard) */
+  lookupClipboard(): Promise<void>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
@@ -144,6 +148,10 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       snoozeBar: () => bar.snooze(),
       openSettings: o.openSettings,
       close: (reason) => flyout.close(reason),
+      copyWiki: o.copyWiki,
+      pinCard: (pinned) => flyout.pin(pinned),
+      openPalette: o.showPalette,
+      lookupClipboard: o.lookupClipboard,
       notify: o.notify,
       log: o.log
     })

@@ -114,6 +114,14 @@ export async function pasteText(hwnd: string, text: string): Promise<PasteResult
 }
 
 /**
+ * 클립보드 글을 읽는다. 앞 가져오기·붙여넣기와 그 뒷정리(늦은 복사 지켜보기·되돌리기)가 끝난 뒤에 읽어,
+ * 가져오기가 잠깐 넣어 둔 선택 글을 원래 클립보드 글로 착각하지 않는다(위키 카드의 [클립보드 글로 찾기]).
+ */
+export function readClipboardText(): Promise<string> {
+  return gate.queue(() => clipboard.readText())
+}
+
+/**
  * 우리 글(프롬프트·되돌린 원문)을 클립보드에 쓴다. 가져오기와 늦은 복사 지켜보기가 끝날 때까지 기다렸다가 쓴다.
  * excludeFromHistory면 Win+V 기록·클라우드 동기화에서 빠지도록 표시를 붙이고, 안 되면 보통으로라도 쓴다.
  * excluded는 표시를 붙여 썼는지, error는 표시를 붙이지 못한 까닭.

@@ -1,12 +1,14 @@
 import type { BarEdge } from '../../shared/bar/bar-settings'
-import type { FlyoutPad } from '../../shared/flyout/flyout-content'
+import { FLYOUT_MAX_HEIGHT, type FlyoutPad } from '../../shared/flyout/flyout-content'
 import type { Rect } from '../../shared/types'
+
+// 최대 높이는 위키 카드 화면도 쓰므로 shared에 둔다(카드가 그 높이에서 스크롤한다)
+export { FLYOUT_MAX_HEIGHT }
 
 export const FLYOUT_GAP = 8
 export const FLYOUT_SCREEN_MARGIN = 8
 export const FLYOUT_SHADOW_PAD = { top: 16, side: 24, bottom: 32 }
 export const EDGE_CARD_MARGIN = 12
-export const FLYOUT_MAX_HEIGHT = 560
 
 type Size = { width: number; height: number }
 

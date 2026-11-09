@@ -45,6 +45,8 @@ export function Palette(): React.JSX.Element {
   const items = useMemo(() => withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), [allItems, deferredQuery, index])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
+  // 팔레트를 보일 때마다 늘린다. 늦게 온 용어 상세 응답이 그 뒤에 다시 보인 팔레트를 바꾸지 않게
+  const shownSeq = useRef(0)
 
   // 선택은 직접 관리한다(cmdk 자동 선택은 지연 렌더링된 목록과 어긋남)
   useEffect(() => {
@@ -59,8 +61,10 @@ export function Palette(): React.JSX.Element {
   useEffect(
     () =>
       window.sureMate.onShown((payload) => {
+        const view = shownView(payload)
+        const seq = ++shownSeq.current
         // main이 준 검색어로 시작한다(바의 용어 사전 단추는 '?')
-        setQuery(shownView(payload).query)
+        setQuery(view.query)
         setSelected('')
         void window.sureMate.listItems().then(setAllItems)
         setShownCount((n) => n + 1)
@@ -68,6 +72,12 @@ export function Palette(): React.JSX.Element {
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
         // 고치던 용어가 있으면 그 화면으로 돌아가고(커서는 WikiEdit가 마지막 칸에 둔다), 아니면 목록으로
         dispatchWiki({ type: 'shown' })
+        // 위키 카드의 [팔레트에서 열기]: 그 용어 상세를 연다. 고치던 글이 있으면 그 글은 위에 두고 상세만 그 아래에
+        if (view.wikiId) {
+          void window.sureMate.getWikiEntry(view.wikiId).then((entry) => {
+            if (entry && seq === shownSeq.current) dispatchWiki({ type: 'show-entry', entry })
+          })
+        }
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
     []

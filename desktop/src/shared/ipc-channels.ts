@@ -91,11 +91,15 @@ export const IPC = {
   flyoutAction: 'flyout:action'
 } as const
 
-/** 팔레트를 보여 줄 때 renderer에 넘기는 값. search의 query는 시작 검색어(없으면 빈 칸, 바의 용어 사전 단추는 '?') */
+/**
+ * 팔레트를 보여 줄 때 renderer에 넘기는 값. search의 query는 시작 검색어(없으면 빈 칸, 바의 용어 사전 단추는 '?').
+ * wiki는 위키 카드의 [팔레트에서 열기]: 빈 검색어로 그 용어 상세를 연다
+ */
 export type ShownPayload =
   | { mode: 'search'; query?: string }
   | { mode: 'dev-output'; title: string; text: string }
   | { mode: 'confirm'; draft: PromptDraft }
+  | { mode: 'wiki'; id: string }
 
 /** paletteHotkey: 실제로 등록된 팔레트 단축키. 하나도 못 잡았으면 null. aiTargetName: 기본 AI 대상 이름 */
 export type AppStatus = { paletteHotkey: string | null; maskingMode: MaskingMode; aiTargetName: string }
