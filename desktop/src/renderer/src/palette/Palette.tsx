@@ -45,6 +45,8 @@ export function Palette(): React.JSX.Element {
   const items = useMemo(() => withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), [allItems, deferredQuery, index])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
+  // 보일 때마다 늘린다. 위키 카드가 연 용어를 늦게 받아도 그 사이 다시 보였으면 덮지 않는다
+  const shownSeq = useRef(0)
 
   // 선택은 직접 관리한다(cmdk 자동 선택은 지연 렌더링된 목록과 어긋남)
   useEffect(() => {
@@ -59,7 +61,9 @@ export function Palette(): React.JSX.Element {
   useEffect(
     () =>
       window.sureMate.onShown((payload) => {
-        setQuery(shownView(payload).query)
+        const view = shownView(payload)
+        const seq = ++shownSeq.current
+        setQuery(view.query)
         setSelected('')
         void window.sureMate.listItems().then(setAllItems)
         setShownCount((n) => n + 1)
@@ -67,6 +71,12 @@ export function Palette(): React.JSX.Element {
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
         // 고치던 용어가 있으면 그 화면으로 돌아가고(커서는 WikiEdit가 마지막 칸에 둔다), 아니면 목록으로
         dispatchWiki({ type: 'shown' })
+        // 위키 카드의 '팔레트에서 열기': 그 용어 상세(고치던 글이 있으면 그 화면은 위에 남는다). 용어가 지워졌으면 목록 그대로
+        if (view.wikiId) {
+          void window.sureMate.getWikiEntry(view.wikiId).then((entry) => {
+            if (entry && shownSeq.current === seq) dispatchWiki({ type: 'reveal', entry })
+          })
+        }
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
     []

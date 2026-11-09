@@ -15,6 +15,11 @@ export interface FlyoutViewState {
   instant: boolean
   /** 마지막으로 이름표가 보인 시각(ms) */
   labelShownAt: number | null
+  /**
+   * 내용 열쇠: 새 내용이 온 seq. 위키 카드의 고정만 바뀌었으면 그대로 둔다.
+   * 화면은 이 값으로 카드를 새로 그리므로(key) 고정을 눌러도 카드 안에서 고른 후보·연 행이 남는다.
+   */
+  viewKey: number
 }
 
 export type FlyoutViewAction =
@@ -25,13 +30,19 @@ export type FlyoutViewAction =
   /** main이 창을 배치하고 띄웠다(onFlyoutShown) */
   | { type: 'shown'; seq: number; at: number }
 
-export const initialFlyoutState: FlyoutViewState = { message: null, open: false, instant: false, labelShownAt: null }
+export const initialFlyoutState: FlyoutViewState = { message: null, open: false, instant: false, labelShownAt: null, viewKey: 0 }
 
 const samePad = (a: FlyoutPad, b: FlyoutPad): boolean => a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left
 
 /** 위키 카드의 고정만 바뀐 새 내용인지. main은 이때 창을 다시 띄우지 않아 shown을 보내지 않는다 */
 function onlyPinChanged(a: FlyoutContent, b: FlyoutContent): boolean {
-  return a.kind === 'wiki-card' && b.kind === 'wiki-card' && a.width === b.width && JSON.stringify(a.view) === JSON.stringify(b.view)
+  return (
+    a.kind === 'wiki-card' &&
+    b.kind === 'wiki-card' &&
+    a.width === b.width &&
+    a.maxHeight === b.maxHeight &&
+    JSON.stringify(a.view) === JSON.stringify(b.view)
+  )
 }
 
 /**
@@ -45,7 +56,7 @@ export function flyoutReducer(state: FlyoutViewState, action: FlyoutViewAction):
     case 'initial':
       // 그 사이 main이 보낸 더 새 내용을 옛 응답으로 덮지 않는다
       if (state.message) return state
-      return { ...state, message: action.message, open: true, instant: true }
+      return { ...state, message: action.message, open: true, instant: true, viewKey: action.message.seq }
     case 'content': {
       const m = action.message
       const cur = state.message
@@ -56,7 +67,7 @@ export function flyoutReducer(state: FlyoutViewState, action: FlyoutViewAction):
       const inPlace = state.open && cur !== null && onlyPinChanged(cur.content, m.content)
       const chained =
         m.content.kind === 'label' && cur?.content.kind === 'label' && state.labelShownAt !== null && action.at - state.labelShownAt <= LABEL_CHAIN_MS
-      return { ...state, message: m, open: inPlace, instant: inPlace || chained }
+      return { ...state, message: m, open: inPlace, instant: inPlace || chained, viewKey: inPlace ? state.viewKey : m.seq }
     }
     case 'shown': {
       const cur = state.message

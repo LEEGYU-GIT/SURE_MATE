@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
+import glossaryPack from '../../../../resources/glossary.json'
+import { edgeCardRect, FLYOUT_MAX_HEIGHT, FLYOUT_SCREEN_MARGIN, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
 import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect, itemOffsets } from '../../../shared/bar/bar-layout'
-import type { FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
+import type { FlyoutContent, FlyoutMessage, FlyoutPad, WikiCardEntry, WikiCardView } from '../../../shared/flyout/flyout-content'
+import { parseGlossaryPack } from '../../../shared/glossary/pack'
+import { buildGlossaryIndex, lookupWiki, toCardEntry } from '../../../shared/glossary/wiki-lookup'
 import type { MaskingMode, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
@@ -124,8 +127,8 @@ function pair(id: string, title: string, o: BarOptions, backdrop?: React.ReactNo
   }
 }
 
-/** 펼침 창의 기준: 바 항목(이름표·메뉴), 또는 바 창 안에서 오른쪽 클릭한 세로 위치(바 메뉴) */
-type FlyoutAnchor = { itemId: string } | { clickY: number }
+/** 펼침 창의 기준: 바 항목(이름표·메뉴·위키 카드), 바 창 안에서 오른쪽 클릭한 세로 위치(바 메뉴), 바가 없을 때 화면 가장자리(위키 카드) */
+type FlyoutAnchor = { itemId: string } | { clickY: number } | { screenEdge: true }
 type Placed = { window: Rect; pad: FlyoutPad }
 
 const ZERO_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 }
@@ -137,6 +140,7 @@ const barWindowRect = (s: BarViewState): Rect =>
 
 /** 펼침 창 배치: main과 같은 flyoutCardRect(바 안쪽 8 DIP)·flyoutWindowRect(그림자 여백, 작업 영역 안) */
 function placeFlyout(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent, size: { width: number; height: number }): Placed {
+  if ('screenEdge' in anchor) return flyoutWindowRect(edgeCardRect({ size, workArea: WORK_AREA, edge: bar.edge }), bar.edge, WORK_AREA)
   const r = barWindowRect(bar)
   let at: Rect
   if ('itemId' in anchor) {
@@ -197,7 +201,7 @@ function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: Fl
 }
 
 /** 펼침 창 장면: 바와 그 옆 펼침 창(투명 창 사각형 밖은 잘린다 — 그림자가 창 안에 들어오는지 확인) */
-function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<typeof createFlyoutDriver> }): React.JSX.Element {
+function FlyoutStage({ bar, driver, barShown = true }: { bar: BarViewState; driver: ReturnType<typeof createFlyoutDriver>; barShown?: boolean }): React.JSX.Element {
   const [placed, setPlaced] = useState<Placed | null>(null)
   useEffect(() => driver.onPlaced(setPlaced), [driver])
   // 창을 자리에 놓은 뒤 shown(main의 showInactive → shown 순서)
@@ -209,7 +213,7 @@ function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<ty
     <Desktop edge={bar.edge}>
       <Stage>
         <AppWindow side={bar.edge === 'right' ? 'left' : 'right'} />
-        <BarWindow state={bar} />
+        {barShown ? <BarWindow state={bar} /> : null}
         <div
           data-flyout-window=""
           style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height, overflow: 'hidden', visibility: placed ? 'visible' : 'hidden' }}
@@ -223,7 +227,36 @@ function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<ty
 
 function flyoutScene(id: string, title: string, bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
   const driver = createFlyoutDriver(bar, anchor, content)
-  return { id, title, fixtures: { flyout: driver.host }, render: () => <FlyoutStage bar={bar} driver={driver} /> }
+  return { id, title, fixtures: { flyout: driver.host }, render: () => <FlyoutStage bar={bar} driver={driver} barShown={!('screenEdge' in anchor)} /> }
+}
+
+/** 기본 용어 팩(resources/glossary.json)으로 실제와 같은 찾기 결과를 만든다 */
+const GLOSSARY = parseGlossaryPack(glossaryPack, 'builtin').entries
+const GLOSSARY_INDEX = buildGlossaryIndex(GLOSSARY)
+
+function lookupView(text: string): WikiCardView {
+  const r = lookupWiki(text, GLOSSARY, GLOSSARY_INDEX)
+  if (r.kind === 'best') return { kind: 'best', source: 'selection', best: toCardEntry(r.best), others: r.others.map(toCardEntry) }
+  if (r.kind === 'found') return { kind: 'found', source: 'selection', entries: r.entries.map(toCardEntry), more: r.more }
+  return { kind: 'none', source: 'selection', query: text.trim() }
+}
+
+/** 미리 보기 작업 영역에서 main이 정하는 카드 최대 높이(flyout-controller의 cardMaxHeight와 같은 계산) */
+const CARD_MAX_HEIGHT = Math.min(FLYOUT_MAX_HEIGHT, WORK_AREA.height - 2 * FLYOUT_SCREEN_MARGIN)
+
+const card = (view: WikiCardView, pinned = false): FlyoutContent => ({ kind: 'wiki-card', view, pinned, width: 360, maxHeight: CARD_MAX_HEIGHT })
+
+/** 긴 설명 스크롤 확인용 가상 사용자 용어(가상 회사·가상 제품 이름만) */
+const LONG_ENTRY: WikiCardEntry = {
+  id: 'preview-long',
+  term: 'XY방산 시험 절차서 검토 기준',
+  aliases: ['검토 기준', 'TP 검토'],
+  definition: Array.from(
+    { length: 9 },
+    (_, i) => `${i + 1}. 가상자동차 제어기 시험 절차서의 각 단계가 요구사항 번호와 1:1로 이어지는지, 기대 결과가 측정 가능한 값으로 적혀 있는지 확인한다.`
+  ).join('\n'),
+  example: 'REQ-0123 → TC-0456: 입력 전압 9~16V에서 경고등이 300ms 안에 켜지는지',
+  source: 'user'
 }
 
 const EDGE_RIGHT = barState({ paletteHotkey: 'Ctrl+Alt+Space' })
@@ -277,5 +310,30 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-masking-off', '펼침 창: 가명 처리 기본값 메뉴(끔 — 글과 주황으로)', EDGE_RIGHT_OFF, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'off' }),
   flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
-  flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' })
+  flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
+  flyoutScene('card-best', '위키 카드: 짧은 글(MC/DC) — 가장 맞는 용어와 후보 2개', EDGE_RIGHT, { itemId: 'glossary' }, card(lookupView('MC/DC'))),
+  flyoutScene(
+    'card-found',
+    '위키 카드: 긴 글 — 글에 나온 용어 목록',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card(lookupView('정적분석 결과에서 MC/DC 커버리지가 부족한 함수 목록을 ASIL 기준으로 다시 정리'))
+  ),
+  flyoutScene('card-none', '위키 카드: 맞는 용어 없음 — 팔레트에서 찾기', EDGE_RIGHT, { itemId: 'glossary' }, card(lookupView('가상자동차 주행 로그'))),
+  flyoutScene(
+    'card-note',
+    '위키 카드: 터미널이라 가져오지 않음 — 클립보드 글로 찾기',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card({ kind: 'note', message: '터미널에서는 가져오지 않아요', canUseClipboard: true })
+  ),
+  flyoutScene('card-pinned', '위키 카드: 고정함, 같은 이름의 두 뜻(SIL)', EDGE_RIGHT, { itemId: 'glossary' }, card(lookupView('SIL'), true)),
+  flyoutScene(
+    'card-long',
+    '위키 카드: 긴 설명은 카드 안에서 스크롤(최대 높이)',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card({ kind: 'best', source: 'selection', best: LONG_ENTRY, others: [] })
+  ),
+  flyoutScene('card-edge', '위키 카드: 바를 끔 — 화면 가장자리 위쪽', EDGE_RIGHT, { screenEdge: true }, card(lookupView('ASIL')))
 ]

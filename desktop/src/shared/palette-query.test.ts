@@ -30,3 +30,7 @@ it('팔레트를 보일 때 검색어를 미리 채울 수 있다(바의 용어 
   expect(shownView({ mode: 'search' })).toEqual({ query: '', wikiId: null })
   expect(shownView({ mode: 'dev-output', title: '제목', text: '내용' })).toEqual({ query: '', wikiId: null })
 })
+
+it('위키 카드의 "팔레트에서 열기"는 그 용어 상세를 바로 연다', () => {
+  expect(shownView({ mode: 'wiki', id: 'mcdc' })).toEqual({ query: '', wikiId: 'mcdc' })
+})

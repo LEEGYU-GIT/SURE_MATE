@@ -18,7 +18,8 @@ const maskingMenu: MenuContent = { kind: 'masking-menu', mode: 'restore' }
 const barMenu: MenuContent = { kind: 'bar-menu', shape: 'edge' }
 const view: WikiCardView = { kind: 'none', source: 'selection', query: 'x' }
 
-function make(o: { barVisible?: boolean } = {}) {
+function make(o: { barVisible?: boolean; workArea?: Rect } = {}) {
+  const wa = o.workArea ?? WA
   let last: Rect = { x: 0, y: 0, width: 0, height: 0 }
   let barVisible = o.barVisible ?? true
   let cursor = { x: 1890, y: 360 }
@@ -39,9 +40,9 @@ function make(o: { barVisible?: boolean } = {}) {
   const onOpenChange = vi.fn()
   const c = createFlyoutController({
     window,
-    barAnchor: (id) => (barVisible ? { bar, item: id ? items[id] ?? null : null, edge: 'right', workArea: WA } : null),
+    barAnchor: (id) => (barVisible ? { bar, item: id ? items[id] ?? null : null, edge: 'right', workArea: wa } : null),
     barEdge: () => 'right',
-    cursorWorkArea: () => WA,
+    cursorWorkArea: () => wa,
     cursor: () => cursor,
     mouseButtonDown: () => button,
     labelFor: (id) => (id === 'none' ? null : `label-${id}`),
@@ -278,6 +279,37 @@ describe('위키 카드', () => {
     t.c.pin(false)
     vi.advanceTimersByTime(8000)
     expect(t.window.hide).toHaveBeenCalled()
+  })
+
+  it('카드 최대 높이는 560, 작업 영역이 낮으면 작업 영역 안(위아래 8 DIP)', () => {
+    const t = make()
+    show(t)
+    expect(t.sent.at(-1)?.content).toMatchObject({ kind: 'wiki-card', maxHeight: 560 })
+    const low = make({ workArea: { x: 0, y: 0, width: 1366, height: 566 } })
+    show(low)
+    expect(low.sent.at(-1)?.content).toMatchObject({ kind: 'wiki-card', maxHeight: 550 })
+  })
+
+  it('카드 안에서 내용이 바뀌어 같은 seq로 크기를 다시 알리면 창 크기만 맞춘다(다시 띄우지 않음)', () => {
+    const t = make()
+    show(t)
+    const seq = t.sent.at(-1)!.seq
+    t.c.ready(seq, { width: 360, height: 420 })
+    // 카드 600~1020, 아래 그림자 여백은 작업 영역 끝(1040)까지 20으로 준다
+    expect(t.lastBounds()).toEqual({ x: 1472, y: 584, width: 384, height: 456 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+    expect(t.window.shown).toHaveBeenCalledTimes(1)
+    const n = t.window.setBounds.mock.calls.length
+    t.c.ready(seq, { width: 360, height: 420 })
+    expect(t.window.setBounds.mock.calls.length).toBe(n)
+  })
+
+  it('메뉴는 표시된 뒤 같은 seq의 크기 알림을 무시한다', () => {
+    const t = make()
+    t.c.toggleMenu(maskingMenu, 'masking'); t.c.ready(1, { width: 200, height: 140 })
+    const n = t.window.setBounds.mock.calls.length
+    t.c.ready(1, { width: 200, height: 300 })
+    expect(t.window.setBounds.mock.calls.length).toBe(n)
   })
 
   it('바가 없으면 커서 모니터 가장자리 위쪽에 둔다', () => {

@@ -10,6 +10,7 @@ const card = (pinned: boolean): FlyoutContent => ({
   kind: 'wiki-card',
   pinned,
   width: 360,
+  maxHeight: 560,
   view: { kind: 'none', source: 'selection', query: 'mcdc' }
 })
 
@@ -75,8 +76,18 @@ describe('들어오는 움직임', () => {
     expect(s2).toMatchObject({ open: true, instant: true })
     expect(s2.message?.content).toEqual(card(true))
     // 다른 카드로 바뀌면 새로 띄우는 것이라 shown을 기다린다
-    const other: FlyoutContent = { kind: 'wiki-card', pinned: false, width: 360, view: { kind: 'none', source: 'selection', query: 'sil' } }
+    const other: FlyoutContent = { kind: 'wiki-card', pinned: false, width: 360, maxHeight: 560, view: { kind: 'none', source: 'selection', query: 'sil' } }
     expect(flyoutReducer(s1, { type: 'content', message: msg(6, other), at: 100 }).open).toBe(false)
+  })
+
+  it('카드 화면 열쇠(viewKey): 고정만 바뀌면 그대로 두어 카드 안에서 고른 후보가 남고, 다른 내용이면 새 seq', () => {
+    const s1 = shownState(msg(5, card(false)))
+    expect(s1.viewKey).toBe(5)
+    const pinned = flyoutReducer(s1, { type: 'content', message: msg(6, card(true)), at: 100 })
+    expect(pinned.viewKey).toBe(5)
+    const other: FlyoutContent = { kind: 'wiki-card', pinned: false, width: 360, maxHeight: 560, view: { kind: 'none', source: 'selection', query: 'sil' } }
+    expect(flyoutReducer(pinned, { type: 'content', message: msg(7, other), at: 200 }).viewKey).toBe(7)
+    expect(flyoutReducer(initialFlyoutState, { type: 'initial', message: msg(9, card(false)) }).viewKey).toBe(9)
   })
 
   it('앞 이름표가 보인 지 얼마 안 돼 이어지는 이름표는 움직임 없이 바로 보인다(바를 훑을 때)', () => {

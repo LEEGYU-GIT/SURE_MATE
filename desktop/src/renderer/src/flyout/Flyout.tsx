@@ -4,6 +4,7 @@ import { BarMenu } from './BarMenu'
 import { flyoutReducer, initialFlyoutState } from './flyout-state'
 import { Label } from './Label'
 import { MaskingMenu } from './MaskingMenu'
+import { WikiCard } from './WikiCard'
 import { WorkspaceMenu } from './WorkspaceMenu'
 
 /** 펼침 창 표면(이름표·메뉴·카드 한 가족): --surface-flyout, 모서리 8, 1px --line 테두리(바와 같음) */
@@ -17,22 +18,23 @@ const SURFACE = 'rounded-window border border-line bg-surface-flyout'
 const SHADOW = 'rounded-window shadow-[var(--shadow-flyout)]'
 const SHADOW_INSET = 'min(24px, 50%)'
 
-/** 너비: 이름표는 내용 너비(최대 240), 메뉴는 정해진 너비. 창 크기와 상관없이 잰다 */
-const WIDTH: Record<Exclude<FlyoutContent['kind'], 'wiki-card'>, string> = {
+/** 너비: 이름표는 내용 너비(최대 240), 메뉴는 정해진 너비, 위키 카드는 설정의 너비(style). 창 크기와 상관없이 잰다 */
+const WIDTH: Record<FlyoutContent['kind'], string> = {
   label: 'w-max max-w-60',
   'masking-menu': 'w-68',
   'workspace-menu': 'w-68',
-  'bar-menu': 'w-68'
+  'bar-menu': 'w-68',
+  'wiki-card': ''
 }
 
-/** 펼침 창이 그리는 내용(위키 카드는 Task 12에서 더한다) */
-type ShownContent = Exclude<FlyoutContent, { kind: 'wiki-card' }>
+/** main 동작을 부른다. 처리 중에 또 누르면 보내지 않고 false */
+type Act = (a: FlyoutAction) => Promise<boolean>
 
 /**
  * 들어오는 움직임(§14-4): 이름표는 120ms 투명도만, 메뉴는 200ms --ease-out 투명도 + 바 쪽에서 4 DIP.
  * 닫힘·바뀜에는 움직임이 없다(data-open을 떼면 transition도 함께 빠져 바로 사라진다). 움직임 줄이기면 전역 규칙으로 바로 보인다.
  */
-function motionClass(kind: ShownContent['kind'], open: boolean, instant: boolean, from: 'left' | 'right'): string {
+function motionClass(kind: FlyoutContent['kind'], open: boolean, instant: boolean, from: 'left' | 'right'): string {
   if (kind === 'label') {
     if (!open) return 'opacity-0'
     return instant ? 'opacity-100' : 'opacity-100 transition-opacity duration-(--dur-hover) ease-(--ease-out)'
@@ -44,7 +46,7 @@ function motionClass(kind: ShownContent['kind'], open: boolean, instant: boolean
 /** 바가 있는 쪽: 그림자 여백이 없는 면(오른쪽 바면 오른쪽) */
 const barSide = (pad: FlyoutPad): 'left' | 'right' => (pad.left === 0 && pad.right > 0 ? 'left' : 'right')
 
-/** #/flyout 창. main이 보낸 이름표·메뉴를 그리고, 그린 크기를 알린 뒤 shown을 받으면 들어온다. */
+/** #/flyout 창. main이 보낸 이름표·메뉴·위키 카드를 그리고, 그린 크기를 알린 뒤 shown을 받으면 들어온다. */
 export function Flyout(): React.JSX.Element | null {
   const [state, dispatch] = useReducer(flyoutReducer, initialFlyoutState)
 
@@ -73,10 +75,10 @@ export function Flyout(): React.JSX.Element | null {
 
   // 메뉴 행을 빠르게 두 번 눌러도 한 번만 보낸다(main이 처리하고 메뉴를 닫는다)
   const busy = useRef(false)
-  const act = useCallback((a: FlyoutAction): void => {
-    if (busy.current) return
+  const act = useCallback<Act>((a) => {
+    if (busy.current) return Promise.resolve(false)
     busy.current = true
-    window.sureMate
+    return window.sureMate
       .flyoutAction(a)
       .catch(() => false)
       .finally(() => {
@@ -85,24 +87,28 @@ export function Flyout(): React.JSX.Element | null {
   }, [])
 
   const message = state.message
-  if (!message || message.content.kind === 'wiki-card') return null
-  return <FlyoutBox message={message as FlyoutMessage & { content: ShownContent }} open={state.open} instant={state.instant} onAction={act} />
+  if (!message) return null
+  return <FlyoutBox message={message} open={state.open} instant={state.instant} viewKey={state.viewKey} onAction={act} />
 }
 
 function FlyoutBox({
   message,
   open,
   instant,
+  viewKey,
   onAction
 }: {
-  message: FlyoutMessage & { content: ShownContent }
+  message: FlyoutMessage
   open: boolean
   instant: boolean
-  onAction(a: FlyoutAction): void
+  viewKey: number
+  onAction: Act
 }): React.JSX.Element {
   const api = window.sureMate
   const box = useRef<HTMLDivElement>(null)
   const { seq, content, pad } = message
+  const seqRef = useRef(seq)
+  seqRef.current = seq
 
   // 새 내용을 그린 직후 크기를 재 알린다. 여백(pad)만 바뀐 같은 seq는 다시 알리지 않는다.
   useLayoutEffect(() => {
@@ -121,13 +127,32 @@ function FlyoutBox({
     }
   }, [api, seq])
 
+  // 위키 카드는 카드 안에서 화면이 바뀌면(다른 후보·목록 행·뒤로) 크기가 달라진다.
+  // 같은 seq로 크기를 다시 알려 main이 창 크기만 맞추게 한다(창이 카드를 자르거나 빈 투명 칸이 남지 않게).
+  const isCard = content.kind === 'wiki-card'
+  useEffect(() => {
+    const el = box.current
+    if (!isCard || !el) return
+    let last = ''
+    const observer = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect()
+      const w = Math.ceil(r.width)
+      const h = Math.ceil(r.height)
+      if (`${w}x${h}` === last) return
+      last = `${w}x${h}`
+      api.flyoutReady(seqRef.current, w, h)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [api, isCard])
+
   const side = barSide(pad)
   return (
     <div
       ref={box}
       data-open={open ? '' : undefined}
       className={`absolute isolate ${WIDTH[content.kind]} ${motionClass(content.kind, open, instant, side)}`}
-      style={{ left: pad.left, top: pad.top }}
+      style={{ left: pad.left, top: pad.top, width: content.kind === 'wiki-card' ? content.width : undefined }}
       onMouseEnter={() => api.flyoutPointer(true)}
       onMouseLeave={() => api.flyoutPointer(false)}
     >
@@ -138,12 +163,12 @@ function FlyoutBox({
       />
       {/* 표면과 테두리는 덧그린 판이라 크기(4의 배수)에 더하지 않는다(바와 같은 방법) */}
       <span aria-hidden="true" className={`pointer-events-none absolute inset-0 -z-10 ${SURFACE}`} />
-      <Content content={content} onAction={onAction} />
+      <Content content={content} viewKey={viewKey} onAction={onAction} />
     </div>
   )
 }
 
-function Content({ content, onAction }: { content: ShownContent; onAction(a: FlyoutAction): void }): React.JSX.Element {
+function Content({ content, viewKey, onAction }: { content: FlyoutContent; viewKey: number; onAction: Act }): React.JSX.Element {
   switch (content.kind) {
     case 'label':
       return <Label text={content.text} />
@@ -153,5 +178,8 @@ function Content({ content, onAction }: { content: ShownContent; onAction(a: Fly
       return <WorkspaceMenu workspaces={content.workspaces} canSave={content.canSave} />
     case 'bar-menu':
       return <BarMenu shape={content.shape} onAction={onAction} />
+    case 'wiki-card':
+      // 새 카드가 오면 카드 안 상태(고른 후보·연 행)를 새로 시작한다. 고정만 바뀌면 viewKey가 그대로라 남는다
+      return <WikiCard key={viewKey} view={content.view} pinned={content.pinned} maxHeight={content.maxHeight} onAction={onAction} />
   }
 }

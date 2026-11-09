@@ -95,6 +95,8 @@ export const IPC = {
 export type ShownPayload =
   /** query: 검색어를 미리 채운다(바의 용어 사전 단추는 '?') */
   | { mode: 'search'; query?: string }
+  /** 위키 카드의 '팔레트에서 열기': 그 용어 상세를 바로 연다 */
+  | { mode: 'wiki'; id: string }
   | { mode: 'dev-output'; title: string; text: string }
   | { mode: 'confirm'; draft: PromptDraft }
 

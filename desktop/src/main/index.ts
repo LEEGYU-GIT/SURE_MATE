@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
+import { app, clipboard, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
-import type { FlyoutAction } from '../shared/flyout/flyout-content'
+import type { FlyoutAction, WikiCardView } from '../shared/flyout/flyout-content'
 import type { ShownPayload } from '../shared/ipc-channels'
 import type { MaskingMode } from '../shared/types'
 import { createBarActions } from './bar/bar-actions'
@@ -15,12 +15,14 @@ import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
-import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
+import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
 import { errorText } from './error-text'
 import { fileErrorNotice, type FileErrorReport } from './file-error-notice'
 import { createGlossaryRuntime } from './glossary/glossary-runtime'
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
+import { createWikiCard } from './glossary/wiki-card'
+import { createWikiCardActions } from './glossary/wiki-card-actions'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -29,7 +31,7 @@ import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
-import { writeClipboardText } from './native/selection'
+import { captureSelection, writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
@@ -64,6 +66,9 @@ let hotkeys: HotkeyManager | null = null
 let barRuntime: BarRuntime | null = null
 let barActions: { run(id: string): Promise<void> } | null = null
 let barCommands: { run(id: string): Promise<boolean> } | null = null
+/** 선택 글 위키 카드(Ctrl+Alt+W)와 카드 단추 처리 */
+let wikiCard: { lookupSelection(): Promise<void>; lookupClipboard(): Promise<void> } | null = null
+let wikiCardAction: ((a: FlyoutAction) => Promise<boolean> | null) | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
@@ -234,9 +239,9 @@ async function startShell(userData: string): Promise<void> {
     warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
   }
 
-  // 조회 단축키: M1에서는 선택 텍스트 가져오기 검증용(M4에서 사이드 패널로 바꾼다)
+  // 조회 단축키: 선택한 글을 가져와 바 옆 위키 카드로 보인다(설계 문서 §9). 팔레트가 보이면 팔레트에서 찾는다
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
-    if (!isPaletteVisible()) showCaptureResult().catch((e) => log('dev.capture.error', { error: errorText(e) }))
+    if (!isPaletteVisible()) wikiCard?.lookupSelection().catch((e) => log('wiki.card.error', { error: errorText(e) }))
   })
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
@@ -290,7 +295,18 @@ function startBar(userData: string): void {
   })
 }
 
-/** 펼침 창에서 고른 동작. 위키 카드 동작(wiki-*)은 Task 12에서 잇는다 */
+/** 위키 카드를 바 옆에 띄운다. 바가 시작되지 못했으면 팔레트 위키에서 대신 보인다 */
+function showWikiCard(view: WikiCardView): void {
+  const r = barRuntime
+  if (r) {
+    r.flyout.showCard(view, { width: settings.bar.wikiCardWidth, autoHideMs: settings.bar.wikiCardMs })
+    return
+  }
+  if (view.kind === 'best') showPalette({ mode: 'wiki', id: view.best.id })
+  else showPalette({ mode: 'search', query: view.kind === 'none' ? `?${view.query}` : '?' })
+}
+
+/** 펼침 창에서 고른 동작(메뉴 행·위키 카드 단추) */
 async function runFlyoutAction(userData: string, a: FlyoutAction): Promise<boolean> {
   const r = barRuntime
   if (!r) return false
@@ -315,7 +331,7 @@ async function runFlyoutAction(userData: string, a: FlyoutAction): Promise<boole
       r.flyout.close('button')
       return true
     default:
-      return false
+      return (await wikiCardAction?.(a)) ?? false
   }
 }
 
@@ -356,6 +372,22 @@ if (!app.requestSingleInstanceLock()) {
       newId: () => randomUUID(),
       now: () => new Date().toISOString(),
       log
+    })
+    // 선택 글 위키 카드(설계 문서 §9). 가져오기 결과·건수만 기록한다(선택 글·용어 이름 없음)
+    const card = createWikiCard({
+      capture: () => captureSelection(),
+      readClipboard: async () => clipboard.readText(),
+      entries: async () => (await glossaryCache.get()).entries,
+      show: showWikiCard,
+      log
+    })
+    wikiCard = card
+    wikiCardAction = createWikiCardActions({
+      copy: (id) => wiki.copy(id),
+      pin: (pinned) => barRuntime?.flyout.pin(pinned),
+      close: (reason) => barRuntime?.flyout.close(reason),
+      showPalette: (p) => showPalette(p),
+      lookupClipboard: () => card.lookupClipboard()
     })
     // 용어 팩 내보내기·가져오기(설계 문서 §9). 대화상자는 팔레트를 숨긴 뒤 부모 창 없이 띄운다
     packCommands = createPackCommands({

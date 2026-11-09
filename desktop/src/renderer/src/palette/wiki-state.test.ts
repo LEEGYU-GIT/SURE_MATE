@@ -72,6 +72,16 @@ it('새 용어: 검색어를 용어로 미리 채우고, 다시 보여도 적던
   expect(wikiViewReducer(v, { type: 'saved', entry: saved })).toEqual({ detail: saved, edit: null })
 })
 
+it('위키 카드의 팔레트에서 열기(reveal): 그 용어 상세를 열고, 고치던 글이 있으면 그 화면을 위에 그대로 둔다', () => {
+  const other: GlossaryEntry = { ...term, id: 'sa', term: '정적분석' }
+  expect(wikiViewReducer(NO_WIKI_VIEW, { type: 'reveal', entry: other })).toEqual({ detail: other, edit: null })
+  const editing = wikiViewReducer(wikiViewReducer(NO_WIKI_VIEW, { type: 'add', term: '새 용어' }), { type: 'shown' })
+  const v = wikiViewReducer(editing, { type: 'reveal', entry: other })
+  expect(v).toEqual({ detail: other, edit: editing.edit })
+  // 적던 글을 Esc로 버리면 카드에서 고른 용어의 상세가 보인다
+  expect(wikiViewReducer(v, { type: 'cancel-edit' })).toEqual({ detail: other, edit: null })
+})
+
 it('상세에서 Esc는 목록으로, 상세 없이 고치기와 편집 화면 없이 온 글 변경은 무시한다', () => {
   expect(wikiViewReducer({ detail: term, edit: null }, { type: 'back' })).toEqual(NO_WIKI_VIEW)
   expect(wikiViewReducer(NO_WIKI_VIEW, { type: 'edit' })).toBe(NO_WIKI_VIEW)

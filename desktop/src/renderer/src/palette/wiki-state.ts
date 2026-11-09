@@ -41,6 +41,8 @@ export type WikiViewAction =
   /** 팔레트를 다시 보였다 */
   | { type: 'shown' }
   | { type: 'open'; entry: GlossaryEntry }
+  /** 위키 카드의 '팔레트에서 열기': 그 용어 상세. 고치던 글이 있으면 그 화면을 위에 그대로 둔다(저장하지 않은 글을 버리지 않게) */
+  | { type: 'reveal'; entry: GlossaryEntry }
   /** 상세에서 Esc: 목록으로 */
   | { type: 'back' }
   /** 검색 결과가 없을 때 "직접 추가하기"(검색어를 용어로 미리 채움) */
@@ -63,6 +65,8 @@ export function wikiViewReducer(v: WikiView, a: WikiViewAction): WikiView {
       return v.edit ? v : NO_WIKI_VIEW
     case 'open':
       return { detail: a.entry, edit: null }
+    case 'reveal':
+      return { detail: a.entry, edit: v.edit }
     case 'back':
       return NO_WIKI_VIEW
     case 'add':

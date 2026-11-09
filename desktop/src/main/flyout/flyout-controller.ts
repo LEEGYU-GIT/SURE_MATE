@@ -4,7 +4,7 @@ import { needsResize } from '../../shared/palette-rules'
 import type { Rect } from '../../shared/types'
 import type { BarAnchor } from '../bar/bar-controller'
 import type { Timers } from '../timers'
-import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from './flyout-placement'
+import { edgeCardRect, FLYOUT_MAX_HEIGHT, FLYOUT_SCREEN_MARGIN, flyoutCardRect, flyoutWindowRect } from './flyout-placement'
 
 export const FLYOUT_TIMING = { labelDelayMs: 400, labelChainMs: 300, readyTimeoutMs: 300, dismissPollMs: 50, menuAwayMs: 1500 }
 
@@ -99,6 +99,12 @@ export function createFlyoutController(d: Deps): FlyoutController {
 
   function edgeFor(c: FlyoutContent): BarEdge {
     return anchorFor(c)?.edge ?? d.barEdge()
+  }
+
+  /** 카드가 넘지 않을 높이: 560, 작업 영역이 낮으면 위아래 8 DIP를 뺀 높이(fitSize와 같은 값이라 창이 카드를 자르지 않는다) */
+  function cardMaxHeight(): number {
+    const wa = d.barAnchor('glossary')?.workArea ?? d.cursorWorkArea()
+    return Math.min(FLYOUT_MAX_HEIGHT, wa.height - 2 * FLYOUT_SCREEN_MARGIN)
   }
 
   /** 카드 사각형을 정해 창 사각형으로 바꾼다. 놓을 곳이 없으면 null */
@@ -270,12 +276,19 @@ export function createFlyoutController(d: Deps): FlyoutController {
       pinned = false
       pointerInside = false
       autoHideMs = o.autoHideMs
-      present({ kind: 'wiki-card', view, pinned: false, width: o.width }, { itemId: 'glossary' })
+      present({ kind: 'wiki-card', view, pinned: false, width: o.width, maxHeight: cardMaxHeight() }, { itemId: 'glossary' })
       startCardTimer()
     },
     ready(s, size) {
-      if (!pending || pending.seq !== s) return
-      finish(size, pending.reshow)
+      if (pending) {
+        if (pending.seq === s) finish(size, pending.reshow)
+        return
+      }
+      // 위키 카드는 카드 안에서 화면이 바뀌면(다른 후보·목록 행·뒤로) 같은 seq로 크기를 다시 알린다: 창 크기만 맞춘다
+      if (!visible || content?.kind !== 'wiki-card' || s !== seq) return
+      if (lastSize && lastSize.width === size.width && lastSize.height === size.height) return
+      lastSize = size
+      replace()
     },
     pointer(inside) {
       pointerInside = inside

@@ -23,7 +23,8 @@ export type FlyoutContent =
   | { kind: 'masking-menu'; mode: MaskingMode }
   | { kind: 'workspace-menu'; workspaces: { id: string; name: string }[]; canSave: boolean }
   | { kind: 'bar-menu'; shape: BarShape }
-  | { kind: 'wiki-card'; view: WikiCardView; pinned: boolean; width: number }
+  /** maxHeight: 카드가 넘지 않을 높이(560, 작업 영역이 낮으면 그 안). 넘치는 설명은 카드 안에서 스크롤한다 */
+  | { kind: 'wiki-card'; view: WikiCardView; pinned: boolean; width: number; maxHeight: number }
 
 export type MenuContent = Extract<FlyoutContent, { kind: 'masking-menu' | 'workspace-menu' | 'bar-menu' }>
 
