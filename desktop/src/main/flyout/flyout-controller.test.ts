@@ -312,6 +312,27 @@ describe('위키 카드', () => {
     expect(t.window.hide).toHaveBeenCalled()
   })
 
+  it('조회마다 카드 번호(cardId)를 새로 매기고, 고정만 바꾼 새 내용은 같은 번호를 쓴다(화면이 새 카드와 고정 바꿈을 가린다)', () => {
+    const t = make()
+    const cardIdOf = (): number | undefined => {
+      const c = t.sent.at(-1)?.content
+      return c?.kind === 'wiki-card' ? c.cardId : undefined
+    }
+    show(t)
+    const first = cardIdOf()
+    t.c.pin(true)
+    expect(cardIdOf()).toBe(first)
+    t.c.pin(false)
+    expect(cardIdOf()).toBe(first)
+    t.c.close('timeout')
+    show(t)
+    const second = cardIdOf()
+    expect(second).toBeDefined()
+    expect(second).not.toBe(first)
+    show(t)
+    expect(cardIdOf()).not.toBe(second)
+  })
+
   it('고정하면 숨지 않고, 해제하면 8초 뒤 숨김', () => {
     const t = make()
     show(t)

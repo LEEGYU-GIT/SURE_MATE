@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import builtinGlossary from '../../../resources/glossary.json'
+import { rankStages } from '../search/ranker'
 import { findGlossaryTerms, MAX_TERMS } from './find-terms'
 import { parseGlossaryPack } from './pack'
 import type { GlossaryEntry } from './types'
@@ -98,6 +99,45 @@ describe('짧은 글(20자 이하): 가장 맞는 항목 1개 + 후보 2개', ()
     expect(look(emoji).kind).toBe('best')
   })
 
+  it('맨 위 항목은 글 안의 이름이나 랭커의 이름·별칭 단계에서만 나온다. 설명 본문에만 있는 말·짧은 말의 오타는 맨 위가 되지 않는다(none)', () => {
+    // 본문에만 있는 말(100점)과 자모 4개짜리 오타('서버' → 코드 커버리지)
+    for (const word of ['배포', '로그', '문서', '고객', '서버']) expect(look(word).kind, word).toBe('none')
+    // 이름 단계(초성 750·한영 오입력 600·별칭 포함 800)와 자모 8개 이상의 오타(12개)
+    expect(bestOf('정적분삭')?.best).toBe('static-analysis')
+    expect(bestOf('ㅈㅈㅂㅅ')?.best).toBe('static-analysis')
+    expect(bestOf('wjdwjrqnstjr')?.best).toBe('static-analysis')
+    expect(bestOf('결과')?.best).toBe('str')
+    // 본문 결과는 후보 자리를 채울 수 있다(MC/DC를 설명에 담은 관련 용어)
+    expect(bestOf('MC/DC')).toEqual({ best: 'mcdc', others: ['code-coverage', 'do-178c'] })
+    expect(bestOf('테스트')).toEqual({ best: 'test-case', others: ['test-oracle', 'test-harness'] })
+  })
+
+  it('랭커 오타 결과는 자모 8개(랭커의 TYPO_LONG_JAMO) 이상일 때만 맨 위, 본문 결과는 후보로만', () => {
+    const entry = (id: string, term: string, definition: string): GlossaryEntry => ({
+      id,
+      term,
+      aliases: [],
+      definition,
+      links: [],
+      tags: [],
+      source: 'builtin',
+      updatedAt: '2026-11-09T00:00:00.000Z',
+      version: 1
+    })
+    const list = [entry('search', '검색', '찾기'), entry('static', '정적분석기', '코드를 실행하지 않고 분석'), entry('tool', '도구', '정적분석 도구와 검색 도구')]
+    const i = buildGlossaryIndex(list)
+    const ids = (text: string): string[] | 'none' => {
+      const r = lookupWiki(text, list, i)
+      return r.kind === 'best' ? [r.best.id, ...r.others.map((x) => x.id)] : r.kind === 'none' ? 'none' : []
+    }
+    // '검삭'은 자모 6개: 오타(검색)와 본문(도구)뿐이라 맨 위가 없다
+    expect(ids('검삭')).toBe('none')
+    // '정적분석'은 이름 앞부분(정적분석기)이 맨 위, 본문(도구)은 후보
+    expect(ids('정적분석')).toEqual(['static', 'tool'])
+    // '정적분섣기'는 자모 13개라 오타(정적분석기)도 맨 위가 될 수 있다
+    expect(ids('정적분섣기')).toEqual(['static'])
+  })
+
   it('맞는 것이 하나도 없으면 none, 공백뿐인 글도 none', () => {
     expect(look('zzqxw').kind).toBe('none')
     expect(look('   \n ').kind).toBe('none')
@@ -159,12 +199,13 @@ describe('색인과 카드 항목', () => {
     version: 3
   }
 
-  it('buildGlossaryIndex: 제목은 용어, 별칭은 별칭, 본문은 설명으로 찾는다', () => {
+  it('buildGlossaryIndex: 제목은 용어, 별칭은 별칭, 본문은 설명으로 찾는다(본문에만 있는 말은 후보로만 쓰여 혼자서는 none)', () => {
     const i = buildGlossaryIndex([user])
     expect(lookupWiki('XY방산 HIL 랙', [user], i).kind).toBe('best')
     expect(lookupWiki('시험 랙', [user], i).kind).toBe('best')
-    // 이름이 아닌 설명 본문에만 있는 말(마지막 단계)
-    expect(lookupWiki('신호로', [user], i).kind).toBe('best')
+    // 이름이 아닌 설명 본문에만 있는 말(마지막 단계)도 색인에 있다
+    expect(rankStages(i, '신호로').hits).toEqual([{ id: 'u-1', score: 100, stage: 'body' }])
+    expect(lookupWiki('신호로', [user], i).kind).toBe('none')
   })
 
   it('toCardEntry: 링크·태그·작성자·시각·판을 빼고, 사용 예는 있을 때만 넣는다', () => {

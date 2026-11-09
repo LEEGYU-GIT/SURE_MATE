@@ -86,27 +86,27 @@ describe('lookupSelection: 선택한 글로 찾기', () => {
   it('터미널 → 이유와 [클립보드 글로 찾기](클립보드에 글이 있을 때만). 클립보드를 자동으로 찾지는 않는다', async () => {
     const t = make({ capture: skipped('terminal'), clipboard: 'SIL 2 요구사항' })
     await t.card.lookupSelection()
-    expect(t.shown).toEqual([{ kind: 'note', message: CAPTURE_NOTES.terminal, canUseClipboard: true }])
+    expect(t.shown).toEqual([{ kind: 'note', reason: 'terminal', message: CAPTURE_NOTES.terminal, canUseClipboard: true }])
     expect(t.logs[0].data).toMatchObject({ skipped: 'terminal', kind: 'note', count: 0 })
     const empty = make({ capture: skipped('terminal'), clipboard: '' })
     await empty.card.lookupSelection()
-    expect(empty.shown).toEqual([{ kind: 'note', message: CAPTURE_NOTES.terminal, canUseClipboard: false }])
+    expect(empty.shown).toEqual([{ kind: 'note', reason: 'terminal', message: CAPTURE_NOTES.terminal, canUseClipboard: false }])
   })
 
   it('공백·줄바꿈만 가져왔거나 가져온 글이 없으면 "선택한 글이 없어요", 공백뿐인 클립보드는 빈 것으로', async () => {
     const blank = make({ capture: captured(' \n\t '), clipboard: ' \n ' })
     await blank.card.lookupSelection()
-    expect(blank.shown).toEqual([{ kind: 'note', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: false }])
+    expect(blank.shown).toEqual([{ kind: 'note', reason: 'nothing-selected', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: false }])
     expect(blank.logs[0].data).toMatchObject({ skipped: null, length: 4, kind: 'note' })
     const none = make({ capture: captured(null), clipboard: '정적분석' })
     await none.card.lookupSelection()
-    expect(none.shown).toEqual([{ kind: 'note', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: true }])
+    expect(none.shown).toEqual([{ kind: 'note', reason: 'nothing-selected', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: true }])
   })
 
   it('클립보드를 읽지 못하면 빈 것으로 본다(단추를 보이지 않음)', async () => {
     const t = make({ capture: skipped('elevated'), clipboard: new Error('EBUSY') })
     await t.card.lookupSelection()
-    expect(t.shown).toEqual([{ kind: 'note', message: CAPTURE_NOTES.elevated, canUseClipboard: false }])
+    expect(t.shown).toEqual([{ kind: 'note', reason: 'elevated', message: CAPTURE_NOTES.elevated, canUseClipboard: false }])
   })
 
   it('긴 글 → 이 글에 나온 용어 목록, 용어 수는 목록 + 더 있는 수', async () => {
@@ -150,12 +150,12 @@ describe('lookupClipboard: [클립보드 글로 찾기]', () => {
     for (const clipboard of ['', '  \n ']) {
       const t = make({ clipboard })
       await t.card.lookupClipboard()
-      expect(t.shown).toEqual([{ kind: 'note', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false }])
+      expect(t.shown).toEqual([{ kind: 'note', reason: 'clipboard-empty', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false }])
       expect(t.logs[0].data).toMatchObject({ source: 'clipboard', kind: 'note', count: 0, length: clipboard.length })
     }
     const failed = make({ clipboard: new Error('EBUSY') })
     await failed.card.lookupClipboard()
-    expect(failed.shown).toEqual([{ kind: 'note', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false }])
+    expect(failed.shown).toEqual([{ kind: 'note', reason: 'clipboard-empty', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false }])
   })
 })
 

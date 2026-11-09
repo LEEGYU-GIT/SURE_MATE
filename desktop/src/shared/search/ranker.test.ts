@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { buildSearchIndex, rank, type SearchDoc } from './ranker'
+import { buildSearchIndex, rank, rankStages, TYPO_LONG_JAMO, type SearchDoc } from './ranker'
 
 const docs: SearchDoc[] = [
   { id: 'dynamic', title: '동적분석', aliases: [] },
@@ -101,4 +101,23 @@ it('같은 점수·같은 자리(제목)면 제목이 짧은 것이 먼저, 그�
   ])
   expect(rank(i, '가').map((r) => r.id)).toEqual(['short', 'short2', 'long'])
   expect(rank(index, '   ')).toEqual([])
+})
+
+it('rankStages: 점수가 나온 단계(이름·별칭 / 자모 오타 / 설명 본문)와 검색어 자모 수를 함께 준다. rank는 거기서 단계만 뺀 것', () => {
+  const stageOf = (q: string, id: string): string | undefined => rankStages(index, q).hits.find((h) => h.id === id)?.stage
+  expect(stageOf('ㅈㅈㅂㅅ', 'static')).toBe('name')
+  expect(stageOf('static', 'static')).toBe('name')
+  expect(stageOf('정적분삭', 'static')).toBe('typo')
+  // 거리 2인 오타도 100점이라 본문과 점수가 같지만 단계는 오타
+  expect(stageOf('종적분삭', 'static')).toBe('typo')
+  expect(stageOf('국제', 'iso')).toBe('body')
+  // 자모 수는 랭커가 세는 그대로(공백을 뺀 이름 키의 자모)
+  expect(rankStages(index, '정적분삭').jamoLength).toBe(12)
+  expect(rankStages(index, '서버').jamoLength).toBe(4)
+  expect(rankStages(index, '   ')).toEqual({ jamoLength: 0, hits: [] })
+  // 자모 8개부터 오타를 2개까지 봐준다
+  expect(TYPO_LONG_JAMO).toBe(8)
+  for (const q of ['ㅈㅈㅂㅅ', '정적분삭', '종적분삭', '국제', 'mcdc', '검삭']) {
+    expect(rank(index, q)).toEqual(rankStages(index, q).hits.map(({ id, score }) => ({ id, score })))
+  }
 })

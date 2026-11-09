@@ -268,7 +268,8 @@ const packEntry = (id: string): GlossaryEntry => {
   if (!e) throw new Error(`기본 팩에 없는 용어: ${id}`)
   return e
 }
-const card = (view: WikiCardView, pinned = false): FlyoutContent => ({ kind: 'wiki-card', view, pinned, width: 360 })
+/** 장면마다 카드 하나(카드 번호 1). 미리 보기의 [고정]은 main처럼 같은 번호로 고정만 바꾼다 */
+const card = (view: WikiCardView, pinned = false): FlyoutContent => ({ kind: 'wiki-card', view, pinned, width: 360, cardId: 1 })
 
 /** 회의 메모 한 줄(가상): 정적분석·MC/DC·커버리지·SIL(두 뜻)·ASIL·MISRA C·위반 소명 */
 const MEETING_NOTE = '정적분석 결과에서 MC/DC 커버리지가 부족했고 SIL 2 요구사항과 ASIL B 기준, MISRA C 위반 소명이 필요합니다'
@@ -317,7 +318,7 @@ const CARD_SCENES: Scene[] = [
     '위키 카드: 터미널이라 가져오지 않음, 클립보드 글로 찾기',
     EDGE_RIGHT,
     { itemId: 'glossary' },
-    card({ kind: 'note', message: CAPTURE_NOTES.terminal, canUseClipboard: true })
+    card({ kind: 'note', reason: 'terminal', message: CAPTURE_NOTES.terminal, canUseClipboard: true })
   ),
   flyoutScene('card-pinned', '위키 카드: 고정, 내 용어의 긴 설명이 카드 안에서 스크롤(최대 높이 560)', EDGE_RIGHT, { itemId: 'glossary' }, card(RACK_VIEW, true)),
   flyoutScene('card-edge', '위키 카드: 바 끔, 화면 가장자리 위쪽(같은 이름의 두 뜻 SIL)', null, { barOff: 'right' }, card(packView('SIL'))),
@@ -326,9 +327,16 @@ const CARD_SCENES: Scene[] = [
     '위키 카드: 선택한 글도 클립보드 글도 없음(다음에 할 일 안내)',
     EDGE_RIGHT,
     { itemId: 'glossary' },
-    card({ kind: 'note', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: false })
+    card({ kind: 'note', reason: 'nothing-selected', message: CAPTURE_NOTES['nothing-selected'], canUseClipboard: false })
   ),
-  flyoutScene('card-none-long', '위키 카드: 긴 글에 나온 용어 없음', EDGE_RIGHT, { itemId: 'glossary' }, card(packView('오늘 오후에 다음 주 일정과 담당자를 정했습니다')))
+  flyoutScene('card-none-long', '위키 카드: 긴 글에 나온 용어 없음', EDGE_RIGHT, { itemId: 'glossary' }, card(packView('오늘 오후에 다음 주 일정과 담당자를 정했습니다'))),
+  flyoutScene(
+    'card-found-long',
+    '위키 카드: 용어가 20개를 넘는 글(목록이 카드 안에서 스크롤, 맨 끝에 나머지 수)',
+    EDGE_RIGHT,
+    { itemId: 'glossary' },
+    card(packView(PACK.slice(0, 26).map((e) => e.term).join(', ')))
+  )
 ]
 
 export const SCENES: Scene[] = [

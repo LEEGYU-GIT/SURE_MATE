@@ -47,6 +47,8 @@ export function Palette(): React.JSX.Element {
   const lastQuery = useRef('')
   // 팔레트를 보일 때마다 늘린다. 늦게 온 용어 상세 응답이 그 뒤에 다시 보인 팔레트를 바꾸지 않게
   const shownSeq = useRef(0)
+  // 위키 카드가 연 용어 상세를 받는 중(그동안 빈 검색어 목록이 잠깐 비치지 않게 빈 바탕만 그린다)
+  const [wikiLoading, setWikiLoading] = useState(false)
 
   // 선택은 직접 관리한다(cmdk 자동 선택은 지연 렌더링된 목록과 어긋남)
   useEffect(() => {
@@ -72,11 +74,23 @@ export function Palette(): React.JSX.Element {
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
         // 고치던 용어가 있으면 그 화면으로 돌아가고(커서는 WikiEdit가 마지막 칸에 둔다), 아니면 목록으로
         dispatchWiki({ type: 'shown' })
-        // 위키 카드의 [팔레트에서 열기]: 그 용어 상세를 연다. 고치던 글이 있으면 그 글은 위에 두고 상세만 그 아래에
+        // 위키 카드의 [팔레트에서 열기]: 그 용어 상세를 연다. 고치던 글이 있으면 그 글은 위에 두고 상세만 그 아래에.
+        // 그사이 지워졌거나 받지 못하면 빈 검색어 목록 대신 위키 목록('?')을 보여 준다
+        setWikiLoading(Boolean(view.wikiId))
         if (view.wikiId) {
-          void window.sureMate.getWikiEntry(view.wikiId).then((entry) => {
-            if (entry && seq === shownSeq.current) dispatchWiki({ type: 'show-entry', entry })
-          })
+          void window.sureMate
+            .getWikiEntry(view.wikiId)
+            .catch(() => null)
+            .then((entry) => {
+              if (seq !== shownSeq.current) return
+              setWikiLoading(false)
+              if (entry) {
+                dispatchWiki({ type: 'show-entry', entry })
+                return
+              }
+              setQuery('?')
+              requestAnimationFrame(() => inputRef.current?.focus())
+            })
         }
         requestAnimationFrame(() => inputRef.current?.focus())
       }),
@@ -138,6 +152,8 @@ export function Palette(): React.JSX.Element {
       />
     )
   }
+  // 용어 상세를 받는 몇 ms 동안은 빈 바탕만(빈 검색어의 전체 목록이 한 번 비쳤다가 상세로 바뀌지 않게)
+  if (wikiLoading) return <div className="h-screen bg-surface-palette" />
   if (wiki) {
     return (
       <WikiDetail

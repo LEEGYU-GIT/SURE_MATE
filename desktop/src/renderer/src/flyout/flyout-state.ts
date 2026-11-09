@@ -29,9 +29,13 @@ export const initialFlyoutState: FlyoutViewState = { message: null, open: false,
 
 const samePad = (a: FlyoutPad, b: FlyoutPad): boolean => a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left
 
-/** 위키 카드의 고정만 바뀐 새 내용인지. main은 이때 창을 다시 띄우지 않아 shown을 보내지 않는다 */
+/**
+ * 위키 카드의 고정만 바뀐 새 내용인지(같은 카드 번호). main은 이때 창을 다시 띄우지 않아 shown을 보내지 않는다.
+ * 내용을 비교하지 않는 이유: main은 카드를 숨길 때 화면에 알리지 않으므로, 숨긴 뒤 같은 글로 다시 찾은 카드는
+ * 내용이 같아도 새 카드다(들어오는 움직임과 처음 상태로)
+ */
 function onlyPinChanged(a: FlyoutContent, b: FlyoutContent): boolean {
-  return a.kind === 'wiki-card' && b.kind === 'wiki-card' && a.width === b.width && JSON.stringify(a.view) === JSON.stringify(b.view)
+  return a.kind === 'wiki-card' && b.kind === 'wiki-card' && a.cardId === b.cardId
 }
 
 /**

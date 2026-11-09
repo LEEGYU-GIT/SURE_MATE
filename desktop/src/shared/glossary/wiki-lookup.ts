@@ -1,5 +1,5 @@
 import type { WikiCardEntry, WikiCardView } from '../flyout/flyout-content'
-import { buildSearchIndex, rank, type SearchIndex } from '../search/ranker'
+import { buildSearchIndex, rankStages, TYPO_LONG_JAMO, type RankStage, type SearchIndex } from '../search/ranker'
 import { findGlossaryTerms, MAX_TERMS } from './find-terms'
 import type { GlossaryEntry } from './types'
 
@@ -59,31 +59,41 @@ export function shortWikiQuery(text: string): string | null {
 }
 
 /**
+ * 랭커 결과가 가장 맞는 항목(맨 위)이 될 수 있는지: 이름·별칭 단계는 늘, 자모 오타 단계는 랭커가 오타를 2개까지
+ * 봐주는 긴 검색어(자모 TYPO_LONG_JAMO개 이상)일 때만. 설명 본문에만 있는 말은 후보 자리만 채운다
+ * ('배포'·'문서'처럼 설명에 흔한 말이 엉뚱한 용어를 맨 위에 올리지 않게, '서버' 같은 두 글자 오타도 마찬가지)
+ */
+const canLead = (stage: RankStage, jamoLength: number): boolean => stage === 'name' || (stage === 'typo' && jamoLength >= TYPO_LONG_JAMO)
+
+/**
  * 짧은 글: 글 안에 용어 이름·별칭이 그대로 있으면(조사 허용) 처음 찾은 항목이 가장 맞는 항목이고, 후보는 나머지 찾은 항목
- * (같은 이름의 다른 뜻 포함)과 랭커 결과에서 겹치지 않게 채운다. 그대로 있는 이름이 없을 때만 랭커 순서를 쓴다
- * (랭커를 먼저 쓰면 조사 '가' 같은 짧은 토큰이 다른 항목과 맞아 엉뚱한 항목이 맨 위에 올 수 있다).
+ * (같은 이름의 다른 뜻 포함)과 랭커 결과에서 겹치지 않게 채운다. 그대로 있는 이름이 없을 때만 랭커 결과에서
+ * 맨 위가 될 수 있는 첫 항목(canLead)을 고르고, 없으면 none이다(팔레트 검색은 그대로 모든 단계를 보여 준다).
+ * 랭커를 먼저 쓰지 않는 이유: 조사 '가' 같은 짧은 토큰이 다른 항목과 맞아 엉뚱한 항목이 맨 위에 올 수 있다.
  */
 function lookupShort(t: string, entries: GlossaryEntry[], index: SearchIndex): WikiLookup {
   const direct = findGlossaryTerms(t, entries)
-  const ordered: GlossaryEntry[] = [...direct]
+  const ranked: { entry: GlossaryEntry; lead: boolean }[] = []
   if (direct.length <= OTHER_COUNT) {
     const byId = new Map<string, GlossaryEntry>()
     for (const e of entries) if (!byId.has(e.id)) byId.set(e.id, e)
-    for (const r of rank(index, t)) {
-      const e = byId.get(r.id)
-      if (e) ordered.push(e)
+    const { jamoLength, hits } = rankStages(index, t)
+    for (const h of hits) {
+      const e = byId.get(h.id)
+      if (e) ranked.push({ entry: e, lead: canLead(h.stage, jamoLength) })
     }
   }
-  const seen = new Set<string>()
-  const picked: GlossaryEntry[] = []
-  for (const e of ordered) {
+  const best = direct[0] ?? ranked.find((r) => r.lead)?.entry
+  if (!best) return { kind: 'none' }
+  const seen = new Set<string>([best.id])
+  const others: GlossaryEntry[] = []
+  for (const e of [...direct, ...ranked.map((r) => r.entry)]) {
+    if (others.length === OTHER_COUNT) break
     if (seen.has(e.id)) continue
     seen.add(e.id)
-    picked.push(e)
-    if (picked.length === 1 + OTHER_COUNT) break
+    others.push(e)
   }
-  const [best, ...others] = picked
-  return best ? { kind: 'best', best, others } : { kind: 'none' }
+  return { kind: 'best', best, others }
 }
 
 /**

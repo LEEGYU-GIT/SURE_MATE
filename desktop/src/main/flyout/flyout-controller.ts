@@ -71,6 +71,8 @@ const inRect = (p: { x: number; y: number }, r: Rect): boolean => p.x >= r.x && 
 export function createFlyoutController(d: Deps): FlyoutController {
   const T = FLYOUT_TIMING
   let seq = 0
+  /** 마지막으로 매긴 위키 카드 번호(조회마다 하나, 고정만 바꾸면 그대로) */
+  let cardIds = 0
   let content: FlyoutContent | null = null
   let ctx: Ctx = { itemId: null }
   let pad: FlyoutPad = { top: 0, right: 0, bottom: 0, left: 0 }
@@ -301,7 +303,9 @@ export function createFlyoutController(d: Deps): FlyoutController {
       pinned = false
       pointerInside = false
       autoHideMs = o.autoHideMs
-      present({ kind: 'wiki-card', view, pinned: false, width: o.width }, { itemId: 'glossary' })
+      // 조회마다 새 카드 번호: 숨긴 뒤 같은 글로 다시 찾아도 화면이 앞 카드의 상태(고른 후보·연 상세)를 쓰지 않는다
+      cardIds += 1
+      present({ kind: 'wiki-card', view, pinned: false, width: o.width, cardId: cardIds }, { itemId: 'glossary' })
       startCardTimer()
     },
     ready(s, size) {

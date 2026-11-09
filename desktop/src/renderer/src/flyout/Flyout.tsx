@@ -97,14 +97,14 @@ export function Flyout(): React.JSX.Element | null {
   }, [])
 
   // 메뉴 행·카드 단추를 빠르게 두 번 눌러도 한 번만 보낸다(main이 처리하고 메뉴를 닫는다).
-  // 결과(main이 처리했는지)를 돌려주고, 앞 동작을 처리하는 중이라 보내지 않았으면 null
+  // 결과는 main의 답(true/false), 요청 자체가 거부되면 'failed', 앞 동작을 처리하는 중이라 보내지 않았으면 null
   const busy = useRef(false)
   const act = useCallback<CardSend>((a: FlyoutAction) => {
     if (busy.current) return Promise.resolve(null)
     busy.current = true
     return window.sureMate
       .flyoutAction(a)
-      .catch(() => false)
+      .catch((): 'failed' => 'failed')
       .finally(() => {
         busy.current = false
       })
@@ -186,6 +186,7 @@ function Content({ content, onAction, onResize }: { content: FlyoutContent; onAc
     case 'bar-menu':
       return <BarMenu shape={content.shape} onAction={onAction} />
     case 'wiki-card':
-      return <WikiCard content={content} onAction={onAction} onResize={onResize} />
+      // 조회마다 새 카드 번호라 새 화면으로 만든다(앞 카드의 스크롤·타이머가 남지 않게). 고정만 바뀌면 같은 번호라 그대로
+      return <WikiCard key={content.cardId} content={content} onAction={onAction} onResize={onResize} />
   }
 }

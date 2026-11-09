@@ -1,6 +1,6 @@
 import type { GlossaryEntry } from '../glossary/types'
 import type { BarEdge, BarShape } from '../bar/bar-settings'
-import type { MaskingMode } from '../types'
+import type { CaptureSkipReason, MaskingMode } from '../types'
 
 /**
  * 펼침 창 내용(카드)의 최대 높이(DIP). main은 창을 이보다 크게 놓지 않고(flyout-placement.ts),
@@ -18,18 +18,28 @@ export interface WikiCardEntry {
   source: GlossaryEntry['source']
 }
 
+/**
+ * 안내 카드(note)의 까닭: 선택한 글을 가져오지 못한 까닭, 선택한 글이 없음, 또는 [클립보드 글로 찾기]를 눌렀는데
+ * 클립보드가 비었음(clipboard-empty). 카드는 까닭과 클립보드 글이 있는지로 다음 할 일을 고른다
+ */
+export type WikiNoteReason = CaptureSkipReason | 'nothing-selected' | 'clipboard-empty'
+
 export type WikiCardView =
   | { kind: 'best'; source: 'selection' | 'clipboard'; best: WikiCardEntry; others: WikiCardEntry[] }
   | { kind: 'found'; source: 'selection' | 'clipboard'; entries: WikiCardEntry[]; more: number }
   | { kind: 'none'; source: 'selection' | 'clipboard'; query: string }
-  | { kind: 'note'; message: string; canUseClipboard: boolean }
+  | { kind: 'note'; reason: WikiNoteReason; message: string; canUseClipboard: boolean }
 
 export type FlyoutContent =
   | { kind: 'label'; text: string }
   | { kind: 'masking-menu'; mode: MaskingMode }
   | { kind: 'workspace-menu'; workspaces: { id: string; name: string }[]; canSave: boolean }
   | { kind: 'bar-menu'; shape: BarShape }
-  | { kind: 'wiki-card'; view: WikiCardView; pinned: boolean; width: number }
+  /**
+   * cardId: 조회마다 main(showCard)이 새로 매기는 카드 번호. 고정(pin)만 바뀐 새 내용은 같은 번호라
+   * 화면이 카드 상태(고른 후보·연 상세)를 그대로 두고, 번호가 다르면 내용이 같아도 새 카드로 띄운다
+   */
+  | { kind: 'wiki-card'; view: WikiCardView; pinned: boolean; width: number; cardId: number }
 
 export type MenuContent = Extract<FlyoutContent, { kind: 'masking-menu' | 'workspace-menu' | 'bar-menu' }>
 

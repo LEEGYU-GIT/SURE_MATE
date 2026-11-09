@@ -92,8 +92,9 @@ export function createWikiCard(d: WikiCardDeps): WikiCard {
       }
       // 공백·줄바꿈만 가져온 것은 선택이 없는 것과 같다
       if (r.skipped || !r.text?.trim()) {
+        const reason = r.skipped ?? 'nothing-selected'
         const canUseClipboard = (await readClipboard()).trim() !== ''
-        present(fields, { kind: 'note', message: CAPTURE_NOTES[r.skipped ?? 'nothing-selected'], canUseClipboard })
+        present(fields, { kind: 'note', reason, message: CAPTURE_NOTES[reason], canUseClipboard })
         return
       }
       present(fields, await viewFor(r.text, 'selection'))
@@ -103,7 +104,7 @@ export function createWikiCard(d: WikiCardDeps): WikiCard {
       // 가져오기를 하지 않았으므로 가져오기 필드는 비어 있는 값(method none, 0ms, 되돌림 없음)
       const fields: CaptureFields = { source: 'clipboard', method: 'none', elapsedMs: 0, restored: false, skipped: null, length: text.length }
       if (!text.trim()) {
-        present(fields, { kind: 'note', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false })
+        present(fields, { kind: 'note', reason: 'clipboard-empty', message: CLIPBOARD_EMPTY_NOTE, canUseClipboard: false })
         return
       }
       present(fields, await viewFor(text, 'clipboard'))

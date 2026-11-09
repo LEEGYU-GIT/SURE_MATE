@@ -7,10 +7,11 @@ const PAD: FlyoutPad = { top: 16, right: 0, bottom: 32, left: 24 }
 const msg = (seq: number, content: FlyoutContent, pad: FlyoutPad = PAD, edge: BarEdge = 'right'): FlyoutMessage => ({ seq, content, pad, edge })
 const label = (text: string): FlyoutContent => ({ kind: 'label', text })
 const masking: FlyoutContent = { kind: 'masking-menu', mode: 'restore' }
-const card = (pinned: boolean): FlyoutContent => ({
+const card = (pinned: boolean, cardId = 1): FlyoutContent => ({
   kind: 'wiki-card',
   pinned,
   width: 360,
+  cardId,
   view: { kind: 'none', source: 'selection', query: 'mcdc' }
 })
 
@@ -96,8 +97,18 @@ describe('들어오는 움직임', () => {
     expect(s2).toMatchObject({ open: true, instant: true })
     expect(s2.message?.content).toEqual(card(true))
     // 다른 카드로 바뀌면 새로 띄우는 것이라 shown을 기다린다
-    const other: FlyoutContent = { kind: 'wiki-card', pinned: false, width: 360, view: { kind: 'none', source: 'selection', query: 'sil' } }
+    const other: FlyoutContent = { kind: 'wiki-card', pinned: false, width: 360, cardId: 2, view: { kind: 'none', source: 'selection', query: 'sil' } }
     expect(flyoutReducer(s1, { type: 'content', message: msg(6, other), at: 100 }).open).toBe(false)
+  })
+
+  it('내용이 같아도 카드 번호가 다르면(main이 카드를 숨긴 뒤 같은 글로 다시 찾음) 새 카드다: shown 전까지 감추고 들어오는 움직임으로', () => {
+    // main은 숨길 때 화면에 알리지 않으므로 화면에는 앞 카드가 열린 상태로 남아 있다
+    const s1 = shownState(msg(5, card(false, 1)))
+    const s2 = flyoutReducer(s1, { type: 'content', message: msg(6, card(false, 2)), at: 20000 })
+    expect(s2).toMatchObject({ open: false, instant: false })
+    expect(flyoutReducer(s2, { type: 'shown', seq: 6, at: 20010 })).toMatchObject({ open: true, instant: false })
+    // 같은 번호로 고정만 바뀌면 열린 채 그대로
+    expect(flyoutReducer(shownState(msg(6, card(false, 2))), { type: 'content', message: msg(7, card(true, 2)), at: 1 })).toMatchObject({ open: true, instant: true })
   })
 
   it('앞 이름표가 보인 지 얼마 안 돼 이어지는 이름표는 움직임 없이 바로 보인다(바를 훑을 때)', () => {

@@ -50,6 +50,19 @@ const SCORE = {
 } as const
 /** 이보다 높은 점수가 5개 미만일 때만 오타를 본다 */
 const TYPO_GATE = 5
+/** 검색어 자모가 이 수 이상이면 자모 오타를 1개까지 봐준다 */
+const TYPO_MIN_JAMO = 4
+/** 검색어 자모가 이 수 이상이면 자모 오타를 2개까지 봐준다(위키 카드는 이 길이부터 오타 결과를 맨 위 항목으로 쓴다) */
+export const TYPO_LONG_JAMO = 8
+
+/** 점수가 나온 단계: 이름(제목·별칭), 자모 오타, 설명 본문 */
+export type RankStage = 'name' | 'typo' | 'body'
+
+/** rank 결과에 단계를 붙인 것과, 검색어의 자모 수(오타를 봐줄 거리를 정한 값, 랭커가 세는 그대로) */
+export interface RankedStages {
+  jamoLength: number
+  hits: { id: string; score: number; stage: RankStage }[]
+}
 
 const normalize = (s: string): string => foldForMatch(s.normalize('NFC'))
 
@@ -98,6 +111,8 @@ interface Query {
   cho: string | null
   /** 영문 소문자만이면 한영 오입력으로도 본다 */
   latin: boolean
+  /** 이름 키(compact)의 자모 수 */
+  jamoLength: number
   /** 오타를 봐줄 자모 거리(0이면 보지 않음) */
   maxTypo: number
 }
@@ -115,7 +130,8 @@ function parseQuery(query: string): Query | null {
     // Windows IME는 모음 없이 친 ㄱ+ㅅ·ㅂ+ㅅ을 'ㄳ'·'ㅄ' 한 글자로 합쳐 보내므로 기본 자음으로 나눈다
     cho: isChoseongOnly(text) ? disassemble(text.replace(/\s+/g, '')) : null,
     latin: /^[a-z]+$/.test(keys.compact),
-    maxTypo: !hangul || jamoLength < 4 ? 0 : jamoLength >= 8 ? 2 : 1
+    jamoLength,
+    maxTypo: !hangul || jamoLength < TYPO_MIN_JAMO ? 0 : jamoLength >= TYPO_LONG_JAMO ? 2 : 1
   }
 }
 
@@ -171,23 +187,34 @@ function best(doc: IndexedDoc, f: (n: NameKeys, alias: boolean) => number): { sc
 }
 
 /**
- * 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(0점은 뺀다, 설계 문서 §9).
- * 같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저, 그다음 제목이 짧은 것, 그다음 넣은 순서.
+ * rank와 같은 결과에, 점수가 나온 단계(이름·별칭 / 자모 오타 / 설명 본문)와 검색어의 자모 수를 붙인다.
+ * 거리 2인 오타와 본문 일치는 같은 100점이라 점수만으로는 가릴 수 없다(위키 카드가 맨 위 항목을 고를 때 쓴다).
  */
-export function rank(index: SearchIndex, query: string): { id: string; score: number }[] {
+export function rankStages(index: SearchIndex, query: string): RankedStages {
   const q = parseQuery(query)
-  if (!q) return []
-  const scored = index.docs.map((doc) => ({ doc, ...best(doc, (n, alias) => scoreName(n, q, alias)) }))
+  if (!q) return { jamoLength: 0, hits: [] }
+  const scored = index.docs.map((doc) => ({ doc, stage: 'name' as RankStage, ...best(doc, (n, alias) => scoreName(n, q, alias)) }))
   if (q.maxTypo > 0 && scored.filter((s) => s.score > SCORE.typo).length < TYPO_GATE) {
     for (const s of scored) {
       if (s.score > SCORE.typo) continue
       const typo = best(s.doc, (n) => typoScore(n, q))
-      if (typo.score > s.score) Object.assign(s, typo)
+      if (typo.score > s.score) Object.assign(s, typo, { stage: 'typo' })
     }
   }
-  for (const s of scored) if (s.score === 0 && s.doc.body.includes(q.text)) s.score = SCORE.body
-  return scored
+  for (const s of scored) {
+    if (s.score === 0 && s.doc.body.includes(q.text)) Object.assign(s, { score: SCORE.body, stage: 'body' })
+  }
+  const hits = scored
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score || Number(b.title) - Number(a.title) || a.doc.titleLength - b.doc.titleLength || a.doc.order - b.doc.order)
-    .map((s) => ({ id: s.doc.id, score: s.score }))
+    .map((s) => ({ id: s.doc.id, score: s.score, stage: s.stage }))
+  return { jamoLength: q.jamoLength, hits }
+}
+
+/**
+ * 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(0점은 뺀다, 설계 문서 §9).
+ * 같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저, 그다음 제목이 짧은 것, 그다음 넣은 순서.
+ */
+export function rank(index: SearchIndex, query: string): { id: string; score: number }[] {
+  return rankStages(index, query).hits.map(({ id, score }) => ({ id, score }))
 }
