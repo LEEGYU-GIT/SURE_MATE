@@ -127,3 +127,25 @@ it('깨진 파일을 옆으로 옮기지 못해도(보안 프로그램이 잡고
   expect(await loadSettings(dir)).toEqual(DEFAULT_SETTINGS)
   expect((await readdir(dir)).some((f) => /^settings\.corrupt-\d+\.json$/.test(f))).toBe(true)
 })
+
+it('바·펫 설정: 없으면 기본값(옛 설정 파일 포함), 펫 숨김은 유지', async () => {
+  const { mergeSettings } = await import('./settings-store')
+  const m = mergeSettings({})
+  expect(m.bar).toEqual(DEFAULT_SETTINGS.bar)
+  expect(m.pet).toEqual({ visible: true })
+  await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, hotkeys: { palette: 'Alt+`' }, launchAtLogin: false, onboardingDone: true }))
+  const old = await loadSettings(dir)
+  expect(old.bar).toEqual(DEFAULT_SETTINGS.bar)
+  expect(old.pet.visible).toBe(true)
+  expect(mergeSettings({ pet: { visible: false } }).pet.visible).toBe(false)
+  expect(mergeSettings({ pet: { visible: 'no' } }).pet.visible).toBe(true)
+  expect(mergeSettings({ bar: { shape: 'nope', wikiCardWidth: 9999 } }).bar).toMatchObject({ shape: 'edge', wikiCardWidth: 560 })
+})
+
+it('바 설정을 바꿔 저장하면 읽을 때 유지된다', async () => {
+  const s = await updateSettings(dir, (cur) => ({ ...cur, bar: { ...cur.bar, shape: 'capsule', positions: [{ display: '1', ratio: 0.4 }] } }))
+  expect(s.bar.shape).toBe('capsule')
+  const back = await loadSettings(dir)
+  expect(back.bar.shape).toBe('capsule')
+  expect(back.bar.positions).toEqual([{ display: '1', ratio: 0.4 }])
+})
