@@ -3,7 +3,7 @@ import type { BarItem, BarViewState } from '../../../shared/bar/bar-items'
 import { BAR_METRICS } from '../../../shared/bar/bar-layout'
 import type { MaskingMode } from '../../../shared/types'
 import { LetterIcon, ListChecksIcon, NotebookPenIcon, PetIcon, ScanSearchIcon, SettingsIcon, ShieldIcon, ShieldOffIcon, WikiIcon, WorkspaceIcon } from '../design/icons'
-import { barFrameStyle, createDragReporter, maskingLook, promptIcon, type PromptIconName } from './bar-view'
+import { barFrameStyle, createDragReporter, maskingLook, promptIcon, shouldSendBarClick, type PromptIconName } from './bar-view'
 
 type Shape = BarViewState['shape']
 
@@ -157,7 +157,10 @@ function ItemButton({ item, shape, busy }: { item: Exclude<BarItem, { kind: 'sep
       style={{ width: cell, height: cell }}
       onMouseEnter={() => api.barHover(item.id)}
       onMouseLeave={() => api.barHover(null)}
-      onClick={() => api.barAction(item.id)}
+      onClick={(e) => {
+        // 두 번 클릭의 두 번째 클릭은 보내지 않는다(shouldSendBarClick)
+        if (shouldSendBarClick(e.detail)) api.barAction(item.id)
+      }}
     >
       <span className={`grid place-items-center ${grow} ${pulse}`}>
         <span className={`grid place-items-center text-fg ${dim}`}>

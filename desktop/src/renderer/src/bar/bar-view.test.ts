@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { barFrameStyle, createDragReporter, maskingLook, promptIcon } from './bar-view'
+import { barFrameStyle, createDragReporter, maskingLook, promptIcon, shouldSendBarClick } from './bar-view'
 
 describe('barFrameStyle', () => {
   it('가장자리 띠는 너비 56이고 안쪽 모서리만 8로 둥글다', () => {
@@ -40,6 +40,21 @@ describe('promptIcon', () => {
     expect(promptIcon('weekly-report')).toBeNull()
     expect(promptIcon('')).toBeNull()
     expect(promptIcon('constructor')).toBeNull()
+  })
+})
+
+describe('shouldSendBarClick: 운영 체제의 두 번 클릭 가운데 두 번째 클릭은 보내지 않는다', () => {
+  it('한 번 클릭(detail 1)은 보낸다', () => {
+    expect(shouldSendBarClick(1)).toBe(true)
+  })
+
+  it('두 번 클릭의 두 번째(detail 2), 세 번 클릭(detail 3)은 보내지 않는다(0.3~0.5초 간격은 main의 300ms 막기를 지난다)', () => {
+    expect(shouldSendBarClick(2)).toBe(false)
+    expect(shouldSendBarClick(3)).toBe(false)
+  })
+
+  it('클릭 횟수가 없는 클릭(detail 0: 보조 기술·프로그램이 누름)은 보낸다', () => {
+    expect(shouldSendBarClick(0)).toBe(true)
   })
 })
 

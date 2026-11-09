@@ -41,6 +41,14 @@ const PROMPT_ICONS = new Map<string, PromptIconName>([
 /** 기본 고정 프롬프트는 템플릿 id로 아이콘을 고른다. 그 밖에는 null(이름 첫 글자 칸) */
 export const promptIcon = (templateId: string): PromptIconName | null => PROMPT_ICONS.get(templateId) ?? null
 
+/**
+ * 바 단추 클릭을 main에 보낼지(click의 detail = 운영 체제가 센 연속 클릭 수).
+ * 두 번 클릭의 두 번째 클릭(2 이상)은 보내지 않는다: 아이콘을 습관적으로 두 번 누르면 0.3~0.5초 간격의 두 번째 클릭이
+ * main의 같은 단추 300ms 막기를 지나 팔레트·메뉴를 열었다 바로 닫거나 프롬프트를 두 번 실행했다.
+ * 0(보조 기술·프로그램이 누른 클릭)과 1은 보낸다. main의 300ms 막기는 그대로 둔다.
+ */
+export const shouldSendBarClick = (detail: number): boolean => detail <= 1
+
 export type DragPhase = 'start' | 'move' | 'end'
 
 export interface FrameScheduler {
