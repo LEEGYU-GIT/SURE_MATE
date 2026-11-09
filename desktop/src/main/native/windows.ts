@@ -146,3 +146,24 @@ export async function moveWindow(hwnd: string, targetPhysical: Rect, targetDpi: 
   const after = frameRect(h) ?? windowRect(h) ?? placed
   return { before, after, steps }
 }
+
+/** SHQueryUserNotificationState 결과 해석: HRESULT가 0(S_OK)이 아니거나 값이 없으면 null */
+export function decodeNotificationState(hresult: number, state: number | undefined): number | null {
+  return hresult === 0 && typeof state === 'number' ? state : null
+}
+
+/** 사용자 알림 상태(2·3·4가 전체 화면 계열). Win32를 쓸 수 없거나 조회에 실패하면 null */
+export function notificationState(): number | null {
+  if (!nativeStatus().ok) return null
+  const w = win32()
+  const out = [0]
+  return decodeNotificationState(w.SHQueryUserNotificationState(out), out[0])
+}
+
+/** 위치·크기·활성 상태를 건드리지 않고 맨 앞(TOPMOST)으로만 올린다. Win32를 쓸 수 없으면 false */
+export function raiseTopmost(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER
+  return Boolean(w.SetWindowPos(w.toHwnd(hwnd), w.HWND_TOPMOST, 0, 0, 0, 0, flags))
+}

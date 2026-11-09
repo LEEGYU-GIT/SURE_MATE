@@ -15,7 +15,9 @@ const CONSTANTS = {
   WS_EX_NOACTIVATE: 0x08000000,
   SW_RESTORE: 9,
   SW_MAXIMIZE: 3,
+  // SetWindowPos 플래그와 삽입 기준(winuser.h): SWP_NOSIZE 0x0001, SWP_NOMOVE 0x0002, SWP_NOACTIVATE 0x0010, SWP_NOOWNERZORDER 0x0200
   SWP_NOSIZE: 0x0001,
+  SWP_NOMOVE: 0x0002,
   SWP_NOZORDER: 0x0004,
   SWP_NOACTIVATE: 0x0010,
   SWP_NOOWNERZORDER: 0x0200,
@@ -26,7 +28,13 @@ const CONSTANTS = {
   TOKEN_ELEVATION_CLASS: 20,
   INPUT_KEYBOARD: 1,
   KEYEVENTF_EXTENDEDKEY: 0x0001,
-  KEYEVENTF_KEYUP: 0x0002
+  KEYEVENTF_KEYUP: 0x0002,
+  // HWND_TOPMOST는 (HWND)-1. koffi 3의 포인터는 BigInt라 64비트 부호 없는 값으로 넘긴다.
+  HWND_TOPMOST: BigInt.asUintN(64, -1n),
+  // GetAsyncKeyState 가상 키 코드(winuser.h)
+  VK_LBUTTON: 0x01,
+  VK_RBUTTON: 0x02,
+  VK_MBUTTON: 0x04
 } as const
 
 /** UTF-16 문자열을 돌려주는 Win32 함수용 버퍼 읽기 */
@@ -44,6 +52,7 @@ function bind(koffi: typeof Koffi) {
   const kernel32 = koffi.load('kernel32.dll')
   const dwmapi = koffi.load('dwmapi.dll')
   const advapi32 = koffi.load('advapi32.dll')
+  const shell32 = koffi.load('shell32.dll')
 
   const HANDLE = koffi.pointer('HANDLE', koffi.opaque())
   koffi.alias('HWND', HANDLE)
@@ -110,6 +119,8 @@ function bind(koffi: typeof Koffi) {
     SendInput: user32.func('uint32_t __stdcall SendInput(uint32_t cInputs, KEYBOARD_INPUT *pInputs, int cbSize)'),
     MapVirtualKeyW: user32.func('uint32_t __stdcall MapVirtualKeyW(uint32_t uCode, uint32_t uMapType)'),
     GetAsyncKeyState: user32.func('int16_t __stdcall GetAsyncKeyState(int vKey)'),
+    /** HRESULT를 돌려준다(0이면 성공). QUERY_USER_NOTIFICATION_STATE는 int32 열거형이다. */
+    SHQueryUserNotificationState: shell32.func('int32_t __stdcall SHQueryUserNotificationState(_Out_ int32_t *pquns)'),
     GetClipboardSequenceNumber: user32.func('uint32_t __stdcall GetClipboardSequenceNumber()'),
     /** 클립보드에 있는 형식 수. 0이면 비어 있다(OpenClipboard 없이 부를 수 있다). */
     CountClipboardFormats: user32.func('int __stdcall CountClipboardFormats()')
