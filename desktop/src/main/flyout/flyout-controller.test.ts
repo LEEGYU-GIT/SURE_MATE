@@ -371,3 +371,101 @@ describe('위키 카드', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+
+describe('보이는 위키 카드의 크기가 카드 안에서 바뀌면(다른 후보·목록↔상세) 다시 띄우지 않고 자리만 맞춘다', () => {
+  const show = (t: ReturnType<typeof make>, height = 200): void => {
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(t.sent.at(-1)!.seq, { width: 360, height })
+  }
+
+  it('같은 seq로 새 크기를 알리면 같은 기준(바 항목 위쪽)으로 창만 다시 놓는다: 보이기·맨 앞·shown·로그 flyout.show 없음', () => {
+    const t = make()
+    show(t)
+    const before = t.calls.length
+    t.c.ready(1, { width: 360, height: 320 })
+    expect(t.calls.slice(before)).toEqual(['setBounds'])
+    expect(t.lastBounds()).toEqual({ x: 1472, y: 584, width: 384, height: 368 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+    expect(t.window.raise).toHaveBeenCalledTimes(1)
+    expect(t.window.shown).toHaveBeenCalledTimes(1)
+    expect(t.log.mock.calls.filter(([e]) => e === 'flyout.show')).toHaveLength(1)
+  })
+
+  it('크기가 같으면 아무것도 하지 않는다', () => {
+    const t = make()
+    show(t)
+    const before = t.calls.length
+    t.c.ready(1, { width: 360, height: 200 })
+    expect(t.calls.length).toBe(before)
+  })
+
+  it('자동 숨김 시간을 다시 세지 않는다(8초는 처음 띄운 때부터)', () => {
+    const t = make()
+    show(t)
+    vi.advanceTimersByTime(5000)
+    t.c.ready(1, { width: 360, height: 320 })
+    vi.advanceTimersByTime(2999)
+    expect(t.window.hide).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(t.log).toHaveBeenCalledWith('flyout.hide', { kind: 'wiki-card', reason: 'timeout' })
+  })
+
+  it('마우스를 올린 채(자동 숨김 멈춤) 크기가 바뀌어도 멈춘 그대로', () => {
+    const t = make()
+    show(t)
+    t.c.pointer(true)
+    t.c.ready(1, { width: 360, height: 420 })
+    vi.advanceTimersByTime(30000)
+    expect(t.window.hide).not.toHaveBeenCalled()
+  })
+
+  it('아래로 커져 작업 영역을 넘으면 위로 올려 작업 영역 안에 두고, 줄어든 아래 여백은 같은 seq로 다시 보낸다', () => {
+    const t = make()
+    show(t)
+    t.c.ready(1, { width: 360, height: 560 })
+    const r = t.lastBounds()
+    expect(r.y + r.height).toBeLessThanOrEqual(1040)
+    expect(t.sent.at(-1)).toMatchObject({ seq: 1, pad: { bottom: 8 } })
+  })
+
+  it('바가 꺼진 카드(화면 가장자리 위쪽)도 같은 규칙으로 크기만 바꾼다', () => {
+    const t = make({ barVisible: false })
+    show(t)
+    t.c.ready(1, { width: 360, height: 300 })
+    expect(t.lastBounds()).toEqual({ x: 1548 - 24, y: 0, width: 384, height: 344 })
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+  })
+
+  it('옛 seq의 크기, 이름표·메뉴의 다시 알림, 숨긴 뒤의 알림은 무시한다', () => {
+    const t = make()
+    show(t)
+    t.c.showCard(view, { width: 360, autoHideMs: 8000 })
+    t.c.ready(2, { width: 360, height: 200 })
+    const before = t.calls.length
+    t.c.ready(1, { width: 360, height: 400 })
+    expect(t.calls.length).toBe(before)
+
+    const m = make()
+    m.c.toggleMenu(maskingMenu, 'masking'); m.c.ready(1, { width: 200, height: 140 })
+    const n = m.calls.length
+    m.c.ready(1, { width: 200, height: 300 })
+    expect(m.calls.length).toBe(n)
+
+    const h = make()
+    show(h)
+    h.c.close('button')
+    const k = h.calls.length
+    h.c.ready(1, { width: 360, height: 300 })
+    expect(h.calls.length).toBe(k)
+  })
+
+  it('고정만 바꾼 뒤(새 seq)의 크기 알림은 그 seq로 받고, 그 뒤에 다시 알린 크기도 받는다', () => {
+    const t = make()
+    show(t)
+    t.c.pin(true)
+    t.c.ready(2, { width: 360, height: 200 })
+    t.c.ready(2, { width: 360, height: 260 })
+    expect(t.lastBounds().height).toBe(260 + 48)
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+  })
+})

@@ -34,6 +34,10 @@ export interface FlyoutController {
   hover(itemId: string | null): void
   toggleMenu(content: MenuContent, itemId: string | null, atY?: number): void
   showCard(view: WikiCardView, o: { width: number; autoHideMs: number }): void
+  /**
+   * renderer가 그 seq의 내용을 그린 크기. 기다리던 seq면 창을 놓고 띄운다.
+   * 이미 보이는 위키 카드의 seq로 다시 오면(카드 안에서 크기가 바뀜) 다시 띄우지 않고 자리·크기만 맞춘다
+   */
   ready(seq: number, size: { width: number; height: number }): void
   pointer(inside: boolean): void
   pin(pinned: boolean): void
@@ -245,6 +249,24 @@ export function createFlyoutController(d: Deps): FlyoutController {
     else applyBounds(win)
   }
 
+  /**
+   * 보이는 위키 카드가 카드 안에서 크기를 바꿨다(다른 후보·목록↔상세). 같은 기준으로 창 자리·크기만 다시 맞춘다:
+   * 다시 띄우거나 맨 앞으로 올리지 않고, 자동 숨김 시간도 다시 세지 않는다. 크기가 그대로면 아무것도 하지 않는다.
+   * 맞추지 않으면 투명 창이 커진 카드를 자르거나, 줄어든 카드 밑의 빈 곳이 아래 앱의 클릭을 막는다.
+   */
+  function resize(size: Size): void {
+    const c = content
+    if (!c || (lastSize && lastSize.width === size.width && lastSize.height === size.height)) return
+    lastSize = size
+    const win = windowFor(c, size)
+    if (!win) {
+      hide('no-anchor')
+      return
+    }
+    applyBounds(win)
+    d.log('flyout.resize', { kind: c.kind, seq, bounds: win.window })
+  }
+
   return {
     hover(itemId) {
       labelTimer = clearT(labelTimer)
@@ -283,8 +305,12 @@ export function createFlyoutController(d: Deps): FlyoutController {
       startCardTimer()
     },
     ready(s, size) {
-      if (!pending || pending.seq !== s) return
-      finish(size, pending.reshow)
+      if (pending) {
+        if (pending.seq === s) finish(size, pending.reshow)
+        return
+      }
+      // 이미 보이는 위키 카드가 같은 seq로 크기를 다시 알렸다(이름표·메뉴는 크기가 바뀌지 않는다)
+      if (visible && s === seq && content?.kind === 'wiki-card') resize(size)
     },
     pointer(inside) {
       pointerInside = inside
