@@ -1,6 +1,8 @@
+import type { BarShape } from '../../shared/bar/bar-settings'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import type { Template } from '../../shared/template/types'
 import type { MaskingMode, PaletteItem } from '../../shared/types'
+import { barCommandItems } from '../bar/bar-commands'
 import { packCommandItems } from '../glossary/pack-commands'
 import { maskingCommandItems } from '../masking/masking-commands'
 
@@ -15,7 +17,7 @@ const firstLine = (s: string): string => s.split('\n', 1)[0].trim()
 export function buildPaletteItems(
   templates: Template[],
   commands: PaletteItem[],
-  o: { maskingMode: MaskingMode; glossary: GlossaryEntry[] }
+  o: { maskingMode: MaskingMode; glossary: GlossaryEntry[]; barShape: BarShape }
 ): PaletteItem[] {
   const fromTemplates = templates.map(
     (t): PaletteItem => ({
@@ -37,5 +39,5 @@ export function buildPaletteItems(
       tags: [...e.tags]
     })
   )
-  return [...fromTemplates, ...maskingCommandItems(o.maskingMode), ...packCommandItems(), ...commands, ...wiki]
+  return [...fromTemplates, ...maskingCommandItems(o.maskingMode), ...barCommandItems(o.barShape), ...packCommandItems(), ...commands, ...wiki]
 }

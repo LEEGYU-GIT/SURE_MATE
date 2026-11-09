@@ -6,11 +6,12 @@ import { app, dialog, shell as electronShell, globalShortcut, type Tray } from '
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
-import { withPosition } from '../shared/bar/bar-settings'
+import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { FlyoutAction } from '../shared/flyout/flyout-content'
 import type { ShownPayload } from '../shared/ipc-channels'
 import type { MaskingMode } from '../shared/types'
 import { createBarActions } from './bar/bar-actions'
+import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
@@ -62,6 +63,7 @@ let hotkeys: HotkeyManager | null = null
 /** Sure-Mate 바·펼침 창(시작에 실패하면 null, 팔레트·트레이는 그대로) */
 let barRuntime: BarRuntime | null = null
 let barActions: { run(id: string): Promise<void> } | null = null
+let barCommands: { run(id: string): Promise<boolean> } | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
@@ -92,6 +94,13 @@ function setMaskingMode(userData: string, mode: MaskingMode): Promise<void> {
   return changeSettings(userData, (cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
 }
 
+/** 바 모양을 저장하고 적용한다. 모양을 고르면 잠시 숨김도 푼다(트레이·팔레트·바 메뉴가 같이 쓴다) */
+async function setBarShape(userData: string, shape: BarShape): Promise<void> {
+  await changeSettings(userData, (cur) => ({ ...cur, bar: { ...cur.bar, shape } }))
+  barRuntime?.bar.unsnooze()
+  shell?.refresh()
+}
+
 /** 설정 화면이 생기기 전까지는 settings.json을 기본 프로그램으로 연다(없으면 만든다) */
 async function openSettingsFile(userData: string): Promise<void> {
   const path = join(userData, 'settings.json')
@@ -117,6 +126,7 @@ async function runItem(id: string): Promise<void> {
   }
   if (isDevCommand(id)) return runDevCommand(id)
   if (maskingCommands && (await maskingCommands.run(id))) return
+  if (barCommands && (await barCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
   if (id.startsWith('snippet:') && snippets) {
@@ -196,7 +206,17 @@ async function startShell(userData: string): Promise<void> {
       suspended = !suspended
       return suspended
     },
-    onQuit: () => app.quit()
+    onQuit: () => app.quit(),
+    barShape: () => settings.bar.shape,
+    onBarShape: (shape) => {
+      log('bar.shape', { shape, source: 'tray' })
+      void setBarShape(userData, shape)
+    },
+    barSnoozed: () => barRuntime?.bar.snoozed() ?? false,
+    onUnsnooze: () => {
+      barRuntime?.bar.unsnooze()
+      shell?.refresh()
+    }
   })
 
   const native = nativeStatus()
@@ -260,6 +280,14 @@ function startBar(userData: string): void {
     openSettings: () => openSettingsFile(userData),
     log
   })
+  barCommands = createBarCommands({
+    getShape: () => settings.bar.shape,
+    setShape: (shape) => setBarShape(userData, shape),
+    waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+    hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+    notify,
+    log
+  })
 }
 
 /** 펼침 창에서 고른 동작. 위키 카드 동작(wiki-*)은 Task 12에서 잇는다 */
@@ -272,9 +300,8 @@ async function runFlyoutAction(userData: string, a: FlyoutAction): Promise<boole
       r.flyout.close('done')
       return true
     case 'set-bar-shape':
-      await changeSettings(userData, (cur) => ({ ...cur, bar: { ...cur.bar, shape: a.shape } }))
-      r.bar.unsnooze()
       r.flyout.close('done')
+      await setBarShape(userData, a.shape)
       return true
     case 'snooze-bar':
       r.flyout.close('done')
@@ -402,7 +429,7 @@ if (!app.requestSingleInstanceLock()) {
         barRuntime?.refresh()
         const glossary = (await glossaryCache.get()).entries
         glossaryEntries = glossary
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
