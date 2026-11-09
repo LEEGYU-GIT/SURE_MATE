@@ -3,6 +3,7 @@ import type { PromptDraft, PromptPreview, PromptRequest, PromptRunResult } from 
 import { withObjectParticle } from '../../shared/josa'
 import type { MaskItem } from '../../shared/masking/types'
 import type { FillResult, Template } from '../../shared/template/types'
+import { errorCode } from '../error-text'
 import type { CaptureResult, MaskingMode } from '../../shared/types'
 
 /** 넘으면 경고하는 입력 길이(설계 문서 §16: 2만 자 기준) */
@@ -12,6 +13,7 @@ export const PREVIEW_CHARS = 4000
 export const SESSION_TTL_MS = 10 * 60 * 1000
 
 const EXPIRED = '시간이 지나 준비한 내용이 사라졌어요. 프롬프트를 다시 골라 주세요.'
+const BUSY_NOTICE = '다른 프롬프트를 실행하고 있어요. 잠시 뒤에 다시 눌러 주세요.'
 const NO_INPUT = '넣을 글이 없어요. 글을 선택하거나 직접 입력해 주세요.'
 
 /** 가리기 결과(가명 처리 서비스가 돌려주는 것 중 세션이 쓰는 것) */
@@ -151,7 +153,11 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         d.log('prompt.prepare.missing', { templateId })
         return
       }
-      if (busy) return
+      if (busy) {
+        d.log('prompt.prepare.busy', { templateId })
+        d.notify(BUSY_NOTICE)
+        return
+      }
       busy = true
       try {
         // 키를 누른 채로 팔레트를 숨기면 자동 반복된 Enter가 원래 앱에 들어가 선택한 글을 지운다
@@ -220,9 +226,11 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         return 'missing'
       }
       busy = true
+      let selectionLength = 0
       try {
         // 바는 포커스를 받지 않아 원래 창이 그대로 앞에 있다. 팔레트가 열려 있을 때만 숨기고 돌아간다
         const got = await grab(d.paletteVisible())
+        selectionLength = got.selection.length
         if (got.selection) {
           const clip = await d.readClipboard()
           await execute(template, got.selection, clip, undefined)
@@ -232,6 +240,9 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
         await showConfirmFor(template, got, 'prompt.bar')
         d.log('prompt.bar', { templateId, result: 'confirm', selectionLength: 0, skipped: got.skipped ?? null })
         return 'confirm'
+      } catch (e) {
+        d.log('prompt.bar', { templateId, result: 'failed', selectionLength, skipped: null, error: errorCode(e) })
+        throw e
       } finally {
         busy = false
       }

@@ -416,3 +416,33 @@ it('바: 로그에 선택 글이 없다', async () => {
   expect(JSON.stringify(f.calls.logs)).not.toContain(SELECTED)
   expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes', result: 'ran', selectionLength: 9, skipped: null })
 })
+
+it('확인 화면 준비: 바 실행 중이면 알림과 기록을 남기고 가져오지 않으며, 끝나면 다시 된다', async () => {
+  let release!: () => void
+  const f = fake({ captureGate: new Promise<void>((r) => (release = r)) })
+  const s = createPromptSession(f.deps)
+  const bar = s.runFromBar('meeting-notes')
+  await s.prepare('meeting-notes')
+  expect(f.calls.captures).toBe(1)
+  expect(f.calls.drafts).toHaveLength(0)
+  expect(f.calls.notes).toEqual(['다른 프롬프트를 실행하고 있어요. 잠시 뒤에 다시 눌러 주세요.'])
+  expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes' })
+  release()
+  await bar
+  await s.prepare('meeting-notes')
+  expect(f.calls.drafts).toHaveLength(1)
+})
+
+it('바: 실행 중 오류가 나면 오류 코드만 기록하고 다시 던지며 busy가 풀린다', async () => {
+  const boom = Object.assign(new Error('가상자동차 회의 내용'), { code: 'EBUSY' })
+  const f = fake({
+    mask: async () => {
+      throw boom
+    }
+  })
+  const s = createPromptSession(f.deps)
+  await expect(s.runFromBar('meeting-notes')).rejects.toBe(boom)
+  expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes', result: 'failed', selectionLength: 9, skipped: null, error: 'EBUSY' })
+  expect(JSON.stringify(f.calls.logs)).not.toContain('가상자동차')
+  await expect(s.runFromBar('meeting-notes')).rejects.toBe(boom)
+})
