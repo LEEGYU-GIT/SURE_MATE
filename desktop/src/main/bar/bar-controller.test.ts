@@ -273,4 +273,28 @@ describe('createBarController', () => {
     expect(t.sets.length).toBeLessThanOrEqual(2)
     expect(t.lastSet().y).toBe(12)
   })
+
+  it('커서가 바 위에 있을 때 숨겼다 다시 나와도 1.3초 뒤 접힌다', () => {
+    const t = make({ autoHide: true })
+    t.c.start()
+    t.c.pointer(true)
+    t.c.holdOpen(true)
+    t.c.snooze()
+    t.c.unsnooze()
+    expect(t.lastSet()).toEqual({ x: 1864, y: 292, width: 56, height: 456 })
+    vi.advanceTimersByTime(1300)
+    expect(t.lastSet()).toEqual({ x: 1914, y: 292, width: 6, height: 456 })
+  })
+
+  it('끌던 중 숨기면 저장되지 않은 위치는 버린다', () => {
+    const t = make()
+    t.c.start()
+    t.c.drag('start', 500)
+    t.c.drag('move', 600)
+    expect(t.lastSet().y).toBe(392)
+    t.c.snooze()
+    t.c.unsnooze()
+    expect(t.lastSet().y).toBe(292)
+    expect(t.savePosition).not.toHaveBeenCalled()
+  })
 })

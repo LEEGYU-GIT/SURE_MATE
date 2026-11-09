@@ -199,7 +199,14 @@ export function createBarController(d: Deps): BarController {
     }
     if (!want.visible && isVisible) {
       isVisible = false
+      // 끌던 중이면 저장되지 않은 위치를 버린다
+      if (dragging?.active) memo = null
       dragging = null
+      // 숨긴 사이 커서 상태를 잊어야 다시 나왔을 때 접힌다
+      lastInside = false
+      lastHold = false
+      autoHide.pointer(false)
+      autoHide.holdOpen(false)
       autoHide.setEnabled(false)
       keeper.setVisible(false)
       viewCollapsed = false
