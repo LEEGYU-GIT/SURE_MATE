@@ -117,6 +117,15 @@ it('설명 복사: 0.6초 안에 Enter를 떼지 않으면 팔레트를 닫지 �
   }
 })
 
+it('설명 복사 안내: 상세 화면의 Esc는 목록으로 돌아가므로 Esc를 두 번 눌러 닫으라고 알린다', async () => {
+  const f = fake()
+  f.deps.waitKeysReleased = async () => false
+  expect(await createGlossaryRuntime(f.deps).copy('mcdc')).toBe(true)
+  expect(f.calls.notes).toHaveLength(1)
+  expect(f.calls.notes[0]).not.toContain('Esc로 닫은 뒤')
+  expect(f.calls.notes[0]).toContain('Esc를 두 번 눌러 팔레트를 닫은 뒤')
+})
+
 it('링크는 그 항목의 http/https 링크만 번호로 연다', async () => {
   const f = fake()
   const r = createGlossaryRuntime(f.deps)

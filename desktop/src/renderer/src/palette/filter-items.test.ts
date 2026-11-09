@@ -95,3 +95,14 @@ it('위키 범위에 검색어가 있거나 아무것도 못 찾으면 맨 끝�
   expect(add('')).toBeUndefined()
   expect(add('?')).toBeUndefined()
 })
+
+it('범위 없이 한 글자만 치면 "직접 추가하기"를 붙이지 않는다(위키를 빼고 찾았을 뿐 맞는 용어가 있을 수 있다)', () => {
+  const list: PaletteItem[] = [{ id: 'wiki:regression', group: 'wiki', title: '회귀 시험' }]
+  const shown = (q: string): string[] => ids(withWikiAdd(filterItems(list, q), q))
+  expect(shown('회')).toEqual([])
+  expect(shown('ㅎ')).toEqual([])
+  expect(shown(' 회 ')).toEqual([])
+  // ?로 위키를 고르면 한 글자에도 붙이고, 범위 없이 두 글자 이상 쳐서 아무것도 못 찾으면 붙인다
+  expect(shown('?회')).toEqual(['wiki:regression', WIKI_ADD_ID])
+  expect(shown('없는말')).toEqual([WIKI_ADD_ID])
+})

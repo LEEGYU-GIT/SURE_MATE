@@ -53,7 +53,8 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
       if (await d.waitKeysReleased()) {
         d.hidePalette(true)
       } else {
-        d.notify('설명을 복사했어요. Enter를 누르고 있어 팔레트를 닫지 않았어요. Esc로 닫은 뒤 붙여넣을 곳에서 Ctrl+V를 누르세요.')
+        // 상세 화면의 Esc는 목록으로 돌아가고, 목록에서 한 번 더 눌러야 팔레트가 닫힌다
+        d.notify('설명을 복사했어요. Enter를 누르고 있어 팔레트를 닫지 않았어요. Esc를 두 번 눌러 팔레트를 닫은 뒤 붙여넣을 곳에서 Ctrl+V를 누르세요.')
         d.log('wiki.copy.keysHeld', { id })
       }
       return true

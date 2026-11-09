@@ -59,11 +59,13 @@ export const WIKI_ADD_ID = 'wiki-add'
 
 /**
  * 위키 범위(?)에 검색어가 있거나, 범위 없이 쳤는데 아무것도 못 찾았으면 맨 끝에 '직접 추가하기'를 붙인다.
- * 다른 범위(/ > ! @)에서는 붙이지 않는다.
+ * 다른 범위(/ > ! @)에서는 붙이지 않는다. 범위 없이 한 글자만 쳤을 때도 붙이지 않는다:
+ * 그때는 위키를 빼고 찾으므로(filterItems) 맞는 용어가 있어도 목록이 비어 '직접 추가하기'만 남는다.
  */
 export function withWikiAdd(items: PaletteItem[], query: string): PaletteItem[] {
   const { scope, text } = parseQuery(query)
   if (!text) return items
+  if (scope === null && isOneChar(text)) return items
   if (scope !== 'wiki' && (scope !== null || items.length > 0)) return items
   return [...items, { id: WIKI_ADD_ID, group: 'wiki', title: `‘${text}’ 용어 직접 추가하기`, subtitle: '이 용어를 아시나요? 설명을 적어 팔레트 위키에 넣어요' }]
 }
