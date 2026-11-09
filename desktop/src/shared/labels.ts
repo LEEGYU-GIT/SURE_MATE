@@ -1,3 +1,4 @@
+import type { BarShape } from './bar/bar-settings'
 import type { MaskCategory } from './masking/types'
 import type { CaptureSkipReason, MaskingMode } from './types'
 
@@ -21,6 +22,21 @@ const MASKING_LABELS: Record<MaskingMode, string> = {
 }
 
 export const maskingModeLabel = (mode: MaskingMode): string => MASKING_LABELS[mode]
+
+const BAR_SHAPE_LABELS: Record<BarShape, string> = {
+  edge: '가장자리 띠',
+  capsule: '떠 있는 캡슐',
+  off: '끔'
+}
+
+/** 바 모양 이름(바 메뉴·트레이·팔레트 명령·알림이 같이 쓴다) */
+export const barShapeLabel = (shape: BarShape): string => BAR_SHAPE_LABELS[shape]
+
+/**
+ * 바 이름표의 "이름 · 보조 글" 구분(예: "팔레트 열기 · Ctrl+Alt+Space").
+ * 펼침 창 이름표는 맨 뒤 구분 다음을 흐린 보조 글로 그린다(단축키면 키 모양).
+ */
+export const LABEL_HINT_SEPARATOR = ' · '
 
 /** 가명 처리 분류 이름(확인 화면의 감지 요약 등) */
 export const MASK_CATEGORY_LABELS: Record<MaskCategory, string> = {

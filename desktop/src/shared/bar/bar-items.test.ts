@@ -18,7 +18,8 @@ describe('buildBarItems', () => {
     expect(kinds(items)).toEqual(['logo', 'masking', 'separator', 'prompt', 'prompt', 'prompt', 'separator', 'workspace', 'glossary', 'separator', 'pet', 'settings'])
     expect(items.filter((i) => i.kind === 'prompt').map((i) => i.id)).toEqual(['prompt:meeting-notes', 'prompt:req-to-testcase', 'prompt:static-analysis'])
     const first = items.find((i) => i.kind === 'prompt')
-    expect(first).toMatchObject({ label: '회의록 정리', glyph: '회', templateId: 'meeting-notes' })
+    // 이름표는 이름 뒤에 누르면 하는 일을 붙인다(이름표에서는 흐린 보조 글로 보인다)
+    expect(first).toMatchObject({ label: '회의록 정리 · 선택한 글로 실행', glyph: '회', templateId: 'meeting-notes' })
   })
 
   it('없는 id와 상용구 id는 제외', () => {

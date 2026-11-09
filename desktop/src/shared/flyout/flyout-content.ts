@@ -30,6 +30,12 @@ export type MenuContent = Extract<FlyoutContent, { kind: 'masking-menu' | 'works
 /** 투명 창 안에서 그림자가 잘리지 않게 두는 여백(바 반대쪽 세 면) */
 export type FlyoutPad = { top: number; right: number; bottom: number; left: number }
 
+/**
+ * main → 펼침 창 메시지. seq가 새로우면 새 내용이다.
+ * 지금 seq와 같은 seq가 다시 오면 창을 작업 영역 안으로 맞추느라 면별 그림자 여백(pad)이 바뀐 것이다.
+ * 그래서 화면은 pad가 달라질 때마다 seq와 상관없이 pad를 적용하고, 내용 갱신만 seq로 거른다
+ * (renderer/src/flyout/flyout-state.ts, 시험 flyout-state.test.ts).
+ */
 export interface FlyoutMessage {
   seq: number
   content: FlyoutContent

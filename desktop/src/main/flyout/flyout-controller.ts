@@ -8,12 +8,15 @@ import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from './flyout-placeme
 
 export const FLYOUT_TIMING = { labelDelayMs: 400, labelChainMs: 300, readyTimeoutMs: 300, dismissPollMs: 50, menuAwayMs: 1500 }
 
-/** renderer가 ready를 보내지 못했을 때 쓰는 종류별 기본 크기(위키 카드의 너비는 내용의 width를 쓴다) */
+/**
+ * renderer가 ready를 보내지 못했을 때 쓰는 종류별 기본 크기(위키 카드의 너비는 내용의 width를 쓴다).
+ * 메뉴는 펼침 창 화면(renderer/src/flyout)의 실제 크기와 같다(너비 272, 높이는 행 수로 정해진다). 작으면 메뉴가 잘린다.
+ */
 export const FLYOUT_FALLBACK_SIZE: Record<FlyoutContent['kind'], { width: number; height: number }> = {
   label: { width: 120, height: 24 },
-  'masking-menu': { width: 200, height: 140 },
-  'workspace-menu': { width: 240, height: 220 },
-  'bar-menu': { width: 200, height: 150 },
+  'masking-menu': { width: 272, height: 192 },
+  'workspace-menu': { width: 272, height: 152 },
+  'bar-menu': { width: 272, height: 224 },
   'wiki-card': { width: 360, height: 200 }
 }
 

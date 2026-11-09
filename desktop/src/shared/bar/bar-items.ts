@@ -1,4 +1,4 @@
-import { maskingModeLabel } from '../labels'
+import { LABEL_HINT_SEPARATOR, maskingModeLabel } from '../labels'
 import type { Template } from '../template/types'
 import type { MaskingMode } from '../types'
 import type { BarEdge } from './bar-settings'
@@ -27,17 +27,29 @@ export interface BuildBarItemsInput {
   paletteHotkey: string | null
 }
 
-/** 순서: 로고, 가명 처리 | 고정 프롬프트 | 워크스페이스, 용어 사전 | 펫, 설정. 빈 그룹의 구분선은 생략한다. */
+/** 고정 프롬프트 이름표의 보조 글: 누르면 하는 일(선택한 글이 없으면 확인 화면이 뜬다) */
+const PROMPT_HINT = '선택한 글로 실행'
+
+/**
+ * 순서: 로고, 가명 처리 | 고정 프롬프트 | 워크스페이스, 용어 사전 | 펫, 설정. 빈 그룹의 구분선은 생략한다.
+ * 이름표(label)는 "이름 · 보조 글" 꼴일 수 있다(LABEL_HINT_SEPARATOR). 보조 글은 맨 뒤 하나다.
+ */
 export function buildBarItems(i: BuildBarItemsInput): BarItem[] {
   const prompts: BarItem[] = []
   for (const id of i.pinned) {
     const t = i.templates.find((x) => x.id === id && x.kind === 'prompt')
     if (!t) continue
-    prompts.push({ kind: 'prompt', id: `prompt:${t.id}`, label: t.name, templateId: t.id, glyph: Array.from(t.name)[0] ?? '?' })
+    prompts.push({
+      kind: 'prompt',
+      id: `prompt:${t.id}`,
+      label: `${t.name}${LABEL_HINT_SEPARATOR}${PROMPT_HINT}`,
+      templateId: t.id,
+      glyph: Array.from(t.name)[0] ?? '?'
+    })
   }
   const groups: BarItem[][] = [
     [
-      { kind: 'logo', id: 'logo', label: i.paletteHotkey ? `팔레트 열기 · ${i.paletteHotkey}` : '팔레트 열기' },
+      { kind: 'logo', id: 'logo', label: i.paletteHotkey ? `팔레트 열기${LABEL_HINT_SEPARATOR}${i.paletteHotkey}` : '팔레트 열기' },
       { kind: 'masking', id: 'masking', label: `가명 처리: ${maskingModeLabel(i.maskingMode)}`, mode: i.maskingMode }
     ],
     prompts,

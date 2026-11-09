@@ -1,10 +1,14 @@
+import { useEffect, useState } from 'react'
+import { flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
-import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect } from '../../../shared/bar/bar-layout'
+import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect, itemOffsets } from '../../../shared/bar/bar-layout'
+import type { FlyoutContent, FlyoutMessage, FlyoutPad } from '../../../shared/flyout/flyout-content'
 import type { MaskingMode, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
+import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
 import { Desktop } from './Desktop'
-import type { FakeFixtures } from './fake-api'
+import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
 export interface Scene {
   id: string
@@ -32,6 +36,7 @@ type BarOptions = Partial<Pick<BarViewState, 'shape' | 'edge' | 'opacity' | 'col
   masking?: MaskingMode
   petVisible?: boolean
   pinned?: string[]
+  paletteHotkey?: string
 }
 
 function barState(o: BarOptions = {}): BarViewState {
@@ -43,7 +48,7 @@ function barState(o: BarOptions = {}): BarViewState {
       templates: [...TEMPLATES],
       maskingMode: o.masking ?? 'restore',
       petVisible: o.petVisible ?? true,
-      paletteHotkey: 'Alt+`'
+      paletteHotkey: o.paletteHotkey ?? 'Alt+`'
     }),
     opacity: o.opacity ?? 1,
     collapsed: o.collapsed ?? false,
@@ -119,6 +124,116 @@ function pair(id: string, title: string, o: BarOptions, backdrop?: React.ReactNo
   }
 }
 
+/** 펼침 창의 기준: 바 항목(이름표·메뉴), 또는 바 창 안에서 오른쪽 클릭한 세로 위치(바 메뉴) */
+type FlyoutAnchor = { itemId: string } | { clickY: number }
+type Placed = { window: Rect; pad: FlyoutPad }
+
+const ZERO_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 }
+const samePad = (a: FlyoutPad, b: FlyoutPad): boolean => a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left
+
+/** 바 창 사각형(main의 barRect와 같은 자리) */
+const barWindowRect = (s: BarViewState): Rect =>
+  barRect({ workArea: WORK_AREA, shape: s.shape, edge: s.edge, size: barSize(s.items, s.shape), ratio: DEFAULT_BAR_RATIO })
+
+/** 펼침 창 배치: main과 같은 flyoutCardRect(바 안쪽 8 DIP)·flyoutWindowRect(그림자 여백, 작업 영역 안) */
+function placeFlyout(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent, size: { width: number; height: number }): Placed {
+  const r = barWindowRect(bar)
+  let at: Rect
+  if ('itemId' in anchor) {
+    const o = itemOffsets(bar.items, bar.shape).find((x) => x.id === anchor.itemId)
+    if (!o) throw new Error(`바 항목 없음: ${anchor.itemId}`)
+    at = { x: r.x, y: r.y + o.top, width: r.width, height: o.height }
+  } else {
+    at = { x: r.x, y: r.y + anchor.clickY, width: r.width, height: 0 }
+  }
+  const card = flyoutCardRect({ size, anchor: at, bar: r, edge: bar.edge, workArea: WORK_AREA, align: content.kind === 'label' ? 'center' : 'top' })
+  return flyoutWindowRect(card, bar.edge, WORK_AREA)
+}
+
+/**
+ * 미리 보기용 펼침 창 컨트롤러. main의 표시 순서를 따른다:
+ * 내용 보냄 → 화면이 그린 크기를 알림(ready) → 배치(여백이 줄면 같은 seq로 여백만 다시 보냄) → 창을 그 자리에 → shown.
+ */
+function createFlyoutDriver(bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent) {
+  let message: FlyoutMessage = { seq: 1, content, pad: flyoutWindowRect(ZERO_RECT, bar.edge).pad }
+  let placed: Placed | null = null
+  const contentCbs = new Set<(m: FlyoutMessage) => void>()
+  const shownCbs = new Set<(seq: number) => void>()
+  const placedCbs = new Set<(p: Placed) => void>()
+  const host: FakeFlyoutHost = {
+    onContent(cb) {
+      contentCbs.add(cb)
+      setTimeout(() => {
+        if (contentCbs.has(cb)) cb(message)
+      }, 0)
+      return () => contentCbs.delete(cb)
+    },
+    onShown(cb) {
+      shownCbs.add(cb)
+      return () => shownCbs.delete(cb)
+    },
+    ready(seq, width, height) {
+      if (seq !== message.seq || placed) return
+      const p = placeFlyout(bar, anchor, content, { width, height })
+      placed = p
+      if (!samePad(p.pad, message.pad)) {
+        message = { ...message, pad: p.pad }
+        for (const cb of contentCbs) cb(message)
+      }
+      for (const cb of placedCbs) cb(p)
+    }
+  }
+  return {
+    host,
+    onPlaced(cb: (p: Placed) => void): () => void {
+      placedCbs.add(cb)
+      if (placed) cb(placed)
+      return () => placedCbs.delete(cb)
+    },
+    shown(): void {
+      for (const cb of shownCbs) cb(message.seq)
+    }
+  }
+}
+
+/** 펼침 창 장면: 바와 그 옆 펼침 창(투명 창 사각형 밖은 잘린다 — 그림자가 창 안에 들어오는지 확인) */
+function FlyoutStage({ bar, driver }: { bar: BarViewState; driver: ReturnType<typeof createFlyoutDriver> }): React.JSX.Element {
+  const [placed, setPlaced] = useState<Placed | null>(null)
+  useEffect(() => driver.onPlaced(setPlaced), [driver])
+  // 창을 자리에 놓은 뒤 shown(main의 showInactive → shown 순서)
+  useEffect(() => {
+    if (placed) driver.shown()
+  }, [placed, driver])
+  const win = placed?.window ?? ZERO_RECT
+  return (
+    <Desktop edge={bar.edge}>
+      <Stage>
+        <AppWindow side={bar.edge === 'right' ? 'left' : 'right'} />
+        <BarWindow state={bar} />
+        <div
+          data-flyout-window=""
+          style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height, overflow: 'hidden', visibility: placed ? 'visible' : 'hidden' }}
+        >
+          <Flyout />
+        </div>
+      </Stage>
+    </Desktop>
+  )
+}
+
+function flyoutScene(id: string, title: string, bar: BarViewState, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
+  const driver = createFlyoutDriver(bar, anchor, content)
+  return { id, title, fixtures: { flyout: driver.host }, render: () => <FlyoutStage bar={bar} driver={driver} /> }
+}
+
+const EDGE_RIGHT = barState({ paletteHotkey: 'Ctrl+Alt+Space' })
+const EDGE_RIGHT_OFF = barState({ masking: 'off', paletteHotkey: 'Ctrl+Alt+Space' })
+const CAPSULE_LEFT = barState({ shape: 'capsule', edge: 'left', paletteHotkey: 'Ctrl+Alt+Space' })
+const labelOf = (s: BarViewState, itemId: string): string => {
+  const item = s.items.find((i) => i.id === itemId)
+  return item && 'label' in item ? item.label : itemId
+}
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -149,5 +264,18 @@ export const SCENES: Scene[] = [
       <AppWindow side="left" under />
       <AppWindow side="right" under />
     </>
-  )
+  ),
+  flyoutScene('flyout-label', '펼침 창: 로고 이름표(단축키는 키 모양)', EDGE_RIGHT, { itemId: 'logo' }, { kind: 'label', text: labelOf(EDGE_RIGHT, 'logo') }),
+  flyoutScene(
+    'flyout-label-long',
+    '펼침 창: 사용자가 만든 긴 프롬프트 이름표(최대 너비 240에서 보조 글이 통째로 다음 줄로)',
+    EDGE_RIGHT,
+    { itemId: 'prompt:static-analysis' },
+    { kind: 'label', text: '가상자동차 요구사항 추적표 정리와 누락 항목 확인 · 선택한 글로 실행' }
+  ),
+  flyoutScene('flyout-masking', '펼침 창: 가명 처리 기본값 메뉴(가명 후 되돌리기)', EDGE_RIGHT, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'restore' }),
+  flyoutScene('flyout-masking-off', '펼침 창: 가명 처리 기본값 메뉴(끔 — 글과 주황으로)', EDGE_RIGHT_OFF, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'off' }),
+  flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
+  flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
+  flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' })
 ]

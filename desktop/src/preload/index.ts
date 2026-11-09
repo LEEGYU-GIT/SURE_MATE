@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
+import type { FlyoutMessage } from '../shared/flyout/flyout-content'
 import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.
@@ -31,7 +32,21 @@ const api: SureMateApi = {
   barHover: (id) => ipcRenderer.send(IPC.barHover, id),
   barPointer: (inside) => ipcRenderer.send(IPC.barPointer, inside),
   barContextMenu: (y) => ipcRenderer.send(IPC.barContextMenu, y),
-  barDrag: (phase, screenY) => ipcRenderer.send(IPC.barDrag, phase, screenY)
+  barDrag: (phase, screenY) => ipcRenderer.send(IPC.barDrag, phase, screenY),
+  getFlyoutContent: () => ipcRenderer.invoke(IPC.flyoutGetContent),
+  onFlyoutContent: (cb) => {
+    const listener = (_e: IpcRendererEvent, m: FlyoutMessage): void => cb(m)
+    ipcRenderer.on(IPC.flyoutContent, listener)
+    return () => ipcRenderer.removeListener(IPC.flyoutContent, listener)
+  },
+  onFlyoutShown: (cb) => {
+    const listener = (_e: IpcRendererEvent, seq: number): void => cb(seq)
+    ipcRenderer.on(IPC.flyoutShown, listener)
+    return () => ipcRenderer.removeListener(IPC.flyoutShown, listener)
+  },
+  flyoutReady: (seq, width, height) => ipcRenderer.send(IPC.flyoutReady, seq, width, height),
+  flyoutPointer: (inside) => ipcRenderer.send(IPC.flyoutPointer, inside),
+  flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

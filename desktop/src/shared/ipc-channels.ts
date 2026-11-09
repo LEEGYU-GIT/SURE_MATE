@@ -1,4 +1,5 @@
 import type { BarViewState } from './bar/bar-items'
+import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
@@ -76,7 +77,18 @@ export const IPC = {
   barHover: 'bar:hover',
   barPointer: 'bar:pointer',
   barContextMenu: 'bar:context-menu',
-  barDrag: 'bar:drag'
+  barDrag: 'bar:drag',
+  /** 펼침 창 → main(invoke): 지금 내용(창이 뜬 뒤 처음 한 번) */
+  flyoutGetContent: 'flyout:get-content',
+  /** main → 펼침 창: 새 내용, 또는 같은 seq로 그림자 여백만 바뀜 */
+  flyoutContent: 'flyout:content',
+  /** main → 펼침 창: 창을 배치하고 띄웠다(들어오는 움직임 시작) */
+  flyoutShown: 'flyout:shown',
+  /** 펼침 창 → main(send) */
+  flyoutReady: 'flyout:ready',
+  flyoutPointer: 'flyout:pointer',
+  /** 펼침 창 → main(invoke → boolean): 메뉴 행·카드 단추 */
+  flyoutAction: 'flyout:action'
 } as const
 
 /** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
@@ -125,4 +137,16 @@ export interface SureMateApi {
   barContextMenu(y: number): void
   /** 바의 빈 곳을 끌기. screenY는 화면 좌표(DIP) */
   barDrag(phase: 'start' | 'move' | 'end', screenY: number): void
+  /** 펼침 창: 지금 내용(없으면 null) */
+  getFlyoutContent(): Promise<FlyoutMessage | null>
+  /** 새 내용, 또는 같은 seq로 그림자 여백(pad)만 바뀐 메시지 */
+  onFlyoutContent(cb: (m: FlyoutMessage) => void): () => void
+  /** main이 그 seq의 창을 배치하고 띄웠다 */
+  onFlyoutShown(cb: (seq: number) => void): () => void
+  /** 그 seq의 내용을 그렸고 크기(DIP)가 이렇다 */
+  flyoutReady(seq: number, width: number, height: number): void
+  /** 마우스가 펼침 창 내용에 들어감·나감 */
+  flyoutPointer(inside: boolean): void
+  /** 메뉴 행·카드 단추. main이 받아 처리했으면 true */
+  flyoutAction(a: FlyoutAction): Promise<boolean>
 }

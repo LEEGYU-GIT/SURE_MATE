@@ -1,4 +1,5 @@
 import { Bar } from './bar/Bar'
+import { Flyout } from './flyout/Flyout'
 import { ImeLogger } from './ime-logger/ImeLogger'
 import { Palette } from './palette/Palette'
 
@@ -9,6 +10,8 @@ function App(): React.JSX.Element {
       return <ImeLogger />
     case '#/bar':
       return <Bar />
+    case '#/flyout':
+      return <Flyout />
     default:
       return <Palette />
   }

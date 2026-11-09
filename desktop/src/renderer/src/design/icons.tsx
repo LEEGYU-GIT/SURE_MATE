@@ -133,6 +133,29 @@ export const ScanSearchIcon = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+/** 펼침 메뉴에서 지금 고른 값 표시 */
+export const CheckIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M20 6 9 17l-5-5" />
+  </Svg>
+)
+
+export const EyeOffIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+    <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+    <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+    <path d="m2 2 20 20" />
+  </Svg>
+)
+
+export const PlusIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M5 12h14" />
+    <path d="M12 5v14" />
+  </Svg>
+)
+
 /**
  * 이름 첫 글자 칸(Lucide에 맞는 아이콘이 없는 고정 프롬프트). 둥근 네모 테두리는 다른 아이콘과 같은 선 굵기로 그리고,
  * 글자는 SVG가 아니라 글자 크기 토큰(letterClassName)으로 그려 작은 아이콘에서도 12px 아래로 줄지 않게 한다.
