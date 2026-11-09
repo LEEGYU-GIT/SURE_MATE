@@ -1,3 +1,4 @@
+import type { BarViewState } from './bar/bar-items'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
@@ -65,7 +66,17 @@ export const IPC = {
   wikiCopy: 'wiki:copy',
   wikiOpenLink: 'wiki:open-link',
   wikiSave: 'wiki:save',
-  devSaveImeLog: 'dev:save-ime-log'
+  devSaveImeLog: 'dev:save-ime-log',
+  /** 바 화면 → main(invoke): 지금 바 상태 */
+  barGetState: 'bar:get-state',
+  /** main → 바 화면: 바 상태가 바뀜 */
+  barState: 'bar:state',
+  /** 바 화면 → main(send) */
+  barAction: 'bar:action',
+  barHover: 'bar:hover',
+  barPointer: 'bar:pointer',
+  barContextMenu: 'bar:context-menu',
+  barDrag: 'bar:drag'
 } as const
 
 /** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
@@ -101,4 +112,17 @@ export interface SureMateApi {
   onShown(cb: (payload: ShownPayload) => void): () => void
   /** 개발용: 한글 입력 기록을 logs 폴더에 저장하고 경로를 돌려준다 */
   saveImeLog(label: string, json: string): Promise<string>
+  /** 바 화면: 지금 바 상태(바가 없으면 null) */
+  getBarState(): Promise<BarViewState | null>
+  onBarState(cb: (s: BarViewState) => void): () => void
+  /** 바 항목을 왼쪽 클릭했다 */
+  barAction(id: string): void
+  /** 마우스가 바 항목에 들어감(id) 또는 나감(null) */
+  barHover(id: string | null): void
+  /** 마우스가 바 창에 들어감·나감 */
+  barPointer(inside: boolean): void
+  /** 오른쪽 클릭. y는 바 창 안의 세로 위치(DIP) */
+  barContextMenu(y: number): void
+  /** 바의 빈 곳을 끌기. screenY는 화면 좌표(DIP) */
+  barDrag(phase: 'start' | 'move' | 'end', screenY: number): void
 }

@@ -48,6 +48,13 @@ it('모서리와 글자 크기 토큰', () => {
   expect(token('--fs-title')).toBe('20px')
 })
 
+it('움직임 토큰(§14-4): 마우스 올림 120ms, 펼침 200ms, 바 들어가고 나오기 300ms, ease-out 곡선', () => {
+  expect(token('--dur-hover')).toBe('120ms')
+  expect(token('--dur-open')).toBe('200ms')
+  expect(token('--dur-slide')).toBe('300ms')
+  expect(token('--ease-out')).toMatch(/^cubic-bezier\(/)
+})
+
 it('Pretendard를 앱 안의 파일로 불러온다(외부 주소 없음)', () => {
   expect(css).toMatch(/@font-face\s*{[^}]*Pretendard Variable[^}]*url\(['"]?\.\.\/assets\/fonts\/PretendardVariable\.woff2/)
   expect(css).not.toMatch(/https?:\/\//)

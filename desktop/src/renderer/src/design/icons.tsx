@@ -1,12 +1,23 @@
-import type { SVGProps } from 'react'
+import { useId, type SVGProps } from 'react'
 import type { PaletteGroup } from '../../../shared/types'
 
 // Lucide 아이콘 몇 개를 옮겨 왔다(ISC, 일부는 Feather MIT). 라이선스: resources/licenses/Lucide-LICENSE.txt(설치 파일에 함께 들어간다)
 // 설계 문서 §14-4: 24 격자, 선 굵기 1.8, 둥근 끝
 
-type IconProps = { size?: number; className?: string }
+/** badge: 오른쪽 위 상태 점의 색(예: 'var(--brand)') */
+type IconProps = { size?: number; className?: string; badge?: string }
 
-function Svg({ size = 16, className, children }: IconProps & { children: SVGProps<SVGSVGElement>['children'] }): React.JSX.Element {
+/**
+ * 상태 점(24 격자). 점 둘레를 --ink 고리로 칠해 아이콘 선과 떼어 놓는다.
+ * 어두운 바 위에서는 고리가 바탕과 같아 보여 잘라 낸 틈처럼 보이고, 밝은 화면 위에서는 점의 윤곽이 된다(말랑 메이트의 --ink 외곽선과 같은 원리).
+ */
+const BADGE = { cx: 19.25, cy: 4.75, r: 3.25, ring: 1.5 }
+
+function Badge({ color }: { color: string }): React.JSX.Element {
+  return <circle cx={BADGE.cx} cy={BADGE.cy} r={BADGE.r} strokeWidth={BADGE.ring * 2} style={{ fill: color, stroke: 'var(--ink)', paintOrder: 'stroke' }} />
+}
+
+function Svg({ size = 16, className, badge, children }: IconProps & { children: SVGProps<SVGSVGElement>['children'] }): React.JSX.Element {
   return (
     <svg
       width={size}
@@ -21,6 +32,7 @@ function Svg({ size = 16, className, children }: IconProps & { children: SVGProp
       aria-hidden="true"
     >
       {children}
+      {badge ? <Badge color={badge} /> : null}
     </svg>
   )
 }
@@ -81,6 +93,112 @@ export const ShieldOffIcon = (p: IconProps): React.JSX.Element => (
     <path d="m2 2 20 20" />
   </Svg>
 )
+
+export const SettingsIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+)
+
+export const NotebookPenIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" />
+    <path d="M2 6h4" />
+    <path d="M2 10h4" />
+    <path d="M2 14h4" />
+    <path d="M2 18h4" />
+    <path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z" />
+  </Svg>
+)
+
+export const ListChecksIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M13 5h8" />
+    <path d="M13 12h8" />
+    <path d="M13 19h8" />
+    <path d="m3 17 2 2 4-4" />
+    <path d="m3 7 2 2 4-4" />
+  </Svg>
+)
+
+export const ScanSearchIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="m16 16-1.9-1.9" />
+  </Svg>
+)
+
+/**
+ * 이름 첫 글자 칸(Lucide에 맞는 아이콘이 없는 고정 프롬프트). 둥근 네모 테두리는 다른 아이콘과 같은 선 굵기로 그리고,
+ * 글자는 SVG가 아니라 글자 크기 토큰(letterClassName)으로 그려 작은 아이콘에서도 12px 아래로 줄지 않게 한다.
+ */
+export function LetterIcon({ letter, size = 16, className = '', letterClassName = '' }: IconProps & { letter: string; letterClassName?: string }): React.JSX.Element {
+  return (
+    <span className={`inline-grid shrink-0 place-items-center ${className}`} style={{ width: size, height: size }}>
+      <Svg size={size} className="col-start-1 row-start-1">
+        <rect width="20" height="20" x="2" y="2" rx="5" />
+      </Svg>
+      <span aria-hidden="true" className={`col-start-1 row-start-1 leading-none font-semibold ${letterClassName}`}>
+        {letter}
+      </span>
+    </span>
+  )
+}
+
+/** 말랑 메이트 젤리 몸(시안 docs/design/mallang-mate.html의 경로, 64 격자) */
+const JELLY_BODY = 'M8 52 C8 30 18 16 32 16 C46 16 56 30 56 52 C56 57 50 58 32 58 C14 58 8 57 8 52 Z'
+/** 64 격자에서 24 격자 선 굵기 1.8에 해당하는 굵기 */
+const PET_STROKE = 1.8 * (64 / 24)
+/** 끔 사선(Lucide 끔 아이콘의 m2 2 20 20을 64 격자로)과 사선 양옆 틈(24 격자 1.5) */
+const PET_SLASH = 'M5.33 5.33 58.67 58.67'
+const PET_SLASH_GAP = 1.5 * (64 / 24)
+
+/**
+ * 말랑 메이트 보이기·숨기기 아이콘. 몸이 아래쪽(y 16~58)에 있어 5만큼 올려 다른 아이콘과 가운데를 맞춘다.
+ * off면 눈을 빼고 몸을 흐리게 한 뒤 사선을 긋는다. 사선은 흐리게 하지 않는다(상태를 알리는 선이라 대비를 지킨다).
+ * 사선 양옆의 몸 윤곽은 마스크로 잘라 사선과 떼어 놓는다(Lucide 끔 아이콘과 같은 모양).
+ */
+export function PetIcon({ size = 16, className, off = false }: IconProps & { off?: boolean }): React.JSX.Element {
+  const maskId = `pet-off-${useId().replace(/[^\w-]/g, '')}`
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={PET_STROKE}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {off ? (
+        <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+          <rect width="64" height="64" fill="white" stroke="none" />
+          <path d={PET_SLASH} stroke="black" strokeWidth={PET_STROKE + 2 * PET_SLASH_GAP} />
+        </mask>
+      ) : null}
+      <g mask={off ? `url(#${maskId})` : undefined} opacity={off ? 0.5 : undefined}>
+        <g transform="translate(0 -5)">
+          <path d={JELLY_BODY} />
+          {off ? null : (
+            <>
+              <ellipse cx="25.5" cy="38" rx="3.6" ry="4.8" fill="currentColor" stroke="none" />
+              <ellipse cx="38.5" cy="38" rx="3.6" ry="4.8" fill="currentColor" stroke="none" />
+            </>
+          )}
+        </g>
+      </g>
+      {off ? <path d={PET_SLASH} /> : null}
+    </svg>
+  )
+}
 
 const GROUP_ICONS: Record<PaletteGroup, (p: IconProps) => React.JSX.Element> = {
   prompt: PromptIcon,

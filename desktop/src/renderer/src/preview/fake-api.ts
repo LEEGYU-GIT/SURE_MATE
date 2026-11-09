@@ -1,15 +1,19 @@
+import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { AppStatus, SureMateApi } from '../../../shared/ipc-channels'
 import type { PaletteItem } from '../../../shared/types'
 
-/** 장면마다 지정하는 가짜 데이터. 이후 작업이 barState·flyout 등을 추가한다. */
+/** 장면마다 지정하는 가짜 데이터. 이후 작업이 flyout 등을 추가한다. */
 export interface FakeFixtures {
   status: AppStatus
   items: PaletteItem[]
+  /** 바 화면(`<Bar />`)이 getBarState로 받는 상태 */
+  barState: BarViewState | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
   status: { paletteHotkey: null, maskingMode: 'restore', aiTargetName: 'Claude' },
-  items: []
+  items: [],
+  barState: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -37,6 +41,13 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     openWikiLink: async () => false,
     saveWikiEntry: async () => ({ ok: false, errors: [] }),
     onShown: () => () => {},
-    saveImeLog: async () => ''
+    saveImeLog: async () => '',
+    getBarState: async () => fx.barState,
+    onBarState: () => () => {},
+    barAction: () => {},
+    barHover: () => {},
+    barPointer: () => {},
+    barContextMenu: () => {},
+    barDrag: () => {}
   }
 }
