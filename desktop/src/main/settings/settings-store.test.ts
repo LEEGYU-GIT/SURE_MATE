@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, updateSettings } from './settings-store'
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, SettingsUnreadableError, updateSettings } from './settings-store'
 
 // 백신·EDR이 파일을 잡고 있어 이름 바꾸기가 실패하는 경우를 흉내 내려고 rename만 감싼다
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -59,6 +59,23 @@ it('한 값만 바꿔 저장해도 실행 중에 손으로 고친 다른 값은 
   expect(s.masking).toMatchObject({ mode: 'off', internalDomains: ['intra.example'] })
   const onDisk = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'))
   expect(onDisk.masking).toMatchObject({ mode: 'off', internalDomains: ['intra.example'] })
+})
+
+it('updateSettings: JSON이 깨졌으면 저장하지 않고 SettingsUnreadableError(parse)를 던진다(파일은 옮기지 않고 그대로)', async () => {
+  await writeFile(join(dir, 'settings.json'), '{oops')
+  const err = await updateSettings(dir, (cur) => ({ ...cur, onboardingDone: true })).catch((e: unknown) => e)
+  expect(err).toBeInstanceOf(SettingsUnreadableError)
+  expect((err as SettingsUnreadableError).what).toBe('parse')
+  expect(await readdir(dir)).toEqual(['settings.json'])
+  expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('{oops')
+})
+
+it('updateSettings: 읽지 못하면(파일 자리에 폴더 등) 저장하지 않고 SettingsUnreadableError(read)를 던진다', async () => {
+  await mkdir(join(dir, 'settings.json'))
+  const err = await updateSettings(dir, (cur) => ({ ...cur, onboardingDone: true })).catch((e: unknown) => e)
+  expect(err).toBeInstanceOf(SettingsUnreadableError)
+  expect((err as SettingsUnreadableError).what).toBe('read')
+  expect(await readdir(dir)).toEqual(['settings.json'])
 })
 
 it('BOM이 붙은 설정 파일도 읽는다', async () => {

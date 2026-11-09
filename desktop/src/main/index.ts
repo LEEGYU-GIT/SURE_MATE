@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access, readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
@@ -33,7 +33,8 @@ import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
-import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, SETTINGS_FILE, updateSettings, type Settings } from './settings/settings-store'
+import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, type Settings } from './settings/settings-store'
+import { createSettingsWriter } from './settings/settings-writer'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { openImeLoggerWindow } from './windows/ime-logger-window'
@@ -59,8 +60,6 @@ let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** Sure-Mate 바와 펼침 창. 시작하지 못했거나 앱을 끝낸 뒤에는 null(팔레트·트레이는 그대로 동작) */
 let barRuntime: BarRuntime | null = null
-/** 설정 저장을 한 번에 하나씩(겹치면 한쪽 변경이 사라지고 같은 임시 파일 settings.json.tmp에 함께 쓴다) */
-let settingsWrites: Promise<void> = Promise.resolve()
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
@@ -78,32 +77,13 @@ function applySettings(next: Settings): void {
 
 const onSettingsLoadError = (what: string, e: unknown): void => log('settings.loadError', { what, error: errorText(e) })
 
-/** 설정 파일 쓰기를 한 번에 하나씩 실행한다(앞 작업이 실패해도 다음 작업은 실행한다) */
-function queueSettingsWrite<T>(job: () => Promise<T>): Promise<T> {
-  const run = settingsWrites.then(job)
-  settingsWrites = run.then(
-    () => {},
-    () => {}
-  )
-  return run
-}
-
 /**
- * 설정 파일을 다시 읽어 바꿀 값만 고친 뒤 저장하고 적용한다(실행 중에 손으로 고친 값을 덮어쓰지 않게).
- * 저장하지 못해도 이번 실행에는 적용한다(그때는 기록만 하고 거부하지 않는다).
+ * 실행 중 설정 저장(한 번에 하나씩). 파일을 다시 읽어 바꿀 값만 고치고(손으로 고친 값을 덮어쓰지 않게),
+ * 파일을 읽지 못했거나 깨졌으면 덮지 않고 메모리의 설정에만 적용한다
  */
-function changeSettings(update: (current: Settings) => Settings): Promise<void> {
-  return queueSettingsWrite(async () => {
-    let next: Settings
-    try {
-      next = await updateSettings(userData, update, onSettingsLoadError)
-    } catch (e) {
-      log('settings.saveError', { error: errorText(e) })
-      next = update(settings)
-    }
-    applySettings(next)
-  })
-}
+const settingsWriter = createSettingsWriter({ dir: () => userData, current: () => settings, apply: applySettings, notify, log })
+
+const changeSettings = (update: (current: Settings) => Settings): Promise<void> => settingsWriter.change(update)
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
 const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
@@ -111,11 +91,9 @@ const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur
 /** 바 모양(바 메뉴). 잠시 숨김 해제는 부르는 쪽이 한다 */
 const saveBarShape = (shape: BarShape): Promise<void> => changeSettings((cur) => ({ ...cur, bar: { ...cur.bar, shape } }))
 
-/** 말랑 메이트 보이기·숨기기: 바에 보이는 지금 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
+/** 말랑 메이트 보이기·숨기기: 차례가 왔을 때 바에 보이는 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
 async function togglePet(): Promise<void> {
-  const visible = !settings.pet.visible
-  await changeSettings((cur) => ({ ...cur, pet: { ...cur.pet, visible } }))
-  log('pet.visible', { visible })
+  await settingsWriter.togglePet()
 }
 
 /**
@@ -124,15 +102,8 @@ async function togglePet(): Promise<void> {
  */
 async function openSettings(): Promise<void> {
   const path = join(userData, SETTINGS_FILE)
-  // 다른 설정 저장과 같은 임시 파일을 쓰므로 같은 줄에서 만든다
-  const created = await queueSettingsWrite(async () => {
-    const exists = await access(path).then(
-      () => true,
-      () => false
-    )
-    if (!exists) await saveSettings(userData, settings)
-    return !exists
-  })
+  // 없을 때(ENOENT)만 만든다. 다른 설정 저장과 같은 임시 파일을 쓰므로 같은 줄에서
+  const created = await settingsWriter.ensureFile()
   const error = await electronShell.openPath(path)
   if (error) {
     electronShell.showItemInFolder(path)
