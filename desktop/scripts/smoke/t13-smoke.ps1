@@ -16,8 +16,8 @@ $form.Controls.Add($tb)
 $form.Show(); Pump 300
 Key 0x12; [void][W]::SetForegroundWindow($form.Handle); Key 0x12 -Up; $form.Activate(); $tb.Focus(); $tb.SelectAll(); Pump 300
 
-Combo 'Ctrl+Alt+W'; Pump 1500
-$r.capture = NewLogs 'dev.capture' | Select-Object -Last 1
+Combo 'Ctrl+Alt+W'; Pump 3000
+$r.capture = NewLogs 'wiki.card' | Select-Object -Last 1
 $r.after_formats = ([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats()) -join ','
 $r.after_text = [System.Windows.Forms.Clipboard]::GetText()
 if ((IsApp)) { Tap $VK['esc']; Pump 500 }
