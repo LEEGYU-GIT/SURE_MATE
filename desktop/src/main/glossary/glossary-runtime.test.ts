@@ -120,6 +120,14 @@ it('기본 용어를 고치면 같은 id의 내 용어로 저장하고 version�
   expect(s.saved[0].map((e) => e.id)).toEqual(['mcdc'])
 })
 
+it('고쳐도 작성자(닉네임)는 그대로 둔다(편집 화면에는 작성자 칸이 없다)', async () => {
+  const mine: GlossaryEntry = { ...entry, id: 'u1', term: '우리 팀 용어', author: '검증팀', source: 'user' }
+  const s = saving([mine])
+  const r = await createGlossaryRuntime(s.deps).save({ ...draft, term: '우리 팀 용어', definition: '고친 설명' }, { id: 'u1', allowDuplicate: false })
+  expect(r).toMatchObject({ ok: true, entry: { id: 'u1', definition: '고친 설명', author: '검증팀', version: 2 } })
+  expect(s.saved[0][0].author).toBe('검증팀')
+})
+
 it('제한을 넘는 항목은 저장하지 않고 까닭을 돌려준다', async () => {
   const s = saving()
   const r = await createGlossaryRuntime(s.deps).save({ ...draft, definition: '가'.repeat(1001) }, { allowDuplicate: false })

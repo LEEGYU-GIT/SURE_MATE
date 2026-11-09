@@ -60,7 +60,8 @@ export function WikiDetail(props: { entry: GlossaryEntry; onBack: () => void; on
             <div className="flex flex-col items-start gap-1">
               {entry.links.map((link, i) => (
                 <button
-                  key={link.url}
+                  // 같은 주소가 두 번 들어 있을 수 있어 번호를 붙인다
+                  key={`${i}:${link.url}`}
                   type="button"
                   tabIndex={-1}
                   onClick={() => openLink(i)}

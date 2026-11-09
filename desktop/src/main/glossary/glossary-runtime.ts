@@ -57,8 +57,15 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
         const dup = key ? entries.find((e) => normalizedKey(e.term) === key) : undefined
         if (dup) return { ok: false, duplicate: { id: dup.id, term: dup.term, definition: dup.definition } }
       }
-      // 보낸 내용은 팩과 같은 검사를 거친다(renderer를 믿지 않는다)
-      const raw = { ...fields, id: base?.id ?? d.newId(), source: 'user', updatedAt: d.now(), version: (base?.version ?? 0) + 1 }
+      // 보낸 내용은 팩과 같은 검사를 거친다(renderer를 믿지 않는다). 편집 화면에 작성자 칸이 없으므로 고칠 때는 원래 작성자를 지킨다
+      const raw = {
+        ...fields,
+        ...(base?.author ? { author: base.author } : {}),
+        id: base?.id ?? d.newId(),
+        source: 'user',
+        updatedAt: d.now(),
+        version: (base?.version ?? 0) + 1
+      }
       const parsed = parseGlossaryPack({ format: GLOSSARY_FORMAT, version: 1, entries: [raw] }, 'user')
       const entry = parsed.entries[0]
       if (!entry || parsed.errors.length) return { ok: false, errors: (parsed.errors.length ? parsed.errors : ['저장할 수 없는 내용이에요']).map(plainError) }

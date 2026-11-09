@@ -28,7 +28,8 @@ export function packCommandItems(): PaletteItem[] {
 }
 
 export interface PackCommandDeps {
-  glossary(): Promise<{ entries: GlossaryEntry[]; userEntries: GlossaryEntry[] }>
+  /** userBroken: 내 용어 파일이 있는데 한 항목도 읽지 못함 */
+  glossary(): Promise<{ entries: GlossaryEntry[]; userEntries: GlossaryEntry[]; userBroken: boolean }>
   saveUserEntries(list: GlossaryEntry[]): Promise<void>
   waitKeysReleased(): Promise<boolean>
   hidePalette(restoreFocus: boolean): void
@@ -55,9 +56,14 @@ export function createPackCommands(d: PackCommandDeps): { run(id: string): Promi
 
   const exportCommand = async (): Promise<void> => {
     await hide()
-    const { userEntries } = await d.glossary()
+    const { userEntries, userBroken } = await d.glossary()
     if (userEntries.length === 0) {
-      d.notify('내보낼 내 용어가 없어요. 용어를 추가하거나 고친 뒤 내보내 주세요.')
+      d.notify(
+        userBroken
+          ? '내 용어 파일(glossary.json)을 읽지 못해 내보낼 수 없어요. 파일이 깨졌거나 다른 프로그램이 쓰고 있을 수 있어요.'
+          : '내보낼 내 용어가 없어요. 용어를 추가하거나 고친 뒤 내보내 주세요.'
+      )
+      d.log('glossary.export.empty', { userBroken })
       return
     }
     const path = await d.showSaveDialog(packFileName(d.now()))

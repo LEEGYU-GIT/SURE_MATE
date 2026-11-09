@@ -16,11 +16,20 @@ const entry = (id: string, term: string, source: GlossaryEntry['source'] = 'user
 
 const packText = (entries: GlossaryEntry[]): string => JSON.stringify({ format: 'sure-mate-glossary', version: 1, entries })
 
-function fake(over: { user?: GlossaryEntry[]; savePath?: string | null; openPath?: string | null; file?: { text: string } | { error: 'too-big' | 'read-failed' }; confirm?: boolean } = {}) {
+function fake(
+  over: {
+    user?: GlossaryEntry[]
+    userBroken?: boolean
+    savePath?: string | null
+    openPath?: string | null
+    file?: { text: string } | { error: 'too-big' | 'read-failed' }
+    confirm?: boolean
+  } = {}
+) {
   const calls = { written: [] as { path: string; text: string }[], saved: [] as GlossaryEntry[][], notes: [] as string[], confirms: [] as string[], logs: [] as Record<string, unknown>[], dialogs: [] as string[] }
   const user = over.user ?? [entry('u1', '우리 팀 용어')]
   const deps: PackCommandDeps = {
-    glossary: async () => ({ entries: [entry('mcdc', 'MC/DC', 'builtin'), ...user], userEntries: user }),
+    glossary: async () => ({ entries: [entry('mcdc', 'MC/DC', 'builtin'), ...user], userEntries: user, userBroken: over.userBroken ?? false }),
     saveUserEntries: async (list) => {
       calls.saved.push(list)
     },
@@ -62,6 +71,14 @@ it('내보내기: 내 용어가 없으면 대화상자를 열지 않고 알린�
   const cancel = fake({ savePath: null })
   await createPackCommands(cancel.deps).run('cmd.glossary-export')
   expect(cancel.calls.written).toEqual([])
+})
+
+it('내보내기: 내 용어 파일을 읽지 못했으면 "없음"이 아니라 "읽지 못함"을 알린다', async () => {
+  const broken = fake({ user: [], userBroken: true })
+  await createPackCommands(broken.deps).run('cmd.glossary-export')
+  expect(broken.calls.dialogs).toEqual([])
+  expect(broken.calls.notes[0]).toContain('읽지 못해')
+  expect(broken.calls.notes[0]).not.toContain('내보낼 내 용어가 없어요')
 })
 
 it('가져오기: 미리 보기 숫자로 확인을 받고, 확인하면 합쳐 저장한다', async () => {
