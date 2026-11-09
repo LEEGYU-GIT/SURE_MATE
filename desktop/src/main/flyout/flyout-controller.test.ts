@@ -223,6 +223,20 @@ describe('메뉴', () => {
   })
 })
 
+describe('작업 영역 가장자리', () => {
+  it('아래 끝에서 여백이 줄면 같은 seq로 여백을 다시 보내고 창이 작업 영역 안에 있다', () => {
+    const t = make()
+    items.masking = { x: 1864, y: 1000, width: 56, height: 40 }
+    t.c.toggleMenu(maskingMenu, 'masking'); t.c.ready(1, { width: 200, height: 140 })
+    items.masking = { x: 1864, y: 344, width: 56, height: 40 }
+    const r = t.lastBounds()
+    expect(r.y + r.height).toBeLessThanOrEqual(1040)
+    expect(t.sent.at(-1)).toMatchObject({ seq: 1, pad: { top: 16, right: 0, bottom: 8, left: 24 } })
+    expect(t.c.message()?.pad.bottom).toBe(8)
+    expect(t.calls.indexOf('showInactive')).toBeGreaterThan(t.calls.lastIndexOf('send'))
+  })
+})
+
 describe('위키 카드', () => {
   const show = (t: ReturnType<typeof make>) => {
     t.c.showCard(view, { width: 360, autoHideMs: 8000 })
@@ -269,7 +283,7 @@ describe('위키 카드', () => {
   it('바가 없으면 커서 모니터 가장자리 위쪽에 둔다', () => {
     const t = make({ barVisible: false })
     show(t)
-    expect(t.lastBounds()).toEqual({ x: 1548 - 24, y: 12 - 16, width: 384, height: 248 })
+    expect(t.lastBounds()).toEqual({ x: 1548 - 24, y: 0, width: 384, height: 244 })
   })
 
   it('바깥 클릭으로는 닫지 않는다', () => {

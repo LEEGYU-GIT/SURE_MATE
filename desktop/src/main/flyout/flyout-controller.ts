@@ -99,22 +99,30 @@ export function createFlyoutController(d: Deps): FlyoutController {
   }
 
   /** 카드 사각형을 정해 창 사각형으로 바꾼다. 놓을 곳이 없으면 null */
-  function windowFor(c: FlyoutContent, size: Size): Rect | null {
+  function windowFor(c: FlyoutContent, size: Size): { window: Rect; pad: FlyoutPad } | null {
     const a = anchorFor(c)
     let card: Rect
     if (!a) {
       if (c.kind !== 'wiki-card') return null
-      card = edgeCardRect({ size, workArea: d.cursorWorkArea(), edge: d.barEdge() })
-      return flyoutWindowRect(card, d.barEdge()).window
+      const wa = d.cursorWorkArea()
+      card = edgeCardRect({ size, workArea: wa, edge: d.barEdge() })
+      return flyoutWindowRect(card, d.barEdge(), wa)
     }
     let anchor: Rect
     if (c.kind === 'wiki-card') anchor = a.item ?? { x: a.bar.x, y: a.bar.y, width: a.bar.width, height: 0 }
     else anchor = a.item ?? { x: a.bar.x, y: ctx.atY ?? a.bar.y, width: a.bar.width, height: 0 }
     card = flyoutCardRect({ size, anchor, bar: a.bar, edge: a.edge, workArea: a.workArea, align: c.kind === 'label' ? 'center' : 'top' })
-    return flyoutWindowRect(card, a.edge).window
+    return flyoutWindowRect(card, a.edge, a.workArea)
   }
 
-  function applyBounds(win: Rect): void {
+  /** 작업 영역 때문에 여백이 줄었으면 같은 seq로 여백만 바꿔 다시 보낸다(내용은 같음) */
+  function applyBounds(placed: { window: Rect; pad: FlyoutPad }): void {
+    const win = placed.window
+    const p = placed.pad
+    if (content && (p.top !== pad.top || p.right !== pad.right || p.bottom !== pad.bottom || p.left !== pad.left)) {
+      pad = p
+      d.window.send({ seq, content, pad })
+    }
     d.window.setBounds(win)
     const actual = d.window.getBounds()
     if (needsResize(actual, win, 1) || actual.x !== win.x || actual.y !== win.y) d.window.setBounds(win)
@@ -138,7 +146,7 @@ export function createFlyoutController(d: Deps): FlyoutController {
     d.window.raise()
     visible = true
     d.window.shown(mySeq)
-    d.log('flyout.show', { kind: c.kind, seq: mySeq, bounds: win })
+    d.log('flyout.show', { kind: c.kind, seq: mySeq, bounds: win.window })
   }
 
   function hide(reason: string): void {

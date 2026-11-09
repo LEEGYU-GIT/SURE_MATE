@@ -53,3 +53,46 @@ describe('edgeCardRect', () => {
     expect(edgeCardRect({ size: { width: 360, height: 200 }, workArea: { x: 1920, y: 0, width: 1920, height: 1040 }, edge: 'right' }).x).toBe(3468)
   })
 })
+
+describe('작업 영역 안의 창 사각형', () => {
+  const inside = (w: { x: number; y: number; width: number; height: number }, wa: typeof WA): boolean =>
+    w.x >= wa.x && w.y >= wa.y && w.x + w.width <= wa.x + wa.width && w.y + w.height <= wa.y + wa.height
+
+  for (const edge of ['left', 'right'] as const) {
+    const b = edge === 'right' ? bar : { x: 0, y: 292, width: 56, height: 456 }
+    for (const [name, y] of [['위쪽', 0], ['아래쪽', 1040]] as const) {
+      it(`${edge} 바 ${name} 끝: 창과 여백이 작업 영역 안, 카드 위치는 그대로`, () => {
+        const card = flyoutCardRect({ size: { width: 260, height: 160 }, anchor: { ...b, y, height: 40 }, bar: b, edge, workArea: WA, align: 'top' })
+        const w = flyoutWindowRect(card, edge, WA)
+        expect(inside(w.window, WA)).toBe(true)
+        expect(w.window.x + w.pad.left).toBe(card.x)
+        expect(w.window.y + w.pad.top).toBe(card.y)
+        expect(w.window.width - w.pad.left - w.pad.right).toBe(card.width)
+        expect(w.window.height - w.pad.top - w.pad.bottom).toBe(card.height)
+        if (y === 0) expect(w.pad.top).toBe(8)
+        else expect(w.pad.bottom).toBe(8)
+      })
+    }
+  }
+
+  it('여유가 있으면 여백을 줄이지 않는다', () => {
+    const card = { x: 1596, y: 344, width: 260, height: 160 }
+    expect(flyoutWindowRect(card, 'right', WA).pad).toEqual({ top: 16, right: 0, bottom: 32, left: 24 })
+  })
+})
+
+describe('작업 영역 원점이 0이 아닌 모니터', () => {
+  for (const ox of [-1920, 1920]) {
+    it(`원점 x=${ox}`, () => {
+      const wa = { x: ox, y: 0, width: 1920, height: 1040 }
+      const b = { x: ox + 1864, y: 292, width: 56, height: 456 }
+      const card = flyoutCardRect({ size: { width: 260, height: 160 }, anchor: { ...b, y: 344, height: 40 }, bar: b, edge: 'right', workArea: wa, align: 'top' })
+      expect(card.x).toBe(ox + 1596)
+      const lb = { x: ox, y: 292, width: 56, height: 456 }
+      expect(flyoutCardRect({ size: { width: 260, height: 160 }, anchor: { ...lb, y: 344, height: 40 }, bar: lb, edge: 'left', workArea: wa, align: 'top' }).x).toBe(ox + 64)
+      // 바 위치가 어긋나도 카드는 이 모니터의 작업 영역 안으로 들어온다
+      const far = flyoutCardRect({ size: { width: 260, height: 160 }, anchor: b, bar: { ...b, x: ox - 500 }, edge: 'right', workArea: wa, align: 'top' })
+      expect(far.x).toBe(ox + 8)
+    })
+  }
+})

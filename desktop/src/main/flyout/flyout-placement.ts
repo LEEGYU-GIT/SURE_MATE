@@ -38,10 +38,19 @@ export function edgeCardRect(o: { size: Size; workArea: Rect; edge: BarEdge }): 
   return { x, y: wa.y + EDGE_CARD_MARGIN, width, height }
 }
 
-/** 카드 둘레에 그림자 여백을 붙인 투명 창 사각형(바 쪽 면에는 여백이 없다) */
-export function flyoutWindowRect(card: Rect, edge: BarEdge): { window: Rect; pad: FlyoutPad } {
+/**
+ * 카드 둘레에 그림자 여백을 붙인 투명 창 사각형(바 쪽 면에는 여백이 없다).
+ * workArea를 주면 창이 작업 영역 밖(작업 표시줄 위 등)으로 나가지 않게 넘친 면의 여백만 줄인다.
+ */
+export function flyoutWindowRect(card: Rect, edge: BarEdge, workArea?: Rect): { window: Rect; pad: FlyoutPad } {
   const { top, side, bottom } = FLYOUT_SHADOW_PAD
   const pad: FlyoutPad = edge === 'right' ? { top, right: 0, bottom, left: side } : { top, right: side, bottom, left: 0 }
+  if (workArea) {
+    pad.left = Math.max(0, Math.min(pad.left, card.x - workArea.x))
+    pad.top = Math.max(0, Math.min(pad.top, card.y - workArea.y))
+    pad.right = Math.max(0, Math.min(pad.right, workArea.x + workArea.width - (card.x + card.width)))
+    pad.bottom = Math.max(0, Math.min(pad.bottom, workArea.y + workArea.height - (card.y + card.height)))
+  }
   return {
     pad,
     window: {
