@@ -18,17 +18,25 @@ type Kind = keyof ImportPreview
 
 const newer = (a: string, b: string): boolean => Date.parse(a) > Date.parse(b)
 
-function classify(current: GlossaryEntry[], e: GlossaryEntry): Kind {
-  const same = current.find((c) => c.id === e.id)
-  if (same) return newer(e.updatedAt, same.updatedAt) ? 'changed' : 'unchanged'
-  const key = normalizedKey(e.term)
-  return current.some((c) => normalizedKey(c.term) === key) ? 'sameName' : 'added'
+/**
+ * 가져온 항목 하나가 지금 용어와 어떤 관계인지 가르는 함수. 지금 용어의 id 표와 정규화 키 모음은 한 번만 만든다
+ * (항목마다 지금 용어 전체의 키를 다시 계산하면 2,000개끼리 비교에 몇 초씩 걸려 main이 멈춘다).
+ */
+function classifier(current: GlossaryEntry[]): (e: GlossaryEntry) => Kind {
+  const byId = new Map(current.map((c) => [c.id, c]))
+  const keys = new Set(current.map((c) => normalizedKey(c.term)))
+  return (e) => {
+    const same = byId.get(e.id)
+    if (same) return newer(e.updatedAt, same.updatedAt) ? 'changed' : 'unchanged'
+    return keys.has(normalizedKey(e.term)) ? 'sameName' : 'added'
+  }
 }
 
 /** 가져올 항목을 지금 용어(기본 팩 + 내 용어)와 비교해 센다 */
 export function previewImport(current: GlossaryEntry[], incoming: GlossaryEntry[]): ImportPreview {
   const out: ImportPreview = { added: 0, changed: 0, sameName: 0, unchanged: 0 }
-  for (const e of incoming) out[classify(current, e)]++
+  const classify = classifier(current)
+  for (const e of incoming) out[classify(e)]++
   return out
 }
 
@@ -38,8 +46,9 @@ export function previewImport(current: GlossaryEntry[], incoming: GlossaryEntry[
  */
 export function mergeImport(userEntries: GlossaryEntry[], current: GlossaryEntry[], incoming: GlossaryEntry[]): GlossaryEntry[] {
   const next = [...userEntries]
+  const classify = classifier(current)
   for (const e of incoming) {
-    const kind = classify(current, e)
+    const kind = classify(e)
     if (kind === 'unchanged') continue
     const imported: GlossaryEntry = { ...e, source: 'imported' }
     const at = next.findIndex((x) => x.id === e.id)

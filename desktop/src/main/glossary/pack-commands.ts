@@ -2,7 +2,7 @@ import { exportPack, mergeImport, packFileName, previewImport } from '../../shar
 import { parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import type { PaletteItem } from '../../shared/types'
-import { errorText } from '../error-text'
+import { errorCode } from '../error-text'
 
 /** 가져올 팩 파일 크기 상한 */
 export const PACK_MAX_BYTES = 5 * 1024 * 1024
@@ -93,12 +93,14 @@ export function createPackCommands(d: PackCommandDeps): { run(id: string): Promi
     }
     const { entries, userEntries } = await d.glossary()
     const p = previewImport(entries, parsed.entries)
-    const skipped = parsed.errors.length ? ` · 건너뛴 항목 ${parsed.errors.length}` : ''
-    const detail = `새 용어 ${p.added} · 바뀐 용어 ${p.changed} · 이름이 겹치는 용어 ${p.sameName} · 그대로 ${p.unchanged}${skipped}`
+    // 통째로 건너뛴 항목과, 들어가되 허용되지 않는 링크·넘치는 태그 등을 뺀 항목을 따로 보인다(앞의 네 숫자가 실제 반영 수)
+    const skipped = parsed.skipped ? ` · 건너뛴 항목 ${parsed.skipped}` : ''
+    const trimmed = parsed.trimmed ? ` · 그중 링크·태그 등 일부 값을 뺀 용어 ${parsed.trimmed}` : ''
+    const detail = `새 용어 ${p.added} · 바뀐 용어 ${p.changed} · 이름이 겹치는 용어 ${p.sameName} · 그대로 ${p.unchanged}${skipped}${trimmed}`
     if (!(await d.confirm(detail))) return
     await d.saveUserEntries(mergeImport(userEntries, entries, parsed.entries))
     d.notify(`가져왔어요 · ${detail}`)
-    d.log('glossary.import', { ...p, skipped: parsed.errors.length })
+    d.log('glossary.import', { ...p, skipped: parsed.skipped, trimmed: parsed.trimmed })
   }
 
   const handlers = new Map<string, () => Promise<void>>([
@@ -113,7 +115,8 @@ export function createPackCommands(d: PackCommandDeps): { run(id: string): Promi
       try {
         await handler()
       } catch (e) {
-        d.log('glossary.commandError', { id, error: errorText(e) })
+        // 오류 글에는 팩 파일 경로·이름(고객사명일 수 있음)이 들어가므로 코드만 남긴다
+        d.log('glossary.commandError', { id, code: errorCode(e) })
         d.notify('처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.')
       }
       return true

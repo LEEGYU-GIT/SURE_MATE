@@ -44,8 +44,20 @@ it('링크는 http/https만 5개까지, 태그는 5개까지 남긴다', () => {
   expect(r.errors.length).toBeGreaterThan(0)
 })
 
+it('통째로 건너뛴 항목과, 읽었지만 링크·태그·별칭 일부를 뺀 항목을 따로 센다', () => {
+  const r = parseGlossaryPack(
+    pack([entry({ id: 'bad', definition: '' }), entry({ id: 'link', links: [{ title: '나쁜 링크', url: 'javascript:alert(1)' }] }), entry({ id: 'ok' })]),
+    'imported'
+  )
+  expect(r.entries.map((e) => e.id)).toEqual(['link', 'ok'])
+  expect(r.entries[0].links).toEqual([])
+  expect(r.skipped).toBe(1)
+  expect(r.trimmed).toBe(1)
+  expect(r.errors).toHaveLength(2)
+})
+
 it('형식이 다르면 빈 목록과 오류, 같은 id가 두 번이면 뒤의 것을 건너뛴다', () => {
-  expect(parseGlossaryPack({ format: 'other', entries: [] }, 'user')).toEqual({ entries: [], errors: [expect.stringContaining('sure-mate-glossary')] })
+  expect(parseGlossaryPack({ format: 'other', entries: [] }, 'user')).toEqual({ entries: [], errors: [expect.stringContaining('sure-mate-glossary')], skipped: 0, trimmed: 0 })
   const r = parseGlossaryPack(pack([entry(), entry({ term: '다른 뜻' })]), 'user')
   expect(r.entries).toHaveLength(1)
   expect(r.errors).toHaveLength(1)

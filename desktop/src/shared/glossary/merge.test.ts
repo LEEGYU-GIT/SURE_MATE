@@ -43,6 +43,26 @@ it('합친 결과가 미리 보기 숫자와 맞는다(같은 id는 새로운 �
   expect(next.find((x) => x.id === 'u1')?.updatedAt).toBe('2026-11-01T00:00:00.000Z')
 })
 
+it('지금 용어의 이름은 한 번만 읽어 정규화 키를 만든다(용어 2,000개에 2,000개를 가져와도 몇 초씩 멈추지 않게)', () => {
+  let reads = 0
+  const counted = Array.from({ length: 50 }, (_, i) => {
+    const base = e(`c${i}`, `지금 용어 ${i}`)
+    return Object.defineProperty({ ...base }, 'term', {
+      get: () => {
+        reads++
+        return base.term
+      },
+      enumerable: true
+    })
+  })
+  const many = Array.from({ length: 40 }, (_, i) => e(`n${i}`, `가져온 용어 ${i}`))
+  expect(previewImport(counted, many)).toEqual({ added: 40, changed: 0, sameName: 0, unchanged: 0 })
+  expect(reads).toBe(50)
+  reads = 0
+  expect(mergeImport([], counted, many)).toHaveLength(40)
+  expect(reads).toBe(50)
+})
+
 it('내보낸 글을 다시 읽으면 같은 항목이고, 기본 용어는 넣지 않는다', () => {
   const text = exportPack([...builtin, ...mine], '2026-11-09T10:00:00.000Z')
   const back = parseGlossaryPack(JSON.parse(text), 'imported')
