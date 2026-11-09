@@ -3,6 +3,7 @@ import type { BarViewState } from '../shared/bar/bar-items'
 import { parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parsePointer } from '../shared/bar/bar-ipc'
 import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-action'
 import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-content'
+import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePromptRequest } from '../shared/prompt-request'
 import type { PaletteItem } from '../shared/types'
@@ -39,62 +40,87 @@ export interface IpcDeps {
   saveImeLog: (label: string, json: string) => Promise<string>
   /** 바·펼침 창 런타임. 바를 시작하지 못했거나 앱을 끝내는 중이면 null */
   overlay: () => OverlayIpc | null
+  /** 팔레트 창의 webContents id(팔레트 채널은 이 창이 보낸 것만 받는다). 창이 없으면 null */
+  paletteContentsId: () => number | null
+  /** 한글 입력 기록기 창의 webContents id(기록 저장은 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
+  imeLoggerContentsId: () => number | null
 }
 
 const BAD_REQUEST = '요청 형식이 맞지 않아요.'
 
+type Sender = { sender: { id: number } }
+
+/** 보낸 창이 id의 창인지(창이 없으면 아니다) */
+const sentBy = (e: Sender, id: number | null): boolean => id !== null && e.sender.id === id
+
 /** renderer가 보낸 용어 id(문자열, 200자 이하)만 받는다 */
 const wikiId = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 && v.length <= 200 ? v : null)
 
+const badPreview = (): PromptPreview => ({
+  text: '',
+  truncated: false,
+  inputLength: 0,
+  warnings: [BAD_REQUEST],
+  notes: [],
+  highlights: [],
+  masking: { mode: 'restore', items: [] },
+  maskRanges: []
+})
+
+/**
+ * 팔레트 채널은 팔레트 창이 보낸 것만 받는다. 바·펼침 창(M6의 펫 창도)이 같은 preload를 쓰므로,
+ * 다른 창이 보낸 메시지는 처리하지 않고 invoke에는 빈 값(요청 형식 오류와 같은 값)을 준다.
+ * 한글 입력 기록 저장(개발용)은 기록기 창이 보낸 것만 받는다.
+ */
 export function registerIpc(d: IpcDeps): void {
-  ipcMain.on(IPC.paletteHide, () => d.hide())
-  ipcMain.handle(IPC.paletteRunItem, (_e, id: unknown) => d.runItem(String(id)))
-  ipcMain.handle(IPC.paletteListItems, () => d.listItems())
-  ipcMain.handle(IPC.promptPreview, (_e, raw: unknown): Promise<PromptPreview> => {
+  const fromPalette = (e: Sender): boolean => sentBy(e, d.paletteContentsId())
+  const on = (channel: string, fn: (...args: unknown[]) => void): void => {
+    ipcMain.on(channel, (e, ...args: unknown[]) => {
+      if (fromPalette(e)) fn(...args)
+    })
+  }
+  const handle = <T>(channel: string, fallback: () => T, fn: (...args: unknown[]) => T | Promise<T>): void => {
+    ipcMain.handle(channel, (e, ...args: unknown[]) => (fromPalette(e) ? fn(...args) : fallback()))
+  }
+
+  on(IPC.paletteHide, () => d.hide())
+  handle<void>(IPC.paletteRunItem, () => undefined, (id) => d.runItem(String(id)))
+  handle<PaletteItem[]>(IPC.paletteListItems, () => [], () => d.listItems())
+  handle<PromptPreview>(IPC.promptPreview, badPreview, (raw) => {
     const req = parsePromptRequest(raw)
-    return req
-      ? d.previewPrompt(req)
-      : Promise.resolve({
-          text: '',
-          truncated: false,
-          inputLength: 0,
-          warnings: [BAD_REQUEST],
-          notes: [],
-          highlights: [],
-          masking: { mode: 'restore', items: [] },
-          maskRanges: []
-        })
+    return req ? d.previewPrompt(req) : badPreview()
   })
-  ipcMain.handle(IPC.promptRun, (_e, raw: unknown): Promise<PromptRunResult> => {
+  handle<PromptRunResult>(IPC.promptRun, () => ({ ok: false, message: BAD_REQUEST }), (raw) => {
     const req = parsePromptRequest(raw)
-    return req ? d.runPrompt(req) : Promise.resolve({ ok: false, message: BAD_REQUEST })
+    return req ? d.runPrompt(req) : { ok: false, message: BAD_REQUEST }
   })
-  ipcMain.on(IPC.promptCancel, () => d.cancelPrompt())
-  ipcMain.handle(IPC.appGetStatus, () => d.getStatus())
-  ipcMain.handle(IPC.wikiGet, (_e, id: unknown) => {
+  on(IPC.promptCancel, () => d.cancelPrompt())
+  handle<AppStatus | null>(IPC.appGetStatus, () => null, () => d.getStatus())
+  handle<GlossaryEntry | null>(IPC.wikiGet, () => null, (id) => {
     const ok = wikiId(id)
     return ok ? d.wiki.get(ok) : null
   })
-  ipcMain.handle(IPC.wikiCopy, (_e, id: unknown) => {
+  handle<boolean>(IPC.wikiCopy, () => false, (id) => {
     const ok = wikiId(id)
     return ok ? d.wiki.copy(ok) : false
   })
-  ipcMain.handle(IPC.wikiOpenLink, (_e, id: unknown, index: unknown) => {
+  handle<boolean>(IPC.wikiOpenLink, () => false, (id, index) => {
     const ok = wikiId(id)
     return ok && Number.isInteger(index) && (index as number) >= 0 && (index as number) < 10 ? d.wiki.openLink(ok, index as number) : false
   })
   // 내용 검사는 런타임이 팩과 같은 규칙으로 한다. 여기서는 옵션 모양만 본다
-  ipcMain.handle(IPC.wikiSave, (_e, draft: unknown, options: unknown) => {
+  handle<WikiSaveResult>(IPC.wikiSave, () => ({ ok: false, errors: [BAD_REQUEST] }), (draft, options) => {
     const o = typeof options === 'object' && options !== null ? (options as Record<string, unknown>) : {}
     const id = o.id === undefined ? undefined : wikiId(o.id)
     if (o.id !== undefined && !id) return { ok: false, errors: [BAD_REQUEST] }
     return d.wiki.save(draft, { ...(id ? { id } : {}), allowDuplicate: o.allowDuplicate === true })
   })
-  ipcMain.handle(IPC.devSaveImeLog, (_e, label: unknown, json: unknown) => d.saveImeLog(String(label), String(json)))
+  ipcMain.handle(IPC.devSaveImeLog, (e, label: unknown, json: unknown) =>
+    sentBy(e, d.imeLoggerContentsId()) ? d.saveImeLog(String(label), String(json)) : ''
+  )
   registerOverlayIpc(d.overlay)
 }
 
-type Sender = { sender: { id: number } }
 type Window = 'bar' | 'flyout'
 
 /**

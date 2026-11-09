@@ -19,6 +19,9 @@ import { registerIpc, type IpcDeps, type OverlayIpc } from './ipc'
 const BAR = { sender: { id: 11 } }
 const FLYOUT = { sender: { id: 12 } }
 const PALETTE = { sender: { id: 1 } }
+const IME_LOGGER = { sender: { id: 21 } }
+/** 아직 없는 창(M6의 펫 창 등)도 같은 preload를 쓴다 */
+const OTHER = { sender: { id: 99 } }
 
 const state: BarViewState = { shape: 'edge', edge: 'right', items: [], opacity: 1, collapsed: false, busyItem: null }
 const message: FlyoutMessage = { seq: 3, content: { kind: 'label', text: '설정' }, pad: { top: 16, right: 0, bottom: 32, left: 24 }, edge: 'right' }
@@ -40,19 +43,126 @@ function overlayFake() {
   } satisfies OverlayIpc
 }
 
+const status = { paletteHotkey: 'Ctrl+Alt+Space', maskingMode: 'restore', aiTargetName: 'Claude' }
+
+/** 팔레트·기록기 창 처리기(팔레트 창 id 1, 기록기 창 id 21) */
+function paletteFake() {
+  return {
+    hide: vi.fn(),
+    runItem: vi.fn(async () => {}),
+    listItems: vi.fn(async () => [{ id: 'prompt:meeting-notes' }]),
+    previewPrompt: vi.fn(async () => ({ text: '미리 보기' })),
+    runPrompt: vi.fn(async () => ({ ok: true, message: '복사했어요' })),
+    cancelPrompt: vi.fn(),
+    getStatus: vi.fn(() => status),
+    wiki: {
+      get: vi.fn(async () => ({ id: 'mcdc' })),
+      copy: vi.fn(async () => true),
+      openLink: vi.fn(async () => true),
+      save: vi.fn(async () => ({ ok: true }))
+    },
+    saveImeLog: vi.fn(async () => 'ime.json')
+  }
+}
+
 let overlay: ReturnType<typeof overlayFake> | null
+let palette: ReturnType<typeof paletteFake>
+let paletteId: number | null
+let imeLoggerId: number | null
 
 beforeEach(() => {
   reg.on.clear()
   reg.handle.clear()
   reg.logs.length = 0
   overlay = overlayFake()
-  const deps = { overlay: () => overlay } as unknown as IpcDeps
+  palette = paletteFake()
+  paletteId = 1
+  imeLoggerId = 21
+  const deps = { ...palette, overlay: () => overlay, paletteContentsId: () => paletteId, imeLoggerContentsId: () => imeLoggerId } as unknown as IpcDeps
   registerIpc(deps)
 })
 
 const send = (channel: string, e: { sender: { id: number } }, ...args: unknown[]): unknown => reg.on.get(channel)!(e, ...args)
 const invoke = (channel: string, e: { sender: { id: number } }, ...args: unknown[]): unknown => reg.handle.get(channel)!(e, ...args)
+
+const BAD = '요청 형식이 맞지 않아요.'
+const REQ = { source: 'selection', target: 'claude' }
+
+/** 팔레트 채널을 모두 한 번씩 보내고 invoke 결과를 모은다 */
+async function sendAllPalette(e: { sender: { id: number } }): Promise<unknown[]> {
+  send(IPC.paletteHide, e)
+  send(IPC.promptCancel, e)
+  return [
+    await invoke(IPC.paletteRunItem, e, 'prompt:meeting-notes'),
+    await invoke(IPC.paletteListItems, e),
+    await invoke(IPC.promptPreview, e, REQ),
+    await invoke(IPC.promptRun, e, REQ),
+    await invoke(IPC.appGetStatus, e),
+    await invoke(IPC.wikiGet, e, 'mcdc'),
+    await invoke(IPC.wikiCopy, e, 'mcdc'),
+    await invoke(IPC.wikiOpenLink, e, 'mcdc', 0),
+    await invoke(IPC.wikiSave, e, { term: '가상 용어' }, { allowDuplicate: false })
+  ]
+}
+
+const paletteHandlers = () => [
+  palette.hide,
+  palette.cancelPrompt,
+  palette.runItem,
+  palette.listItems,
+  palette.previewPrompt,
+  palette.runPrompt,
+  palette.getStatus,
+  palette.wiki.get,
+  palette.wiki.copy,
+  palette.wiki.openLink,
+  palette.wiki.save
+]
+
+describe('팔레트 IPC는 팔레트 창이 보낸 것만 받는다(바·펼침 창, M6의 펫 창이 같은 preload를 쓴다)', () => {
+  it('바·펼침 창·기록기 창·다른 창이 보낸 팔레트 메시지는 처리하지 않고 빈 값을 준다', async () => {
+    for (const e of [BAR, FLYOUT, IME_LOGGER, OTHER]) {
+      const results = await sendAllPalette(e)
+      expect(results[0]).toBeUndefined()
+      expect(results[1]).toEqual([])
+      expect(results[2]).toMatchObject({ text: '', warnings: [BAD] })
+      expect(results[3]).toEqual({ ok: false, message: BAD })
+      expect(results[4]).toBeNull()
+      expect(results.slice(5)).toEqual([null, false, false, { ok: false, errors: [BAD] }])
+    }
+    for (const fn of paletteHandlers()) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('팔레트 창이 보낸 것은 그대로 처리한다', async () => {
+    const results = await sendAllPalette(PALETTE)
+    for (const fn of paletteHandlers()) expect(fn).toHaveBeenCalledTimes(1)
+    expect(palette.runItem).toHaveBeenCalledWith('prompt:meeting-notes')
+    expect(palette.runPrompt).toHaveBeenCalledWith(REQ)
+    expect(palette.wiki.openLink).toHaveBeenCalledWith('mcdc', 0)
+    expect(results[3]).toEqual({ ok: true, message: '복사했어요' })
+    expect(results[4]).toBe(status)
+  })
+
+  it('팔레트 창이 없으면(null) 어떤 창이 보내도 처리하지 않는다', async () => {
+    paletteId = null
+    await sendAllPalette(PALETTE)
+    for (const fn of paletteHandlers()) expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+describe('한글 입력 기록 저장은 기록기 창이 보낸 것만 받는다', () => {
+  it('기록기 창이 보내면 저장하고 경로를 준다', async () => {
+    expect(await invoke(IPC.devSaveImeLog, IME_LOGGER, '새 IME', '{}')).toBe('ime.json')
+    expect(palette.saveImeLog).toHaveBeenCalledWith('새 IME', '{}')
+  })
+
+  it('팔레트·바·펼침 창이 보내거나 기록기 창이 열려 있지 않으면 저장하지 않는다', async () => {
+    for (const e of [PALETTE, BAR, FLYOUT, OTHER]) expect(await invoke(IPC.devSaveImeLog, e, 'x', '{}')).toBe('')
+    imeLoggerId = null
+    expect(await invoke(IPC.devSaveImeLog, IME_LOGGER, 'x', '{}')).toBe('')
+    expect(palette.saveImeLog).not.toHaveBeenCalled()
+  })
+})
 
 describe('바·펼침 창 IPC는 그 창이 보낸 것만 받는다', () => {
   it('팔레트나 펼침 창이 보낸 바 메시지는 무시한다', () => {

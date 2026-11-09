@@ -111,4 +111,7 @@ export async function hidePaletteAndRefocus(): Promise<boolean> {
 
 export const isPaletteVisible = (): boolean => Boolean(win?.isVisible())
 
+/** 팔레트 창의 webContents id(팔레트 IPC가 보낸 창을 확인한다). 창이 없으면 null */
+export const paletteContentsId = (): number | null => (win && !win.isDestroyed() ? win.webContents.id : null)
+
 export const getPreviousHwnd = (): string | null => previousHwnd

@@ -40,8 +40,8 @@ import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE
 import { createSettingsWriter } from './settings/settings-writer'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
-import { openImeLoggerWindow } from './windows/ime-logger-window'
-import { createPaletteWindow, hidePalette, isPaletteVisible, showPalette } from './windows/palette-window'
+import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
+import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
 
 app.setName('Sure-Mate')
 
@@ -452,7 +452,10 @@ if (!app.requestSingleInstanceLock()) {
         maskingMode: settings.masking.mode,
         aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
       }),
-      overlay: () => barRuntime
+      overlay: () => barRuntime,
+      // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
+      paletteContentsId,
+      imeLoggerContentsId
     })
 
     try {
