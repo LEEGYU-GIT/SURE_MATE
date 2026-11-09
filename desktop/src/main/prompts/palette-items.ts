@@ -1,7 +1,7 @@
+import type { BarShape } from '../../shared/bar/bar-settings'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import type { Template } from '../../shared/template/types'
 import type { MaskingMode, PaletteItem } from '../../shared/types'
-import type { BarShape } from '../../shared/bar/bar-settings'
 import { barCommandItems } from '../bar/bar-commands'
 import { packCommandItems } from '../glossary/pack-commands'
 import { maskingCommandItems } from '../masking/masking-commands'

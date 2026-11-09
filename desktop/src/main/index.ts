@@ -104,6 +104,8 @@ const saveBarShape = (shape: BarShape): Promise<void> => changeSettings((cur) =>
 async function setBarShape(shape: BarShape): Promise<void> {
   await saveBarShape(shape)
   barRuntime?.bar.unsnooze()
+  // 이미 숨겨져 있던 바는 unsnooze가 보임 변화를 알리지 않으므로 트레이 메뉴("바 다시 보이기")를 직접 고친다
+  shell?.refresh()
 }
 
 /** 말랑 메이트 보이기·숨기기: 차례가 왔을 때 바에 보이는 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
@@ -226,7 +228,13 @@ async function startShell(): Promise<void> {
     maskingMode: () => settings.masking.mode,
     onOpenPalette: () => showPalette({ mode: 'search' }),
     barShape: () => settings.bar.shape,
-    onBarShape: (shape) => void setBarShape(shape).catch((e) => log('bar.trayShapeError', { error: errorText(e) })),
+    onBarShape: (shape) =>
+      void setBarShape(shape).catch((e) => {
+        log('bar.trayShapeError', { error: errorText(e) })
+        notify('처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.')
+        // 눌러서 먼저 바뀐 라디오를 저장된 모양으로 되돌린다
+        shell?.refresh()
+      }),
     barSnoozed: () => barRuntime?.bar.snoozed() ?? false,
     onUnsnooze: () => barRuntime?.bar.unsnooze(),
     onToggleSuspend: () => {

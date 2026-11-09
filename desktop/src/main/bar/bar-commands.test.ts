@@ -34,6 +34,8 @@ it('실행: 키를 뗀 것을 확인하고 팔레트를 숨긴 뒤 다음 모양
   const f = fake()
   expect(await f.run('cmd.bar-shape')).toBe(true)
   expect(f.calls.slice(0, 3)).toEqual(['wait', 'hide:true', 'set:capsule'])
+  expect(f.calls.filter((c) => c.startsWith('hide:'))).toHaveLength(1)
+  expect(f.calls.filter((c) => c.startsWith('set:'))).toHaveLength(1)
   expect(f.notes).toEqual(['Sure-Mate 바: 떠 있는 캡슐'])
 })
 
@@ -46,8 +48,8 @@ it('끔으로 바꾸면 다시 켜는 곳을 알린다', async () => {
 it('키를 떼지 않았으면 숨기지 않지만 모양은 바꾼다', async () => {
   const f = fake({ keysHeld: true })
   expect(await f.run('cmd.bar-shape')).toBe(true)
-  expect(f.calls).not.toContain('hide:true')
-  expect(f.calls).toContain('set:capsule')
+  expect(f.calls.filter((c) => c.startsWith('hide:'))).toHaveLength(0)
+  expect(f.calls.filter((c) => c.startsWith('set:'))).toEqual(['set:capsule'])
 })
 
 it('다른 id는 false, 저장이 실패해도 true로 알린다', async () => {
@@ -55,4 +57,11 @@ it('다른 id는 false, 저장이 실패해도 true로 알린다', async () => {
   const f = fake({ setFails: true })
   expect(await f.run('cmd.bar-shape')).toBe(true)
   expect(f.notes).toHaveLength(1)
+})
+
+it('저장이 실패해도 키를 뗐으면 팔레트는 숨기고 알린다', async () => {
+  const f = fake({ setFails: true })
+  await f.run('cmd.bar-shape')
+  expect(f.calls.filter((c) => c === 'hide:true')).toHaveLength(1)
+  expect(f.notes).toEqual(['처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.'])
 })
