@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { PALETTE_GROUPS, parseQuery } from './palette-query'
+import { PALETTE_GROUPS, parseQuery, shownView } from './palette-query'
 
 it('접두어로 구역을 고른다', () => {
   expect(parseQuery('/회의')).toEqual({ scope: 'prompt', text: '회의' })
@@ -23,4 +23,10 @@ it('접두어가 없으면 전체, 앞뒤 공백은 뗀다', () => {
 
 it('구역 순서는 프롬프트·명령·워크스페이스·상용구·위키', () => {
   expect(PALETTE_GROUPS.map((g) => g.id)).toEqual(['prompt', 'command', 'workspace', 'snippet', 'wiki'])
+})
+
+it('팔레트를 보일 때 검색어를 미리 채울 수 있다(바의 용어 사전 단추는 "?")', () => {
+  expect(shownView({ mode: 'search', query: '?' })).toEqual({ query: '?', wikiId: null })
+  expect(shownView({ mode: 'search' })).toEqual({ query: '', wikiId: null })
+  expect(shownView({ mode: 'dev-output', title: '제목', text: '내용' })).toEqual({ query: '', wikiId: null })
 })

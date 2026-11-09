@@ -1,3 +1,4 @@
+import type { ShownPayload } from './ipc-channels'
 import type { PaletteGroup } from './types'
 
 /** 팔레트 구역 순서와 이름 */
@@ -28,4 +29,9 @@ export function parseQuery(q: string): { scope: PaletteGroup | null; text: strin
   const trimmed = q.trim()
   const scope = PREFIXES[trimmed.charAt(0)]
   return scope ? { scope, text: trimmed.slice(1).trim() } : { scope: null, text: trimmed }
+}
+
+/** 팔레트를 보일 때 처음 그릴 것: 미리 채울 검색어와 바로 열 용어(위키 카드의 '팔레트에서 열기', Task 12에서 채움) */
+export function shownView(p: ShownPayload): { query: string; wikiId: string | null } {
+  return { query: p.mode === 'search' ? (p.query ?? '') : '', wikiId: null }
 }

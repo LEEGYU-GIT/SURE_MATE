@@ -93,7 +93,8 @@ export const IPC = {
 
 /** 팔레트를 보여 줄 때 renderer에 넘기는 값 */
 export type ShownPayload =
-  | { mode: 'search' }
+  /** query: 검색어를 미리 채운다(바의 용어 사전 단추는 '?') */
+  | { mode: 'search'; query?: string }
   | { mode: 'dev-output'; title: string; text: string }
   | { mode: 'confirm'; draft: PromptDraft }
 

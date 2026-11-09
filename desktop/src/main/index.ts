@@ -6,6 +6,12 @@ import { app, dialog, shell as electronShell, globalShortcut, type Tray } from '
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
+import { withPosition } from '../shared/bar/bar-settings'
+import type { FlyoutAction } from '../shared/flyout/flyout-content'
+import type { ShownPayload } from '../shared/ipc-channels'
+import type { MaskingMode } from '../shared/types'
+import { createBarActions } from './bar/bar-actions'
+import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
@@ -53,12 +59,53 @@ let packCommands: { run(id: string): Promise<boolean> } | null = null
 let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
+/** Sure-Mate 바·펼침 창(시작에 실패하면 null, 팔레트·트레이는 그대로) */
+let barRuntime: BarRuntime | null = null
+let barActions: { run(id: string): Promise<void> } | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
 let pendingFileErrors: FileErrorReport[] = []
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
   else showPalette({ mode: 'search' })
+}
+
+/** 설정이 바뀌면 트레이 툴팁과 바를 다시 그린다 */
+function applySettings(next: Settings): void {
+  settings = next
+  shell?.refresh()
+  barRuntime?.refresh()
+}
+
+/** 파일을 다시 읽어 바꿀 값만 고쳐 저장하고(실행 중 손으로 고친 값을 덮어쓰지 않게) 적용한다 */
+async function changeSettings(userData: string, update: (cur: Settings) => Settings): Promise<void> {
+  try {
+    applySettings(await updateSettings(userData, update, (what, e) => log('settings.loadError', { what, error: errorText(e) })))
+  } catch (e) {
+    log('settings.saveError', { error: errorText(e) })
+    applySettings(update(settings))
+  }
+}
+
+/** 가명 처리 기본값 바꾸기(팔레트 명령과 바의 가명 처리 메뉴가 같이 쓴다) */
+function setMaskingMode(userData: string, mode: MaskingMode): Promise<void> {
+  return changeSettings(userData, (cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
+}
+
+/** 설정 화면이 생기기 전까지는 settings.json을 기본 프로그램으로 연다(없으면 만든다) */
+async function openSettingsFile(userData: string): Promise<void> {
+  const path = join(userData, 'settings.json')
+  try {
+    await stat(path)
+  } catch {
+    await saveSettings(userData, settings)
+  }
+  const error = await electronShell.openPath(path)
+  if (error) {
+    electronShell.showItemInFolder(path)
+    notify('설정 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
+  }
+  log('settings.open', { opened: !error })
 }
 
 async function runItem(id: string): Promise<void> {
@@ -162,12 +209,7 @@ async function startShell(userData: string): Promise<void> {
   const bound = manager.bindFirst('palette', [...new Set([wanted, ...PALETTE_HOTKEY_FALLBACKS])], togglePalette)
   if (bound.ok && bound.acc !== wanted) {
     warn(`${wanted}는 다른 앱이 쓰고 있어 팔레트 단축키를 ${bound.acc}로 정했어요.`)
-    settings = { ...settings, hotkeys: { ...settings.hotkeys, palette: bound.acc } }
-    try {
-      await saveSettings(userData, settings)
-    } catch (e) {
-      log('settings.saveError', { error: errorText(e) })
-    }
+    await changeSettings(userData, (cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, palette: bound.acc } }))
   } else if (!bound.ok) {
     warn(`팔레트 단축키(${bound.tried.join(', ')})를 모두 다른 앱이 쓰고 있어요. 트레이 아이콘을 눌러 팔레트를 열 수 있어요.`)
   }
@@ -187,6 +229,67 @@ async function startShell(userData: string): Promise<void> {
   // 개발 모드에서 등록하면 node_modules의 electron.exe가 시작 프로그램에 들어가므로 설치본에서만
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, args: ['--hidden'] })
   log('app.ready', { version: app.getVersion(), paletteHotkey: bound.ok ? bound.acc : null, lookupHotkey: lookup.ok, native: native.ok })
+}
+
+/** Sure-Mate 바와 펼침 창을 띄운다(설계 문서 §14-1). 실패해도 팔레트·트레이는 그대로 쓴다 */
+function startBar(userData: string): void {
+  barRuntime = createBarRuntime({
+    inputs: () => ({
+      bar: settings.bar,
+      maskingMode: settings.masking.mode,
+      petVisible: settings.pet.visible,
+      paletteHotkey: paletteHotkey(),
+      templates
+    }),
+    savePosition: (display, ratio) => changeSettings(userData, (cur) => ({ ...cur, bar: withPosition(cur.bar, display, ratio) })),
+    onVisibleChange: () => shell?.refresh(),
+    log
+  })
+  barActions = createBarActions({
+    isKnown: (id) => barRuntime?.bar.hasItem(id) ?? false,
+    togglePalette,
+    openPalette: (p: ShownPayload) => showPalette(p),
+    toggleMenu: (kind, itemId) =>
+      barRuntime?.flyout.toggleMenu(
+        kind === 'masking-menu' ? { kind, mode: settings.masking.mode } : { kind, workspaces: [], canSave: false },
+        itemId
+      ),
+    runPrompt: (templateId) => prompts?.runFromBar(templateId) ?? Promise.resolve('missing'),
+    setBusy: (itemId) => barRuntime?.bar.setBusy(itemId),
+    togglePet: () => changeSettings(userData, (cur) => ({ ...cur, pet: { ...cur.pet, visible: !cur.pet.visible } })),
+    openSettings: () => openSettingsFile(userData),
+    log
+  })
+}
+
+/** 펼침 창에서 고른 동작. 위키 카드 동작(wiki-*)은 Task 12에서 잇는다 */
+async function runFlyoutAction(userData: string, a: FlyoutAction): Promise<boolean> {
+  const r = barRuntime
+  if (!r) return false
+  switch (a.type) {
+    case 'set-masking':
+      await setMaskingMode(userData, a.mode)
+      r.flyout.close('done')
+      return true
+    case 'set-bar-shape':
+      await changeSettings(userData, (cur) => ({ ...cur, bar: { ...cur.bar, shape: a.shape } }))
+      r.bar.unsnooze()
+      r.flyout.close('done')
+      return true
+    case 'snooze-bar':
+      r.flyout.close('done')
+      r.bar.snooze()
+      return true
+    case 'open-settings':
+      r.flyout.close('done')
+      await openSettingsFile(userData)
+      return true
+    case 'close':
+      r.flyout.close('button')
+      return true
+    default:
+      return false
+  }
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -286,17 +389,7 @@ if (!app.requestSingleInstanceLock()) {
       masking,
       getMode: () => settings.masking.mode,
       // 파일을 다시 읽어 모드만 바꾼다(실행 중에 손으로 고친 사내 도메인 등을 덮어쓰지 않게)
-      setMode: async (mode) => {
-        try {
-          settings = await updateSettings(userData, (cur) => ({ ...cur, masking: { ...cur.masking, mode } }), (what, e) =>
-            log('settings.loadError', { what, error: errorText(e) })
-          )
-        } catch (e) {
-          settings = { ...settings, masking: { ...settings.masking, mode } }
-          log('settings.saveError', { error: errorText(e) })
-        }
-        shell?.refresh()
-      }
+      setMode: (mode) => setMaskingMode(userData, mode)
     })
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
@@ -305,6 +398,8 @@ if (!app.requestSingleInstanceLock()) {
       runItem,
       listItems: async () => {
         templates = await templateCache.get()
+        // 템플릿 이름이 바뀌었으면 바의 고정 프롬프트도 다시 그린다
+        barRuntime?.refresh()
         const glossary = (await glossaryCache.get()).entries
         glossaryEntries = glossary
         return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary })
@@ -319,6 +414,12 @@ if (!app.requestSingleInstanceLock()) {
       cancelPrompt: () => session.cancel(),
       wiki,
       saveImeLog,
+      barRuntime: () => barRuntime,
+      barAction: async (id) => {
+        await barActions?.run(id)
+      },
+      flyoutAction: (a) => runFlyoutAction(userData, a),
+      barShape: () => settings.bar.shape,
       getStatus: () => ({
         paletteHotkey: paletteHotkey(),
         maskingMode: settings.masking.mode,
@@ -331,9 +432,18 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) {
       log('app.startupError', { error: errorText(e) })
     }
+    try {
+      startBar(userData)
+    } catch (e) {
+      barRuntime = null
+      log('bar.startError', { error: errorText(e) })
+    }
   })
 
   // 창이 모두 닫혀도 트레이에 남는다
   app.on('window-all-closed', () => {})
-  app.on('will-quit', () => globalShortcut.unregisterAll())
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll()
+    barRuntime?.dispose()
+  })
 }

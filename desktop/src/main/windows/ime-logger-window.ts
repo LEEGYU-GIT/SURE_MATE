@@ -1,6 +1,6 @@
 import { join } from 'node:path'
-import { is } from '@electron-toolkit/utils'
 import { BrowserWindow } from 'electron'
+import { loadRoute } from './overlay-window'
 
 let win: BrowserWindow | null = null
 
@@ -24,11 +24,7 @@ export function openImeLoggerWindow(): BrowserWindow {
       spellcheck: false
     }
   })
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/ime-logger`)
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/ime-logger' })
-  }
+  loadRoute(win, '/ime-logger')
   win.on('closed', () => {
     win = null
   })

@@ -3,7 +3,7 @@ import { useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } fr
 import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft } from '../../../shared/ipc-channels'
-import { PALETTE_GROUPS, parseQuery } from '../../../shared/palette-query'
+import { PALETTE_GROUPS, parseQuery, shownView } from '../../../shared/palette-query'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
 import { GroupIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
@@ -59,7 +59,7 @@ export function Palette(): React.JSX.Element {
   useEffect(
     () =>
       window.sureMate.onShown((payload) => {
-        setQuery('')
+        setQuery(shownView(payload).query)
         setSelected('')
         void window.sureMate.listItems().then(setAllItems)
         setShownCount((n) => n + 1)

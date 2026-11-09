@@ -1,7 +1,12 @@
 import { ipcMain } from 'electron'
+import { parseBarDrag } from '../shared/bar/bar-ipc'
+import type { BarShape } from '../shared/bar/bar-settings'
+import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-action'
+import type { FlyoutAction } from '../shared/flyout/flyout-content'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePromptRequest } from '../shared/prompt-request'
 import type { PaletteItem } from '../shared/types'
+import type { BarRuntime } from './bar/bar-runtime'
 import type { GlossaryRuntime } from './glossary/glossary-runtime'
 
 export interface IpcDeps {
@@ -14,6 +19,11 @@ export interface IpcDeps {
   getStatus: () => AppStatus
   wiki: GlossaryRuntime
   saveImeLog: (label: string, json: string) => Promise<string>
+  /** 바·펼침 창(아직 없거나 시작에 실패했으면 null) */
+  barRuntime: () => BarRuntime | null
+  barAction: (id: string) => Promise<void>
+  flyoutAction: (a: FlyoutAction) => Promise<boolean>
+  barShape: () => BarShape
 }
 
 const BAD_REQUEST = '요청 형식이 맞지 않아요.'
@@ -66,4 +76,47 @@ export function registerIpc(d: IpcDeps): void {
     return d.wiki.save(draft, { ...(id ? { id } : {}), allowDuplicate: o.allowDuplicate === true })
   })
   ipcMain.handle(IPC.devSaveImeLog, (_e, label: unknown, json: unknown) => d.saveImeLog(String(label), String(json)))
+
+  // ── 바 ───────────────────────────────────────────
+  ipcMain.handle(IPC.barGetState, () => d.barRuntime()?.bar.state() ?? null)
+  ipcMain.on(IPC.barAction, (_e, id: unknown) => {
+    if (typeof id === 'string' && id.length > 0 && id.length <= 200) void d.barAction(id)
+  })
+  ipcMain.on(IPC.barHover, (_e, id: unknown) => {
+    const r = d.barRuntime()
+    if (!r) return
+    if (id === null) r.flyout.hover(null)
+    else if (typeof id === 'string' && r.bar.hasItem(id)) r.flyout.hover(id)
+  })
+  ipcMain.on(IPC.barPointer, (_e, inside: unknown) => {
+    if (typeof inside === 'boolean') d.barRuntime()?.bar.pointer(inside)
+  })
+  ipcMain.on(IPC.barContextMenu, (_e, y: unknown) => {
+    const r = d.barRuntime()
+    const anchor = r?.bar.anchor(null)
+    if (!r || !anchor || typeof y !== 'number' || !Number.isFinite(y) || y < 0) return
+    r.flyout.toggleMenu({ kind: 'bar-menu', shape: d.barShape() }, null, anchor.bar.y + y)
+  })
+  ipcMain.on(IPC.barDrag, (_e, phase: unknown, y: unknown) => {
+    const p = parseBarDrag(phase, y)
+    const r = d.barRuntime()
+    if (!p || !r) return
+    // 끌기 시작하면 이름표·메뉴를 닫는다
+    if (p.phase === 'start') r.flyout.close('drag')
+    r.bar.drag(p.phase, p.screenY)
+  })
+
+  // ── 펼침 창 ──────────────────────────────────────
+  ipcMain.handle(IPC.flyoutGetContent, () => d.barRuntime()?.flyout.message() ?? null)
+  ipcMain.on(IPC.flyoutReady, (_e, seq: unknown, w: unknown, h: unknown) => {
+    const p = parseFlyoutReady(seq, w, h)
+    if (p) d.barRuntime()?.flyout.ready(p.seq, { width: p.width, height: p.height })
+  })
+  ipcMain.on(IPC.flyoutPointer, (_e, inside: unknown) => {
+    if (typeof inside === 'boolean') d.barRuntime()?.flyout.pointer(inside)
+  })
+  ipcMain.handle(IPC.flyoutAction, (_e, raw: unknown) => {
+    const a = parseFlyoutAction(raw)
+    return a ? d.flyoutAction(a) : false
+  })
 }
