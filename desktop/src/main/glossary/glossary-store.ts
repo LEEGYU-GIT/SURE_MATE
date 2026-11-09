@@ -16,25 +16,27 @@ export interface LoadedGlossary {
   /** 사용자 파일이 있는데 항목을 하나도 읽지 못함(깨진 JSON, 다른 형식, 읽기 실패) */
   userBroken: boolean
   errors: string[]
+  /** errors 가운데 읽었지만 링크·태그·별칭 일부를 뺀 항목 수(entries에 있다). 나머지는 건너뛴 항목이나 읽지 못한 파일 */
+  trimmed: number
 }
 
-type ReadUser = { entries: GlossaryEntry[]; errors: string[]; broken: boolean }
+type ReadUser = { entries: GlossaryEntry[]; errors: string[]; trimmed: number; broken: boolean }
 
 async function readUserFile(path: string): Promise<ReadUser> {
   let text: string
   try {
     text = await readFile(path, 'utf8')
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], errors: [], broken: false }
-    return { entries: [], errors: [`${GLOSSARY_FILE}: 읽지 못함(${(e as NodeJS.ErrnoException).code ?? 'unknown'})`], broken: true }
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], errors: [], trimmed: 0, broken: false }
+    return { entries: [], errors: [`${GLOSSARY_FILE}: 읽지 못함(${(e as NodeJS.ErrnoException).code ?? 'unknown'})`], trimmed: 0, broken: true }
   }
   try {
     // 메모장 등이 붙이는 UTF-8 BOM은 JSON.parse가 거부하므로 뗀다
     const r = parseGlossaryPack(JSON.parse(text.replace(/^﻿/, '')), 'user')
     const broken = r.entries.length === 0 && r.errors.length > 0
-    return { entries: r.entries, errors: r.errors.map((e) => `${GLOSSARY_FILE}: ${e}`), broken }
+    return { entries: r.entries, errors: r.errors.map((e) => `${GLOSSARY_FILE}: ${e}`), trimmed: r.trimmed, broken }
   } catch (e) {
-    return { entries: [], errors: [`${GLOSSARY_FILE}: 읽지 못함(${e instanceof Error ? e.name : 'Error'})`], broken: true }
+    return { entries: [], errors: [`${GLOSSARY_FILE}: 읽지 못함(${e instanceof Error ? e.name : 'Error'})`], trimmed: 0, broken: true }
   }
 }
 
@@ -48,7 +50,8 @@ export async function loadGlossary(userDir: string, builtin: unknown): Promise<L
     entries: [...byId.values()],
     userEntries: user.entries,
     userBroken: user.broken,
-    errors: [...base.errors.map((e) => `기본 용어 팩: ${e}`), ...user.errors]
+    errors: [...base.errors.map((e) => `기본 용어 팩: ${e}`), ...user.errors],
+    trimmed: base.trimmed + user.trimmed
   }
 }
 
@@ -109,11 +112,14 @@ export async function saveUserEntries(userDir: string, entries: GlossaryEntry[],
   }
 }
 
-/** 사용자 파일의 수정 시각이 바뀔 때만 다시 읽는다. 오류는 다시 읽을 때마다 한 번 알린다 */
+/**
+ * 사용자 파일의 수정 시각이 바뀔 때만 다시 읽는다. 오류는 다시 읽을 때마다 한 번 알린다.
+ * trimmed는 errors 가운데 일부 값만 빼고 읽은 항목 수(알림이 그 용어를 건너뛰었다고 하지 않게)
+ */
 export function createGlossaryCache(
   userDir: string,
   builtin: unknown,
-  onErrors: (errors: string[]) => void
+  onErrors: (errors: string[], trimmed: number) => void
 ): { get(): Promise<LoadedGlossary>; invalidate(): void } {
   let cached: { sig: string; value: LoadedGlossary } | null = null
   return {
@@ -127,7 +133,7 @@ export function createGlossaryCache(
       }
       if (cached && cached.sig === sig) return cached.value
       const value = await loadGlossary(userDir, builtin)
-      if (value.errors.length) onErrors(value.errors)
+      if (value.errors.length) onErrors(value.errors, value.trimmed)
       cached = { sig, value }
       return value
     },

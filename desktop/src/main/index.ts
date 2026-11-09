@@ -10,6 +10,7 @@ import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand, showCaptureResult } from './dev/dev-commands'
 import { errorText } from './error-text'
+import { fileErrorNotice, type FileErrorReport } from './file-error-notice'
 import { createGlossaryRuntime } from './glossary/glossary-runtime'
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
@@ -53,7 +54,7 @@ let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** 트레이가 생기기 전에 생긴 파일 읽기 오류(트레이가 생기면 알린다) */
-let pendingFileErrors: { what: string; errors: string[] }[] = []
+let pendingFileErrors: FileErrorReport[] = []
 
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
@@ -95,14 +96,17 @@ function warn(content: string): void {
 /** 트레이가 있으면 쌓아 둔 파일 읽기 오류를 알린다 */
 function flushFileErrors(): void {
   if (!shell) return
-  for (const p of pendingFileErrors) warn(`${p.what} ${p.errors.length}건을 읽지 못해 건너뛰었어요. ${p.errors[0]}`)
+  for (const p of pendingFileErrors) warn(fileErrorNotice(p))
   pendingFileErrors = []
 }
 
-/** 읽지 못한 템플릿·가명 사전·용어 파일을 사용자에게 알린다. 파일 이름·항목에 고객사명이 있을 수 있어 로그에는 건수만 남긴다 */
-function reportFileErrors(what: string, event: string, errors: string[]): void {
-  log(event, { count: errors.length })
-  pendingFileErrors.push({ what, errors })
+/**
+ * 읽지 못한 템플릿·가명 사전·용어 파일을 사용자에게 알린다. 파일 이름·항목에 고객사명이 있을 수 있어 로그에는 건수만 남긴다.
+ * trimmed: errors 가운데 일부 값만 빼고 읽은 항목 수(용어만 있다)
+ */
+function reportFileErrors(what: string, event: string, errors: string[], trimmed = 0): void {
+  log(event, { count: errors.length, ...(trimmed ? { trimmed } : {}) })
+  pendingFileErrors.push({ what, errors, trimmed })
   flushFileErrors()
 }
 
@@ -204,7 +208,7 @@ if (!app.requestSingleInstanceLock()) {
     const templateCache = createTemplateCache(userData, builtinPrompts, (errors) => reportFileErrors('프롬프트 템플릿', 'templates.loadErrors', errors))
     templates = await templateCache.get()
     // 용어도 팔레트를 열 때마다 사용자 파일이 바뀌었는지 보고 다시 읽는다
-    const glossaryCache = createGlossaryCache(userData, builtinGlossary, (errors) => reportFileErrors('용어', 'glossary.loadErrors', errors))
+    const glossaryCache = createGlossaryCache(userData, builtinGlossary, (errors, trimmed) => reportFileErrors('용어', 'glossary.loadErrors', errors, trimmed))
     const wiki = createGlossaryRuntime({
       entries: async () => (await glossaryCache.get()).entries,
       writeClipboard: async (text) => {

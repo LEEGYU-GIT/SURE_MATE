@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import type { GlossaryEntry } from '../../shared/glossary/types'
+import { fileErrorNotice } from '../file-error-notice'
 import { createGlossaryCache, GLOSSARY_FILE, loadGlossary, RENAME_RETRY_MS, saveUserEntries, type SaveIo } from './glossary-store'
 
 let dir: string
@@ -85,6 +86,35 @@ it('일부 항목만 읽지 못한 파일도 처음 덮어쓰기 전에 사본�
   expect((await readdir(dir)).filter((f) => f.startsWith(`${GLOSSARY_FILE}.broken-`))).toHaveLength(1)
   // 읽힌 항목이 있으니 "파일을 읽지 못함"은 아니다
   expect(loaded.userBroken).toBe(false)
+})
+
+it('읽을 때 통째로 건너뛴 항목과 일부 값만 뺀 항목을 따로 세어, 트레이 알림이 일부만 뺀 용어를 건너뛰었다고 하지 않는다', async () => {
+  await writeFile(
+    join(dir, GLOSSARY_FILE),
+    pack([
+      raw({ id: 'u1', term: '읽히는 용어' }),
+      raw({ id: 'u2', term: '설명이 긴 용어', definition: '가'.repeat(1001) }),
+      raw({ id: 'u3', term: '태그가 많은 용어', tags: ['1', '2', '3', '4', '5', '6'] })
+    ])
+  )
+  const loaded = await loadGlossary(dir, builtin)
+  expect(loaded.userEntries.map((e) => e.id)).toEqual(['u1', 'u3'])
+  expect(loaded.errors).toHaveLength(2)
+  expect(loaded.trimmed).toBe(1)
+  expect(fileErrorNotice({ what: '용어', errors: loaded.errors, trimmed: loaded.trimmed })).toBe(
+    `용어 1건을 읽지 못해 건너뛰었고, 1건은 링크·태그 등 일부 값을 빼고 읽었어요. ${loaded.errors[0]}`
+  )
+
+  // 캐시도 그 수를 함께 넘긴다
+  const reported: [number, number][] = []
+  await createGlossaryCache(dir, builtin, (errors, trimmed) => reported.push([errors.length, trimmed])).get()
+  expect(reported).toEqual([[2, 1]])
+
+  // 태그만 넘친 파일이면 건너뛴 것이 없다
+  await writeFile(join(dir, GLOSSARY_FILE), pack([raw({ id: 'u3', term: '태그가 많은 용어', tags: ['1', '2', '3', '4', '5', '6'] })]))
+  const onlyTrimmed = await loadGlossary(dir, builtin)
+  expect([onlyTrimmed.errors.length, onlyTrimmed.trimmed]).toEqual([1, 1])
+  expect(fileErrorNotice({ what: '용어', errors: onlyTrimmed.errors, trimmed: onlyTrimmed.trimmed })).not.toContain('건너뛰')
 })
 
 it('읽을 수 있는 항목이 하나도 없는 파일이면 userBroken(내보내기가 "없음" 대신 "읽지 못함"을 알리게)', async () => {
