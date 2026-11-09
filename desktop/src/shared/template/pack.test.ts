@@ -2,14 +2,22 @@ import { expect, it } from 'vitest'
 import builtin from '../../../resources/prompts.json'
 import { parseTemplatePack } from './pack'
 
-const builtinTemplates = (): ReturnType<typeof parseTemplatePack>['templates'] => parseTemplatePack(builtin, 'builtin').templates
+const allBuiltin = (): ReturnType<typeof parseTemplatePack>['templates'] => parseTemplatePack(builtin, 'builtin').templates
+const builtinTemplates = (): ReturnType<typeof parseTemplatePack>['templates'] => allBuiltin().filter((t) => t.kind === 'prompt')
 
-it('기본 프롬프트 팩: 8종, 오류 없음, id 중복 없음, 모두 prompt', () => {
+it('기본 팩: 프롬프트 8종, 오류 없음, id 중복 없음', () => {
   const { templates, errors } = parseTemplatePack(builtin, 'builtin')
   expect(errors).toEqual([])
-  expect(templates).toHaveLength(8)
-  expect(new Set(templates.map((t) => t.id)).size).toBe(8)
-  expect(templates.every((t) => t.kind === 'prompt' && t.scope === 'builtin')).toBe(true)
+  expect(templates.filter((t) => t.kind === 'prompt')).toHaveLength(8)
+  expect(new Set(templates.map((t) => t.id)).size).toBe(templates.length)
+  expect(templates.every((t) => t.scope === 'builtin')).toBe(true)
+})
+
+it('기본 상용구 2종: 결함 리포트·메일 서명, 가명 처리 자리 없음', () => {
+  const snippets = allBuiltin().filter((t) => t.kind === 'snippet')
+  expect(snippets.map((t) => t.id)).toEqual(['defect-report', 'mail-signature'])
+  expect(snippets[0].aliases).toEqual(['이슈', '결함', 'issue', 'bug'])
+  expect(snippets[1].aliases).toEqual(['서명', 'signature'])
 })
 
 it('설계 문서 §7 표의 이름 8개를 순서대로 담는다', () => {

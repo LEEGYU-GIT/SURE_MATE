@@ -28,6 +28,7 @@ import { notify } from './notify'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
+import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, saveSettings, updateSettings, type Settings } from './settings/settings-store'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
@@ -43,6 +44,7 @@ process.on('uncaughtExceptionMonitor', (e) => log('error.uncaughtException', { e
 let settings: Settings = DEFAULT_SETTINGS
 let templates: Template[] = []
 let prompts: PromptSession | null = null
+let snippets: { run(templateId: string): Promise<unknown> } | null = null
 let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
 let packCommands: { run(id: string): Promise<boolean> } | null = null
@@ -69,6 +71,10 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
+  if (id.startsWith('snippet:') && snippets) {
+    await snippets.run(id.slice('snippet:'.length))
+    return
+  }
   hidePalette({ restoreFocus: true })
 }
 
@@ -268,6 +274,7 @@ if (!app.requestSingleInstanceLock()) {
     glossaryEntries = (await glossaryCache.get()).entries
     const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, getGlossary: () => glossaryEntries, masking })
     prompts = session
+    snippets = createSnippetRuntime({ getTemplates: () => templates })
     maskingCommands = createMaskingCommandsRuntime({
       userData,
       masking,
