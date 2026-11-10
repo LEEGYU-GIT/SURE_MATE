@@ -40,7 +40,8 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
     },
     openFile: vi.fn(),
     openOnboarding: vi.fn(),
-    finishOnboarding: vi.fn(async () => {})
+    finishOnboarding: vi.fn(async () => {}),
+    dictionary: { get: vi.fn(async () => ({ terms: [], errors: [] })), save: vi.fn(async () => ({ ok: true, count: 0 })), importFile: vi.fn(async () => ({ canceled: true })), exportFile: vi.fn(async () => ({ canceled: true })) }
   }
 }
 
@@ -96,4 +97,15 @@ it('파일 열기는 settings·logs만, 온보딩 열기·끝내기·후보', as
   await handle(IPC.onboardingFinish, SETTINGS)
   expect(d.finishOnboarding).toHaveBeenCalled()
   expect(await handle(IPC.onboardingCandidates, SETTINGS)).toEqual([])
+})
+
+it('가명 사전 채널도 설정 창만(다른 창이면 저장·가져오기·내보내기를 부르지 않음)', async () => {
+  expect(await handle(IPC.settingsDictionarySave, PALETTE, [])).toEqual({ ok: false, errors: ['설정 창에서만 할 수 있어요'] })
+  await handle(IPC.settingsDictionaryImport, PALETTE)
+  await handle(IPC.settingsDictionaryExport, PALETTE)
+  expect(d.dictionary.save).not.toHaveBeenCalled()
+  expect(d.dictionary.importFile).not.toHaveBeenCalled()
+  expect(d.dictionary.exportFile).not.toHaveBeenCalled()
+  await handle(IPC.settingsDictionarySave, SETTINGS, [{ id: 'a' }])
+  expect(d.dictionary.save).toHaveBeenCalledWith([{ id: 'a' }])
 })

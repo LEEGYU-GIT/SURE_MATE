@@ -4,6 +4,7 @@ import { allAiTargets } from '../../../shared/ai-targets'
 import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-channels'
 import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
 import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
+import type { MaskTerm } from '../../../shared/masking/dictionary'
 import type { PaletteItem } from '../../../shared/types'
 
 /**
@@ -28,6 +29,7 @@ export interface FakeFixtures {
   /** 설정 창·온보딩이 받는 상태. 저장하면 진짜 검사·적용 규칙으로 이 값을 바꾼다 */
   settings: SettingsSnapshot | null
   hotkeyCandidates: HotkeyCandidate[]
+  dictionary: MaskTerm[]
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -36,7 +38,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   barState: null,
   flyout: null,
   settings: null,
-  hotkeyCandidates: []
+  hotkeyCandidates: [],
+  dictionary: []
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -110,6 +113,10 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
     openOnboarding: () => {},
     onboardingCandidates: async () => fx.hotkeyCandidates,
     finishOnboarding: async () => {},
-    onOnboardingProgress: () => () => {}
+    onOnboardingProgress: () => () => {},
+    dictionary: async () => ({ terms: fx.dictionary, errors: [] }),
+    dictionarySave: async (terms) => ({ ok: true, count: terms.length }),
+    dictionaryImport: async () => ({ canceled: true }),
+    dictionaryExport: async () => ({ canceled: true })
   }
 }

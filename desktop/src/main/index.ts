@@ -28,6 +28,7 @@ import { log } from './log'
 import type { MaskingCommands } from './masking/masking-commands'
 import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime'
 import { createMaskingService, type MaskingService } from './masking/masking-service'
+import { exportMaskDictionaryText, importMaskDictionary, loadMaskDictionary, saveMaskDictionary } from './masking/dictionary-store'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
@@ -47,7 +48,7 @@ import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
-import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, type SettingsRoute } from './windows/settings-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
 
 app.setName('Sure-Mate')
 
@@ -149,6 +150,61 @@ const settingsService = createSettingsService({
   log
 })
 settingsService.onChanged((s) => sendToSettings(IPC.settingsChanged, s))
+
+/** 설정 창을 부모로 둔 대화상자(창이 닫혀 있으면 부모 없이) */
+async function openDialog(o: Electron.OpenDialogOptions): Promise<string | null> {
+  const parent = settingsWindow()
+  const r = parent ? await dialog.showOpenDialog(parent, o) : await dialog.showOpenDialog(o)
+  return r.canceled ? null : (r.filePaths[0] ?? null)
+}
+
+async function saveDialog(o: Electron.SaveDialogOptions): Promise<string | null> {
+  const parent = settingsWindow()
+  const r = parent ? await dialog.showSaveDialog(parent, o) : await dialog.showSaveDialog(o)
+  return r.canceled || !r.filePath ? null : r.filePath
+}
+
+/** 받은 가명 사전 파일을 지금 사전에 더한다(같은 분류·이름은 건너뜀). 기록에는 개수만 */
+async function importDictionaryFile(): Promise<unknown> {
+  const path = await openDialog({ title: '가명 사전 가져오기', properties: ['openFile'], filters: [{ name: 'Sure-Mate 가명 사전', extensions: ['json'] }] })
+  if (!path) return { canceled: true }
+  let text: string
+  try {
+    if ((await stat(path)).size > PACK_MAX_BYTES) return { ok: false, errors: ['5MB가 넘는 파일은 가져오지 않아요'] }
+    text = await readFile(path, 'utf8')
+  } catch (e) {
+    return { ok: false, errors: [`파일을 읽지 못했어요(${errorCode(e)})`] }
+  }
+  const r = await importMaskDictionary(userData, text)
+  log('masking.dictionary.import', r.ok ? { added: r.added, skipped: r.skipped } : { errors: r.errors.length })
+  return r
+}
+
+/** 가명 사전 내보내기: 고객사 이름이 들어 있으니 사내에서만 공유하라고 먼저 묻는다(설계 문서 §8) */
+async function exportDictionaryFile(): Promise<unknown> {
+  const parent = settingsWindow()
+  const ask: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: 'Sure-Mate',
+    message: '가명 사전을 파일로 내보낼까요?',
+    detail: '고객사·프로젝트·담당자 이름이 그대로 들어 있어요. 사내에서만 공유해 주세요.',
+    buttons: ['내보내기', '취소'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  }
+  const answer = parent ? await dialog.showMessageBox(parent, ask) : await dialog.showMessageBox(ask)
+  if (answer.response !== 0) return { canceled: true }
+  const path = await saveDialog({ title: '가명 사전 내보내기', defaultPath: join(app.getPath('documents'), 'sure-mate-masking.json'), filters: [{ name: 'Sure-Mate 가명 사전', extensions: ['json'] }] })
+  if (!path) return { canceled: true }
+  try {
+    await writeFile(path, await exportMaskDictionaryText(userData), 'utf8')
+  } catch (e) {
+    return { ok: false, errors: [`파일에 쓰지 못했어요(${errorCode(e)})`] }
+  }
+  log('masking.dictionary.export', {})
+  return { ok: true }
+}
 
 /** 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1) */
 function openSettings(route: SettingsRoute = '/settings'): void {
@@ -533,6 +589,16 @@ if (!app.requestSingleInstanceLock()) {
         await changeSettings((cur) => ({ ...cur, onboardingDone: true }))
         log('onboarding.finish', {})
         closeSettingsWindow()
+      },
+      dictionary: {
+        get: () => loadMaskDictionary(userData),
+        save: async (terms) => {
+          const r = await saveMaskDictionary(userData, terms)
+          log('masking.dictionary.save', r.ok ? { count: r.count } : { errors: r.errors.length })
+          return r
+        },
+        importFile: importDictionaryFile,
+        exportFile: exportDictionaryFile
       }
     })
 

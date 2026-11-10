@@ -13,6 +13,9 @@ let onClosed: (() => void) | null = null
 /** 설정 창의 webContents id(설정 IPC가 보낸 창을 확인한다). 열려 있지 않으면 null */
 export const settingsContentsId = (): number | null => (win && !win.isDestroyed() ? win.webContents.id : null)
 
+/** 열린 설정 창(대화상자의 부모 창). 없으면 null */
+export const settingsWindow = (): BrowserWindow | null => (win && !win.isDestroyed() ? win : null)
+
 /** 열린 설정 창에 보낸다(없으면 아무것도 하지 않음) */
 export function sendToSettings(channel: string, ...args: unknown[]): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)

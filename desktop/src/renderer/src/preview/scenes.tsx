@@ -391,7 +391,8 @@ export const SCENES: Scene[] = [
   ...CARD_SCENES,
   settingsScene('settings-general', '설정: 일반', 'general'),
   settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
-  settingsScene('settings-bar', '설정: 바', 'bar')
+  settingsScene('settings-bar', '설정: 바', 'bar'),
+  settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking')
 ]
 
 /** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
@@ -411,14 +412,20 @@ function settingsSnapshot(): SettingsSnapshot {
   }
 }
 
-/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
+/** 설정 창 장면: 너비 880 창 하나(높이는 캡처 창 높이, 보통 640. 제목 줄 오른쪽 140은 Windows 창 단추 자리) */
 function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
   return {
     id,
     title,
-    fixtures: { settings: settingsSnapshot() },
+    fixtures: {
+      settings: settingsSnapshot(),
+      dictionary: [
+        { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
+        { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
+      ]
+    },
     render: () => (
-      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ width: 880, height: '100vh', overflow: 'hidden', position: 'relative' }}>
         <SettingsApp initialTab={tab} />
       </div>
     )

@@ -12,6 +12,12 @@ export interface SettingsIpcDeps {
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
   finishOnboarding(): Promise<void>
+  dictionary: {
+    get(): Promise<{ terms: unknown[]; errors: string[] }>
+    save(terms: unknown): Promise<unknown>
+    importFile(): Promise<unknown>
+    exportFile(): Promise<unknown>
+  }
 }
 
 type Sender = { sender: { id: number } }
@@ -52,4 +58,9 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(IPC.onboardingFinish, async (e) => {
     if (fromSettings(e)) await d.finishOnboarding()
   })
+  const refused = { ok: false, errors: ['설정 창에서만 할 수 있어요'] }
+  ipcMain.handle(IPC.settingsDictionary, (e) => (fromSettings(e) ? d.dictionary.get() : { terms: [], errors: [] }))
+  ipcMain.handle(IPC.settingsDictionarySave, (e, terms: unknown) => (fromSettings(e) ? d.dictionary.save(terms) : refused))
+  ipcMain.handle(IPC.settingsDictionaryImport, (e) => (fromSettings(e) ? d.dictionary.importFile() : refused))
+  ipcMain.handle(IPC.settingsDictionaryExport, (e) => (fromSettings(e) ? d.dictionary.exportFile() : refused))
 }

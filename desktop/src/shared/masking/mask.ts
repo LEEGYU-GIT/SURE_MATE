@@ -43,6 +43,9 @@ const REMOVE_PATTERN_LABEL: Partial<Record<MaskCategory, string>> = {
   url: '[사내 URL]'
 }
 
+/** 빼기 모드 기본 표기(설정 화면의 자리 글). 이름 분류는 뒤에 A, B…가 붙는다 */
+export const defaultRemoveLabel = (c: MaskCategory): string => REMOVE_ENTITY_LABEL[c] ?? REMOVE_PATTERN_LABEL[c] ?? c
+
 /**
  * 찾은 대상을 모드대로 바꾼다. 되돌리기 모드는 대응표의 토큰(같은 이름은 같은 토큰), 빼기 모드는 읽기 쉬운 표기(대응표 안 씀).
  * ranges는 결과 글에서 바꾼 표시의 [시작, 끝) 자리다(확인 화면에서 칠한다).

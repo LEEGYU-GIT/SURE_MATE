@@ -23,7 +23,11 @@ const settings: SettingsApi = {
     const listener = (): void => cb()
     ipcRenderer.on(IPC.onboardingProgress, listener)
     return () => ipcRenderer.removeListener(IPC.onboardingProgress, listener)
-  }
+  },
+  dictionary: () => ipcRenderer.invoke(IPC.settingsDictionary),
+  dictionarySave: (terms) => ipcRenderer.invoke(IPC.settingsDictionarySave, terms),
+  dictionaryImport: () => ipcRenderer.invoke(IPC.settingsDictionaryImport),
+  dictionaryExport: () => ipcRenderer.invoke(IPC.settingsDictionaryExport)
 }
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.

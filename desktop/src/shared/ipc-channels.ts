@@ -1,6 +1,7 @@
 import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
+import type { MaskTerm } from './masking/dictionary'
 import type { MaskItem } from './masking/types'
 import type { SettingsPatch } from './settings/settings-patch'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
@@ -109,7 +110,11 @@ export const IPC = {
   onboardingCandidates: 'onboarding:candidates',
   onboardingFinish: 'onboarding:finish',
   /** main → 온보딩: 따라 해 보기의 프롬프트가 실행됐다 */
-  onboardingProgress: 'onboarding:progress'
+  onboardingProgress: 'onboarding:progress',
+  settingsDictionary: 'settings:dictionary',
+  settingsDictionarySave: 'settings:dictionary-save',
+  settingsDictionaryImport: 'settings:dictionary-import',
+  settingsDictionaryExport: 'settings:dictionary-export'
 } as const
 
 /**
@@ -194,4 +199,14 @@ export interface SettingsApi {
   finishOnboarding(): Promise<void>
   /** 따라 해 보기: 회의록 정리 프롬프트가 실행됐다 */
   onOnboardingProgress(cb: () => void): () => void
+  /** 가명 사전(설계 문서 §8): 지금 항목과 읽지 못한 까닭 */
+  dictionary(): Promise<{ terms: MaskTerm[]; errors: string[] }>
+  dictionarySave(terms: MaskTerm[]): Promise<{ ok: true; count: number } | { ok: false; errors: string[] }>
+  /** 파일을 골라 더한다(대화상자). 고르지 않았으면 canceled */
+  dictionaryImport(): Promise<FileActionResult & { added?: number; skipped?: number }>
+  /** 사내에서만 공유하라는 확인 뒤 파일로 저장(대화상자) */
+  dictionaryExport(): Promise<FileActionResult>
 }
+
+/** 대화상자를 거치는 파일 동작의 결과 */
+export type FileActionResult = { ok: true } | { ok: false; errors: string[] } | { canceled: true }
