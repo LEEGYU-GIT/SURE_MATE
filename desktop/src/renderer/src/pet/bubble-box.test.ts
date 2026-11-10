@@ -3,6 +3,7 @@ import { PET_WINDOW } from '../../../shared/pet/pet-view'
 import {
   BUBBLE_BOX,
   bubbleLines,
+  bubbleMeasureKey,
   bubbleRect,
   faceTarget,
   keepTogether,
@@ -12,6 +13,37 @@ import {
 
 const SLOT = { x: 0, y: 0, width: 200, height: 96 }
 const MEASURED = { width: 120, height: 40 }
+
+describe('bubbleMeasureKey: 언제 다시 재어 main에 사각형을 알리는지', () => {
+  const warn = {
+    seq: 1,
+    text: '가명 처리가 꺼져 있어요. 이름이 그대로 들어갔어요.',
+    side: 'above' as const,
+    slot: SLOT
+  }
+
+  it('(fix 1) 문구가 같아도 새 말풍선(seq)이면 다시 알린다: main은 새 반응마다 사각형을 버린다', () => {
+    expect(bubbleMeasureKey({ ...warn, seq: 2 })).not.toBe(bubbleMeasureKey(warn))
+  })
+
+  it('같은 말풍선을 다시 그리면(같은 seq·문구·자리) 알리지 않는다', () => {
+    expect(bubbleMeasureKey({ ...warn, slot: { ...SLOT } })).toBe(bubbleMeasureKey(warn))
+  })
+
+  it('문구·방향·자리가 바뀌면 다시 잰다', () => {
+    const key = bubbleMeasureKey(warn)
+    expect(bubbleMeasureKey({ ...warn, text: '원래 이름으로 되돌렸어요.' })).not.toBe(key)
+    expect(bubbleMeasureKey({ ...warn, side: 'left' })).not.toBe(key)
+    for (const slot of [
+      { ...SLOT, x: 1 },
+      { ...SLOT, y: 1 },
+      { ...SLOT, width: 116 },
+      { ...SLOT, height: 166 }
+    ]) {
+      expect(bubbleMeasureKey({ ...warn, slot })).not.toBe(key)
+    }
+  })
+})
 
 describe('bubbleRect: 잰 말풍선을 자리 안에 놓는다(창 좌표)', () => {
   it('above는 자리 아래 가운데, left는 자리 오른쪽·세로 가운데, right는 자리 왼쪽·세로 가운데', () => {

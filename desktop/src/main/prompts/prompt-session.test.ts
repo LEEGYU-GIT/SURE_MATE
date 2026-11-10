@@ -541,6 +541,27 @@ describe('말랑 메이트에 알리는 앱 일', () => {
     expect(f.calls.events[1]).toMatchObject({ masking: 'remove', masked: [{ category: 'client', count: 4 }, { category: 'path', count: 2 }] })
   })
 
+  it('(fix 3) 클립보드 쓰기가 실패하면 prompt-copied를 내보내지 않고 AI도 열지 않는다(run·바 모두)', async () => {
+    const f = fake({ mask: fakeMask })
+    f.deps.writeClipboard = async () => {
+      f.calls.flow.push('write')
+      throw new Error('EBUSY')
+    }
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    await expect(s.run({ source: 'selection', target: 'claude' })).rejects.toThrow('EBUSY')
+    expect(f.calls.events).toEqual([])
+    expect(f.calls.flow).toEqual(['write'])
+
+    const g = fake({ mask: fakeMask })
+    g.deps.writeClipboard = async () => {
+      throw new Error('EBUSY')
+    }
+    await expect(createPromptSession(g.deps).runFromBar('meeting-notes')).rejects.toThrow('EBUSY')
+    expect(g.calls.events).toEqual([])
+    expect(g.calls.opened).toEqual([])
+  })
+
   it('run: 가명 처리 끔이면 masking off(가린 것 없음)', async () => {
     const f = fake({ mask: multiMask })
     const s = createPromptSession(f.deps)

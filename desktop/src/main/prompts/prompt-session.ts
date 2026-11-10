@@ -55,7 +55,10 @@ export interface PromptSessionDeps {
   log(event: string, data: Record<string, unknown>): void
   targets(): { list: AiTarget[]; defaultId: string }
   now(): number
-  /** 말랑 메이트에 앱 일을 알린다(복사함, 가져오지 못함). 글·이름은 담지 않는다 */
+  /**
+   * 말랑 메이트에 앱 일을 알린다(복사함, 가져오지 못함). 글·가린 이름은 담지 않는다:
+   * 가린 것은 분류별 건수, AI는 열 대상 이름만(말풍선에 그대로 보여 줄 값, 로그에는 남기지 않음)
+   */
   emit(e: AppEvent): void
 }
 

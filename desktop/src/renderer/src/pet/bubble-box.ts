@@ -48,6 +48,20 @@ export function bubbleRect(o: {
   }
 }
 
+/**
+ * 말풍선을 다시 재어 main에 사각형을 알리는 열쇠. 약속: 새 말풍선(seq)마다 사각형을 한 번 알린다.
+ * main은 새 반응마다(문구가 같아도) 클릭 판정 사각형을 버리므로, 같은 문구의 새 말풍선도 다시 알려야 눌린다.
+ * 같은 말풍선을 다시 그릴 때(seq·문구·방향·자리가 같음)는 다시 재지 않는다.
+ */
+export function bubbleMeasureKey(b: {
+  seq: number
+  text: string
+  side: SlotSide
+  slot: Rect
+}): string {
+  return [b.seq, b.side, b.slot.x, b.slot.y, b.slot.width, b.slot.height, b.text].join('|')
+}
+
 /** 꼬리 자리: 펫 쪽 가장자리(above는 아래, left는 오른쪽, right는 왼쪽)를 따라 잰 거리. 얼굴을 가리키되 모서리를 비킨다 */
 export function tailOffset(o: {
   rect: Rect

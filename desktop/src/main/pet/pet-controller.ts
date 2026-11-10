@@ -54,7 +54,10 @@ export interface PetController {
   react(e: AppEvent): void
   /** 말풍선을 눌렀다: 닫고 반응을 끝낸다 */
   bubbleClick(): void
-  /** 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 더하고, null이면 뺀다 */
+  /**
+   * 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 더하고, null이면 뺀다.
+   * 렌더러는 새 말풍선(seq)마다 한 번 보낸다(새 반응이 사각형을 지우므로 같은 문구여도)
+   */
   bubbleRect(r: Rect | null): void
   status(): PetStatus
   view(): PetView | null
@@ -540,6 +543,8 @@ export function createPetController(d: PetControllerDeps): PetController {
     clearHold()
     clearRest()
     reacting = { r, restLeft: mode === 'sit' ? left : null }
+    // 약속: main은 새 반응마다(문구가 같아도) 말풍선 사각형을 버리고, 렌더러는 새 말풍선(seq)마다 사각형을
+    // 한 번 알린다(PetBubble·bubbleMeasureKey). 그 사이에는 말풍선 위 커서도 통과로 본다
     bubbleHit = null
     clickFaceUntil = null
     if (r.bubble !== null) bubbleSeq += 1

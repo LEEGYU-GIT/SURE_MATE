@@ -4,6 +4,7 @@ import type { Rect } from '../../../shared/types'
 import {
   BUBBLE_BOX,
   bubbleLines,
+  bubbleMeasureKey,
   bubbleRect,
   keepTogether,
   splitLead,
@@ -108,8 +109,11 @@ function SpeechBubble({
   const [rect, setRect] = useState<Rect | null>(null)
   const { slot, side, text } = bubble
   const { x: sx, y: sy, width: sw, height: sh } = slot
+  const measureKey = bubbleMeasureKey(bubble)
 
-  // 문구·자리가 바뀔 때만 다시 잰다(seq만 바뀌어 글이 같으면 크기도 같다)
+  // 약속: 새 말풍선(seq)마다 사각형을 한 번 알린다. main은 새 반응마다(문구가 같아도) 사각형을 버리므로,
+  // 같은 문구의 새 말풍선(가명 처리 끈 채 두 번 복사 등)도 다시 알려야 눌린다. 문구·자리가 바뀌어도 다시 잰다.
+  // 다시 재기만 하고 다시 그려 붙이지는 않으므로 들어오는 움직임은 다시 돌지 않는다
   useLayoutEffect(() => {
     const el = ref.current
     const p = textRef.current
@@ -127,7 +131,7 @@ function SpeechBubble({
     })
     setRect((cur) => (cur && sameRect(cur, next) ? cur : next))
     window.sureMate.petBubbleRect(next)
-  }, [text, side, sx, sy, sw, sh])
+  }, [measureKey, side, sx, sy, sw, sh])
 
   // 말풍선이 사라지면 클릭 판정에서 뺀다
   useLayoutEffect(() => () => window.sureMate.petBubbleRect(null), [])

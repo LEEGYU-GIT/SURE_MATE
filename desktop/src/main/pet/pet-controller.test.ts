@@ -2054,6 +2054,28 @@ describe('말풍선 누르기·클릭 판정', () => {
     expect(lastIgnore(t)).toBe(true)
   })
 
+  it('(fix 1) 같은 문구의 새 말풍선(가명 처리 끈 채 두 번 복사): 사각형을 버리고, 렌더러가 새 seq로 다시 알리면 눌러 닫힌다', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(WARN)
+    const r = reportBubble(t)
+    const win = t.c.status().window!
+    t.env.cursor = { x: win.x + r.x + 20, y: win.y + r.y + 10 }
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(false)
+    vi.advanceTimersByTime(1000)
+    t.c.react(WARN) // 4초 안에 두 번째 복사: 문구·자리가 같은 새 말풍선
+    expect(bubble(t)).toMatchObject({ seq: 2, text: WARN_TEXT })
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(true) // main은 새 반응마다 사각형을 버린다
+    t.c.bubbleRect(r) // 렌더러가 seq 2를 재어 다시 알림(bubbleMeasureKey에 seq가 있어서)
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.bubbleClick()
+    expect(bubble(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true)
+  })
+
   it('새 반응이 이전 말풍선을 대체하면 렌더러가 새로 잴 때까지 옛 사각형으로 클릭을 막지 않는다', () => {
     const t = make()
     t.c.start()
