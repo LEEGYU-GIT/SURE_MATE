@@ -18,6 +18,7 @@ import type { SettingsTabId } from '../settings/tabs'
 import { allAiTargets } from '../../../shared/ai-targets'
 import { DEFAULT_SETTINGS } from '../../../shared/settings/settings'
 import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
+import type { Template } from '../../../shared/template/types'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -344,6 +345,16 @@ const CARD_SCENES: Scene[] = [
   )
 ]
 
+/** 설정 창 프롬프트 탭 미리 보기(기본 팩 일부 + 가상 내 템플릿) */
+const PREVIEW_TEMPLATES: Template[] = [
+  { id: 'meeting-notes', name: '회의록 정리', aliases: ['회의록'], kind: 'prompt', description: '회의 메모를 결정·할 일로 정리', body: '정리해 줘\n{{selection}}', scope: 'personal' },
+  { id: 'req-to-testcase', name: '요구사항 → 테스트 케이스', aliases: [], kind: 'prompt', description: '요구사항에서 시험 항목 뽑기', body: '{{selection}}', scope: 'builtin' },
+  { id: 'polish', name: '문장 다듬기', aliases: [], kind: 'prompt', body: '{{selection}}', scope: 'builtin' },
+  { id: 'my-weekly', name: '주간 보고 다듬기', aliases: ['주간'], kind: 'prompt', description: '가상자동차 과제 주간 보고', body: '{{selection}}', scope: 'personal' },
+  { id: 'defect-report', name: '결함 리포트', aliases: ['issue'], kind: 'snippet', description: '결함 리포트 양식', body: '[결함 제목]', scope: 'builtin' },
+  { id: 'team-greeting', name: '팀 인사말', aliases: [], kind: 'snippet', body: '안녕하세요', scope: 'imported' }
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -392,7 +403,8 @@ export const SCENES: Scene[] = [
   settingsScene('settings-general', '설정: 일반', 'general'),
   settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
   settingsScene('settings-bar', '설정: 바', 'bar'),
-  settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking')
+  settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking'),
+  settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts')
 ]
 
 /** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
@@ -422,7 +434,8 @@ function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
       dictionary: [
         { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
         { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
-      ]
+      ],
+      templates: PREVIEW_TEMPLATES
     },
     render: () => (
       <div style={{ width: 880, height: '100vh', overflow: 'hidden', position: 'relative' }}>

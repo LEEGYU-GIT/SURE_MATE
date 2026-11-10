@@ -5,6 +5,7 @@ import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-ch
 import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
 import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import type { MaskTerm } from '../../../shared/masking/dictionary'
+import type { Template } from '../../../shared/template/types'
 import type { PaletteItem } from '../../../shared/types'
 
 /**
@@ -30,6 +31,7 @@ export interface FakeFixtures {
   settings: SettingsSnapshot | null
   hotkeyCandidates: HotkeyCandidate[]
   dictionary: MaskTerm[]
+  templates: Template[]
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -39,7 +41,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   flyout: null,
   settings: null,
   hotkeyCandidates: [],
-  dictionary: []
+  dictionary: [],
+  templates: []
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -117,6 +120,9 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
     dictionary: async () => ({ terms: fx.dictionary, errors: [] }),
     dictionarySave: async (terms) => ({ ok: true, count: terms.length }),
     dictionaryImport: async () => ({ canceled: true }),
-    dictionaryExport: async () => ({ canceled: true })
+    dictionaryExport: async () => ({ canceled: true }),
+    templates: async () => ({ templates: fx.templates, mine: fx.templates.filter((t) => t.scope === 'personal').map((t) => t.id), builtinIds: fx.templates.filter((t) => t.scope === 'builtin').map((t) => t.id), errors: [] }),
+    templateSave: async (draft) => ({ ok: true, id: draft.id ?? 'my-preview' }),
+    templateDelete: async () => ({ ok: true })
   }
 }

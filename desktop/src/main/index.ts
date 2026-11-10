@@ -10,6 +10,7 @@ import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
 import { IPC } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
+import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
 import { createBarCommands } from './bar/bar-commands'
@@ -37,6 +38,7 @@ import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
+import { deletePersonalTemplate, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
@@ -576,6 +578,14 @@ if (!app.requestSingleInstanceLock()) {
       paletteContentsId,
       imeLoggerContentsId
     })
+    /** 기본 템플릿 id(설정 창이 '기본'·'기본을 고침'을 가린다) */
+    const builtinTemplateIds = parseTemplatePack(builtinPrompts, 'builtin').templates.map((t) => t.id)
+    /** 템플릿을 저장·지운 뒤: 다시 읽고 바의 고정 프롬프트·설정 창의 이름 목록을 고친다 */
+    const afterTemplatesChanged = async (): Promise<void> => {
+      templates = await templateCache.get()
+      barRuntime?.refresh()
+      settingsService.changed()
+    }
     registerSettingsIpc({
       contentsId: settingsContentsId,
       service: settingsService,
@@ -599,6 +609,25 @@ if (!app.requestSingleInstanceLock()) {
         },
         importFile: importDictionaryFile,
         exportFile: exportDictionaryFile
+      },
+      templates: {
+        list: async () => {
+          templates = await templateCache.get()
+          const mine = await readMyTemplates(userData)
+          return { templates, mine: mine.templates.map((t) => t.id), builtinIds: builtinTemplateIds, errors: mine.errors }
+        },
+        save: async (draft) => {
+          const r = await savePersonalTemplate(userData, draft)
+          log('template.save', r.ok ? { id: r.id } : { errors: r.errors.length })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        remove: async (id) => {
+          const r = await deletePersonalTemplate(userData, id)
+          log('template.delete', { id, ok: r.ok })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        }
       }
     })
 

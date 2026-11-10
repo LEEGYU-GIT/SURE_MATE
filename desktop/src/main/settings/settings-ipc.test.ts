@@ -41,6 +41,7 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
     openFile: vi.fn(),
     openOnboarding: vi.fn(),
     finishOnboarding: vi.fn(async () => {}),
+    templates: { list: vi.fn(async () => ({ templates: [] })), save: vi.fn(async () => ({ ok: true, id: 'my-1' })), remove: vi.fn(async () => ({ ok: true })) },
     dictionary: { get: vi.fn(async () => ({ terms: [], errors: [] })), save: vi.fn(async () => ({ ok: true, count: 0 })), importFile: vi.fn(async () => ({ canceled: true })), exportFile: vi.fn(async () => ({ canceled: true })) }
   }
 }
@@ -108,4 +109,12 @@ it('가명 사전 채널도 설정 창만(다른 창이면 저장·가져오기�
   expect(d.dictionary.exportFile).not.toHaveBeenCalled()
   await handle(IPC.settingsDictionarySave, SETTINGS, [{ id: 'a' }])
   expect(d.dictionary.save).toHaveBeenCalledWith([{ id: 'a' }])
+})
+
+it('템플릿 저장·지우기도 설정 창만, 지울 id는 64자 안의 글자', async () => {
+  expect(await handle(IPC.settingsTemplateSave, PALETTE, { name: 'x' })).toEqual({ ok: false, errors: ['설정 창에서만 할 수 있어요'] })
+  expect(d.templates.save).not.toHaveBeenCalled()
+  expect(await handle(IPC.settingsTemplateDelete, SETTINGS, 5)).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
+  await handle(IPC.settingsTemplateDelete, SETTINGS, 'my-1')
+  expect(d.templates.remove).toHaveBeenCalledWith('my-1')
 })

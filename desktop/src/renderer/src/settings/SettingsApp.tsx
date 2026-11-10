@@ -4,6 +4,7 @@ import { AiTab } from './AiTab'
 import { BarTab } from './BarTab'
 import { GeneralTab } from './GeneralTab'
 import { MaskingTab } from './MaskingTab'
+import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
 import { SettingsContext, useSettingsState } from './use-settings'
 
@@ -11,6 +12,7 @@ import { SettingsContext, useSettingsState } from './use-settings'
 const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   general: GeneralTab,
   ai: AiTab,
+  prompts: PromptsTab,
   masking: MaskingTab,
   bar: BarTab
 }

@@ -12,6 +12,11 @@ export interface SettingsIpcDeps {
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
   finishOnboarding(): Promise<void>
+  templates: {
+    list(): Promise<unknown>
+    save(draft: unknown): Promise<unknown>
+    remove(id: string): Promise<unknown>
+  }
   dictionary: {
     get(): Promise<{ terms: unknown[]; errors: string[] }>
     save(terms: unknown): Promise<unknown>
@@ -63,4 +68,9 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(IPC.settingsDictionarySave, (e, terms: unknown) => (fromSettings(e) ? d.dictionary.save(terms) : refused))
   ipcMain.handle(IPC.settingsDictionaryImport, (e) => (fromSettings(e) ? d.dictionary.importFile() : refused))
   ipcMain.handle(IPC.settingsDictionaryExport, (e) => (fromSettings(e) ? d.dictionary.exportFile() : refused))
+  ipcMain.handle(IPC.settingsTemplates, (e) => (fromSettings(e) ? d.templates.list() : { templates: [], mine: [], builtinIds: [], errors: [] }))
+  ipcMain.handle(IPC.settingsTemplateSave, (e, draft: unknown) => (fromSettings(e) ? d.templates.save(draft) : refused))
+  ipcMain.handle(IPC.settingsTemplateDelete, (e, id: unknown) =>
+    fromSettings(e) && typeof id === 'string' && id.length <= 64 ? d.templates.remove(id) : { ok: false, reason: BAD }
+  )
 }

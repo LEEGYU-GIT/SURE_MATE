@@ -2,6 +2,7 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskTerm } from './masking/dictionary'
+import type { Template } from './template/types'
 import type { MaskItem } from './masking/types'
 import type { SettingsPatch } from './settings/settings-patch'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
@@ -114,7 +115,10 @@ export const IPC = {
   settingsDictionary: 'settings:dictionary',
   settingsDictionarySave: 'settings:dictionary-save',
   settingsDictionaryImport: 'settings:dictionary-import',
-  settingsDictionaryExport: 'settings:dictionary-export'
+  settingsDictionaryExport: 'settings:dictionary-export',
+  settingsTemplates: 'settings:templates',
+  settingsTemplateSave: 'settings:template-save',
+  settingsTemplateDelete: 'settings:template-delete'
 } as const
 
 /**
@@ -206,7 +210,15 @@ export interface SettingsApi {
   dictionaryImport(): Promise<FileActionResult & { added?: number; skipped?: number }>
   /** 사내에서만 공유하라는 확인 뒤 파일로 저장(대화상자) */
   dictionaryExport(): Promise<FileActionResult>
+  /** 프롬프트·상용구(설계 문서 §7): 전체 목록, 내 파일에 있는 id, 기본 템플릿 id, 내 파일을 읽을 때의 문제 */
+  templates(): Promise<{ templates: Template[]; mine: string[]; builtinIds: string[]; errors: string[] }>
+  templateSave(draft: TemplateDraft): Promise<{ ok: true; id: string } | { ok: false; errors: string[] }>
+  /** 내 파일에서 지운다(기본 템플릿을 고친 것이면 기본값으로 돌아감) */
+  templateDelete(id: string): Promise<{ ok: true } | { ok: false; reason: string }>
 }
+
+/** 편집기가 보내는 템플릿(id가 없으면 새로 만든다) */
+export type TemplateDraft = Omit<Template, 'scope' | 'id'> & { id?: string }
 
 /** 대화상자를 거치는 파일 동작의 결과 */
 export type FileActionResult = { ok: true } | { ok: false; errors: string[] } | { canceled: true }
