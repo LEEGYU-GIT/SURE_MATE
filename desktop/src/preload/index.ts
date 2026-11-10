@@ -30,7 +30,13 @@ const settings: SettingsApi = {
   dictionaryExport: () => ipcRenderer.invoke(IPC.settingsDictionaryExport),
   templates: () => ipcRenderer.invoke(IPC.settingsTemplates),
   templateSave: (draft) => ipcRenderer.invoke(IPC.settingsTemplateSave, draft),
-  templateDelete: (id) => ipcRenderer.invoke(IPC.settingsTemplateDelete, id)
+  templateDelete: (id) => ipcRenderer.invoke(IPC.settingsTemplateDelete, id),
+  templateImport: () => ipcRenderer.invoke(IPC.settingsTemplateImport),
+  templateExport: () => ipcRenderer.invoke(IPC.settingsTemplateExport),
+  references: () => ipcRenderer.invoke(IPC.settingsReferences),
+  referenceGet: (kind) => ipcRenderer.invoke(IPC.settingsReferenceGet, kind),
+  referenceSave: (kind, text) => ipcRenderer.invoke(IPC.settingsReferenceSave, kind, text),
+  referenceDelete: (kind) => ipcRenderer.invoke(IPC.settingsReferenceDelete, kind)
 }
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.

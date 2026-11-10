@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PACK_FORMAT, parseTemplatePack } from '../../shared/template/pack'
 import type { Template } from '../../shared/template/types'
-import { keepBrokenCopy, writeFileAtomic } from '../files/atomic-write'
+import { brokenStamp, keepBrokenCopy, writeFileAtomic } from '../files/atomic-write'
 import { TEMPLATES_DIR } from './template-store'
 
 /**
@@ -75,4 +75,35 @@ export async function deletePersonalTemplate(userDir: string, id: string, now: D
     now
   )
   return { ok: true }
+}
+
+/**
+ * 받은 템플릿 팩을 별도 파일(`templates/imported-<시각>.json`)로 둔다(내 파일과 섞지 않음). 같은 id가 이미 있으면
+ * 가져온 것이 그 템플릿을 덮으므로 바뀐 수로 센다. 다른 형식·깨진 JSON·템플릿이 없으면 파일을 만들지 않는다.
+ */
+export async function importTemplatePack(
+  userDir: string,
+  text: string,
+  existingIds: string[],
+  now: Date = new Date()
+): Promise<{ ok: true; added: number; replaced: number; file: string } | { ok: false; errors: string[] }> {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text.replace(/^\uFEFF/, ''))
+  } catch {
+    return { ok: false, errors: ['템플릿 팩 파일을 읽지 못했어요(JSON이 깨짐)'] }
+  }
+  const pack = parseTemplatePack(raw, 'imported')
+  if (pack.templates.length === 0) return { ok: false, errors: pack.errors.length ? pack.errors : ['가져올 템플릿이 없어요'] }
+  const file = `imported-${brokenStamp(now)}.json`
+  await writeFileAtomic(join(userDir, TEMPLATES_DIR, file), JSON.stringify({ format: PACK_FORMAT, version: 1, templates: pack.templates.map(toPackItem) }, null, 2))
+  const existing = new Set(existingIds)
+  const replaced = pack.templates.filter((x) => existing.has(x.id)).length
+  return { ok: true, added: pack.templates.length - replaced, replaced, file }
+}
+
+/** 내보낼 팩 글: 내 템플릿 파일의 템플릿만(기본·다른 파일 제외), 다시 가져올 수 있는 형식 */
+export async function exportMyTemplatesText(userDir: string): Promise<string> {
+  const mine = await readMyTemplates(userDir)
+  return JSON.stringify({ format: PACK_FORMAT, version: 1, templates: mine.templates.map(toPackItem) }, null, 2)
 }

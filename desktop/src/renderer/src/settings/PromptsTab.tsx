@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Template } from '../../../shared/template/types'
 import { Button, Section, TextField } from './controls'
 import { templateSource, type TemplateSource } from './template-editor'
+import { ReferencesPanel } from './ReferencesPanel'
 import { TemplateEditor } from './TemplateEditor'
 
 const SOURCE_LABEL: Record<TemplateSource, string> = {
@@ -13,12 +14,26 @@ const SOURCE_LABEL: Record<TemplateSource, string> = {
 
 type Listing = { templates: Template[]; mine: Set<string>; builtinIds: Set<string>; errors: string[] }
 
-/** 프롬프트·상용구(설계 문서 §14): 목록(출처 표시·검색)과 편집기. 기준 예시 문서는 아래 따로 */
-export function PromptsTab({ references }: { references?: React.ReactNode }): React.JSX.Element {
+/** 프롬프트·상용구(설계 문서 §14): 목록(출처 표시·검색)과 편집기, 템플릿 팩 가져오기·내보내기, 기준 예시 문서 */
+export function PromptsTab(): React.JSX.Element {
   const api = window.sureMate.settings
   const [list, setList] = useState<Listing | null>(null)
   const [editing, setEditing] = useState<{ template: Template | null } | null>(null)
   const [query, setQuery] = useState('')
+  const [fileMessage, setFileMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+  const packAction = async (kind: 'import' | 'export'): Promise<void> => {
+    const r = kind === 'import' ? await api.templateImport() : await api.templateExport()
+    if ('canceled' in r) return
+    if (!r.ok) setFileMessage({ kind: 'error', text: r.errors.join(' · ') })
+    else if (kind === 'export') setFileMessage({ kind: 'ok', text: '내 템플릿을 파일로 내보냈어요' })
+    else {
+      const added = 'added' in r ? (r.added ?? 0) : 0
+      const replaced = 'replaced' in r ? (r.replaced ?? 0) : 0
+      setFileMessage({ kind: 'ok', text: `${added}개를 더했어요${replaced ? ` · 같은 id ${replaced}개는 가져온 것으로 바뀌었어요` : ''}` })
+      await load()
+    }
+  }
 
   const load = async (): Promise<void> => {
     const r = await api.templates()
@@ -89,7 +104,14 @@ export function PromptsTab({ references }: { references?: React.ReactNode }): Re
       </div>
       {group('prompt', '프롬프트')}
       {group('snippet', '상용구')}
-      {references}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => void packAction('import')}>템플릿 팩 가져오기</Button>
+        <Button onClick={() => void packAction('export')}>내 템플릿 내보내기</Button>
+        <p role="status" className={`ml-2 text-small ${fileMessage?.kind === 'error' ? 'text-danger' : 'text-fg-2'}`}>
+          {fileMessage?.text ?? ''}
+        </p>
+      </div>
+      <ReferencesPanel />
     </>
   )
 }

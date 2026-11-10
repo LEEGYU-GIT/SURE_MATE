@@ -38,7 +38,8 @@ import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
-import { deletePersonalTemplate, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
+import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
+import { deleteReference, listReferenceKinds, readReference, saveReference } from './prompts/references'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
@@ -626,6 +627,46 @@ if (!app.requestSingleInstanceLock()) {
           const r = await deletePersonalTemplate(userData, id)
           log('template.delete', { id, ok: r.ok })
           if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        importFile: async () => {
+          const path = await openDialog({ title: '템플릿 팩 가져오기', properties: ['openFile'], filters: [{ name: 'Sure-Mate 템플릿 팩', extensions: ['json'] }] })
+          if (!path) return { canceled: true }
+          let text: string
+          try {
+            if ((await stat(path)).size > PACK_MAX_BYTES) return { ok: false, errors: ['5MB가 넘는 파일은 가져오지 않아요'] }
+            text = await readFile(path, 'utf8')
+          } catch (e) {
+            return { ok: false, errors: [`파일을 읽지 못했어요(${errorCode(e)})`] }
+          }
+          const r = await importTemplatePack(userData, text, templates.map((t) => t.id))
+          log('template.import', r.ok ? { added: r.added, replaced: r.replaced } : { errors: r.errors.length })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        exportFile: async () => {
+          const path = await saveDialog({ title: '내 템플릿 내보내기', defaultPath: join(app.getPath('documents'), 'sure-mate-templates.json'), filters: [{ name: 'Sure-Mate 템플릿 팩', extensions: ['json'] }] })
+          if (!path) return { canceled: true }
+          try {
+            await writeFile(path, await exportMyTemplatesText(userData), 'utf8')
+          } catch (e) {
+            return { ok: false, errors: [`파일에 쓰지 못했어요(${errorCode(e)})`] }
+          }
+          log('template.export', {})
+          return { ok: true }
+        }
+      },
+      references: {
+        list: () => listReferenceKinds(templates, userData),
+        get: (kind) => readReference(userData, kind),
+        save: async (kind, text) => {
+          const r = await saveReference(userData, kind, text)
+          log('reference.save', { ok: r.ok, length: [...text].length })
+          return r
+        },
+        remove: async (kind) => {
+          const r = await deleteReference(userData, kind)
+          log('reference.delete', { ok: r.ok })
           return r
         }
       }

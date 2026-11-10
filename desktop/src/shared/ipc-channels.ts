@@ -118,7 +118,13 @@ export const IPC = {
   settingsDictionaryExport: 'settings:dictionary-export',
   settingsTemplates: 'settings:templates',
   settingsTemplateSave: 'settings:template-save',
-  settingsTemplateDelete: 'settings:template-delete'
+  settingsTemplateDelete: 'settings:template-delete',
+  settingsTemplateImport: 'settings:template-import',
+  settingsTemplateExport: 'settings:template-export',
+  settingsReferences: 'settings:references',
+  settingsReferenceGet: 'settings:reference-get',
+  settingsReferenceSave: 'settings:reference-save',
+  settingsReferenceDelete: 'settings:reference-delete'
 } as const
 
 /**
@@ -215,7 +221,19 @@ export interface SettingsApi {
   templateSave(draft: TemplateDraft): Promise<{ ok: true; id: string } | { ok: false; errors: string[] }>
   /** 내 파일에서 지운다(기본 템플릿을 고친 것이면 기본값으로 돌아감) */
   templateDelete(id: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** 받은 템플릿 팩을 별도 파일로 더한다(대화상자) */
+  templateImport(): Promise<FileActionResult & { added?: number; replaced?: number }>
+  /** 내 템플릿을 팩 파일로(대화상자) */
+  templateExport(): Promise<FileActionResult>
+  /** 기준 예시 문서(설계 문서 §7): 템플릿이 쓰는 종류와 파일만 있는 종류 */
+  references(): Promise<ReferenceKind[]>
+  referenceGet(kind: string): Promise<string | null>
+  referenceSave(kind: string, text: string): Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
+  referenceDelete(kind: string): Promise<{ ok: true } | { ok: false; reason: string }>
 }
+
+/** 기준 예시 한 종류: 파일 글자 수(없으면 null)와 쓰는 템플릿 이름 */
+export type ReferenceKind = { kind: string; length: number | null; usedBy: string[] }
 
 /** 편집기가 보내는 템플릿(id가 없으면 새로 만든다) */
 export type TemplateDraft = Omit<Template, 'scope' | 'id'> & { id?: string }

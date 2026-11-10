@@ -41,7 +41,14 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
     openFile: vi.fn(),
     openOnboarding: vi.fn(),
     finishOnboarding: vi.fn(async () => {}),
-    templates: { list: vi.fn(async () => ({ templates: [] })), save: vi.fn(async () => ({ ok: true, id: 'my-1' })), remove: vi.fn(async () => ({ ok: true })) },
+    templates: {
+      list: vi.fn(async () => ({ templates: [] })),
+      save: vi.fn(async () => ({ ok: true, id: 'my-1' })),
+      remove: vi.fn(async () => ({ ok: true })),
+      importFile: vi.fn(async () => ({ canceled: true })),
+      exportFile: vi.fn(async () => ({ canceled: true }))
+    },
+    references: { list: vi.fn(() => []), get: vi.fn(() => '글'), save: vi.fn(async () => ({ ok: true })), remove: vi.fn(async () => ({ ok: true })) },
     dictionary: { get: vi.fn(async () => ({ terms: [], errors: [] })), save: vi.fn(async () => ({ ok: true, count: 0 })), importFile: vi.fn(async () => ({ canceled: true })), exportFile: vi.fn(async () => ({ canceled: true })) }
   }
 }
@@ -117,4 +124,13 @@ it('템플릿 저장·지우기도 설정 창만, 지울 id는 64자 안의 글�
   expect(await handle(IPC.settingsTemplateDelete, SETTINGS, 5)).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
   await handle(IPC.settingsTemplateDelete, SETTINGS, 'my-1')
   expect(d.templates.remove).toHaveBeenCalledWith('my-1')
+})
+
+it('기준 예시: 설정 창만, 종류는 40자 안의 글자·글은 문자열이어야 넘긴다', async () => {
+  expect(await handle(IPC.settingsReferenceGet, PALETTE, '회의록')).toBeNull()
+  expect(await handle(IPC.settingsReferenceSave, SETTINGS, '회의록', 3)).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
+  expect(await handle(IPC.settingsReferenceSave, SETTINGS, 'x'.repeat(41), '글')).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
+  expect(d.references.save).not.toHaveBeenCalled()
+  await handle(IPC.settingsReferenceSave, SETTINGS, '회의록', '글')
+  expect(d.references.save).toHaveBeenCalledWith('회의록', '글')
 })

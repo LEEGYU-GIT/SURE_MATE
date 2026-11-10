@@ -123,6 +123,15 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
     dictionaryExport: async () => ({ canceled: true }),
     templates: async () => ({ templates: fx.templates, mine: fx.templates.filter((t) => t.scope === 'personal').map((t) => t.id), builtinIds: fx.templates.filter((t) => t.scope === 'builtin').map((t) => t.id), errors: [] }),
     templateSave: async (draft) => ({ ok: true, id: draft.id ?? 'my-preview' }),
-    templateDelete: async () => ({ ok: true })
+    templateDelete: async () => ({ ok: true }),
+    templateImport: async () => ({ canceled: true }),
+    templateExport: async () => ({ canceled: true }),
+    references: async () => [
+      { kind: '회의록', length: 1240, usedBy: ['회의록 정리'] },
+      { kind: '시험 항목', length: null, usedBy: ['요구사항 → 테스트 케이스'] }
+    ],
+    referenceGet: async () => null,
+    referenceSave: async () => ({ ok: true }),
+    referenceDelete: async () => ({ ok: true })
   }
 }

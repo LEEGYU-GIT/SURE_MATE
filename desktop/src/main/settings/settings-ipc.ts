@@ -16,6 +16,14 @@ export interface SettingsIpcDeps {
     list(): Promise<unknown>
     save(draft: unknown): Promise<unknown>
     remove(id: string): Promise<unknown>
+    importFile(): Promise<unknown>
+    exportFile(): Promise<unknown>
+  }
+  references: {
+    list(): unknown
+    get(kind: string): string | null
+    save(kind: string, text: string): Promise<unknown>
+    remove(kind: string): Promise<unknown>
   }
   dictionary: {
     get(): Promise<{ terms: unknown[]; errors: string[] }>
@@ -73,4 +81,13 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(IPC.settingsTemplateDelete, (e, id: unknown) =>
     fromSettings(e) && typeof id === 'string' && id.length <= 64 ? d.templates.remove(id) : { ok: false, reason: BAD }
   )
+  ipcMain.handle(IPC.settingsTemplateImport, (e) => (fromSettings(e) ? d.templates.importFile() : refused))
+  ipcMain.handle(IPC.settingsTemplateExport, (e) => (fromSettings(e) ? d.templates.exportFile() : refused))
+  const isKind = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 40
+  ipcMain.handle(IPC.settingsReferences, (e) => (fromSettings(e) ? d.references.list() : []))
+  ipcMain.handle(IPC.settingsReferenceGet, (e, kind: unknown) => (fromSettings(e) && isKind(kind) ? d.references.get(kind) : null))
+  ipcMain.handle(IPC.settingsReferenceSave, (e, kind: unknown, text: unknown) =>
+    fromSettings(e) && isKind(kind) && typeof text === 'string' ? d.references.save(kind, text) : { ok: false, reason: BAD }
+  )
+  ipcMain.handle(IPC.settingsReferenceDelete, (e, kind: unknown) => (fromSettings(e) && isKind(kind) ? d.references.remove(kind) : { ok: false, reason: BAD }))
 }

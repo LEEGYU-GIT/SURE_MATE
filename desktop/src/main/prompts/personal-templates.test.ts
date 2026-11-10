@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { PACK_FORMAT } from '../../shared/template/pack'
-import { deletePersonalTemplate, MY_TEMPLATES_FILE, readMyTemplates, savePersonalTemplate } from './personal-templates'
+import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, MY_TEMPLATES_FILE, readMyTemplates, savePersonalTemplate } from './personal-templates'
 import { loadTemplates, TEMPLATES_DIR } from './template-store'
 
 let dir = ''
@@ -58,4 +58,29 @@ it('내 템플릿 파일이 깨져 있으면 저장 전에 사본을 남긴다',
   expect((await readMyTemplates(dir)).errors.length).toBeGreaterThan(0)
   expect((await savePersonalTemplate(dir, draft(), () => 'my-1')).ok).toBe(true)
   expect((await readdir(join(dir, TEMPLATES_DIR))).some((f) => f.startsWith(`${MY_TEMPLATES_FILE}.broken-`))).toBe(true)
+})
+
+it('팩 가져오기: 별도 파일(imported-<시각>.json)에 두고, 이미 있는 id는 바뀐 것으로 센다', async () => {
+  const pack = JSON.stringify({ format: PACK_FORMAT, version: 1, templates: [{ id: 'meeting-notes', name: '팀 회의록', kind: 'prompt', body: '{{selection}}' }, { id: 'team-x', name: '팀 상용구', kind: 'snippet', body: '안녕' }] })
+  const r = await importTemplatePack(dir, pack, ['meeting-notes'], new Date('2026-11-10T13:05:06.789Z'))
+  expect(r).toEqual({ ok: true, added: 1, replaced: 1, file: 'imported-2026-11-10T13-05-06-789Z.json' })
+  expect((await readdir(join(dir, TEMPLATES_DIR)))).toContain('imported-2026-11-10T13-05-06-789Z.json')
+  expect((await loadTemplates(dir, builtin)).templates.find((t) => t.id === 'meeting-notes')?.name).toBe('팀 회의록')
+})
+
+it('팩 가져오기: 다른 형식·깨진 JSON·템플릿이 없으면 파일을 만들지 않는다', async () => {
+  for (const bad of ['{broken', JSON.stringify({ format: 'x' }), JSON.stringify({ format: PACK_FORMAT, templates: [] })]) expect((await importTemplatePack(dir, bad, [])).ok).toBe(false)
+  await expect(readdir(join(dir, TEMPLATES_DIR))).rejects.toThrow()
+})
+
+it('내보내기는 내 템플릿 파일의 템플릿만, 다시 가져올 수 있는 팩 형식', async () => {
+  await savePersonalTemplate(dir, draft(), () => 'my-1')
+  const text = await exportMyTemplatesText(dir)
+  expect(JSON.parse(text).templates.map((t: { id: string }) => t.id)).toEqual(['my-1'])
+  const other = await mkdtemp(join(tmpdir(), 'sure-mate-tpl-'))
+  try {
+    expect((await importTemplatePack(other, text, [])).ok).toBe(true)
+  } finally {
+    await rm(other, { recursive: true, force: true })
+  }
 })
