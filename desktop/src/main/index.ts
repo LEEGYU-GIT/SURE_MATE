@@ -46,6 +46,7 @@ import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
 import { registerSettingsIpc } from './settings/settings-ipc'
 import { shouldShowOnboarding } from './settings/first-run'
+import { createSettingsCommands } from './settings/settings-commands'
 import { createSettingsService } from './settings/settings-service'
 import { createSettingsWriter } from './settings/settings-writer'
 import { realTimers } from './timers'
@@ -74,6 +75,12 @@ const barCommands = createBarCommands({
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   notify,
+  log
+})
+const settingsCommands = createSettingsCommands({
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  openSettings: () => openSettings('/settings'),
   log
 })
 let packCommands: { run(id: string): Promise<boolean> } | null = null
@@ -241,7 +248,7 @@ async function togglePet(): Promise<void> {
 }
 
 /**
- * 설정 화면이 생기기 전까지 바의 설정 단추·바 메뉴 "설정 열기"는 settings.json을 기본 프로그램으로 연다.
+ * 설정 창 일반 탭의 "설정 파일 열기": settings.json을 기본 프로그램으로 연다(바·트레이·팔레트는 설정 창을 연다).
  * 파일이 없으면 지금 설정으로 만들고, .json을 열 프로그램이 없으면 폴더를 연다(가명 사전 열기와 같은 처리).
  */
 async function openSettingsFile(): Promise<void> {
@@ -267,7 +274,7 @@ function startBar(): void {
     showPalette,
     runPrompt: (templateId) => (prompts ? prompts.runFromBar(templateId) : Promise.resolve('missing')),
     togglePet,
-    openSettings: openSettingsFile,
+    openSettings: async () => openSettings('/settings'),
     setMaskingMode,
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
@@ -302,6 +309,7 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
+  if (await settingsCommands.run(id)) return
   if (id.startsWith('prompt:') && prompts) {
     lastPreparedTemplate = id.slice('prompt:'.length)
     return prompts.prepare(lastPreparedTemplate)
@@ -391,6 +399,7 @@ async function startShell(): Promise<void> {
     paletteHotkey,
     maskingMode: () => settings.masking.mode,
     onOpenPalette: () => showPalette({ mode: 'search' }),
+    onOpenSettings: () => openSettings('/settings'),
     barShape: () => settings.bar.shape,
     onBarShape: (shape) =>
       void setBarShape(shape).catch((e) => {
