@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react'
 import type { FlyoutAction } from '../../../shared/flyout/flyout-content'
 import { CheckIcon } from '../design/icons'
 import { isChoiceRow, type MenuRow } from './menu-model'
+import { press } from './press'
 
 // 펼침 메뉴의 공통 모양(설계 §14-4). 표면·모서리·그림자는 Flyout이 그리고, 여기서는 안쪽만 그린다.
 // - 안쪽 여백 4, 행 모서리 4(바 아이콘과 같은 마우스 올림·누름 바탕), 누를 때 움직임 없음. 메뉴 높이는 4의 배수.
@@ -63,7 +64,8 @@ export function MenuRowButton({ row, icon, onAction }: { row: MenuRow; icon?: Re
       className={`grid w-full shrink-0 grid-cols-[16px_minmax(0,1fr)] gap-x-2 rounded-control px-2 text-left transition-colors duration-(--dur-hover) active:transition-none ${
         row.detail ? 'items-start py-2' : 'h-8 content-center items-center'
       } ${alert ? 'bg-warn/8 hover:bg-warn/12 active:bg-warn/14' : 'hover:bg-row-hover active:bg-row-selected'}`}
-      onClick={() => onAction(row.action)}
+      // 뗄 때 고른다(press.ts: 숨겼던 펼침 창의 첫 누름이 사라져도 눌리게)
+      {...press(() => onAction(row.action))}
     >
       <span aria-hidden="true" className="grid h-5 place-items-center">
         {lead}
