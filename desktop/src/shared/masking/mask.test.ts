@@ -32,6 +32,18 @@ it('결과에서 빼기: 읽기 쉬운 표기를 쓰고 대응표에 남기지 �
   expect(t.size()).toBe(0)
 })
 
+it('빼기 표기를 바꾸면 바꾼 분류만 그 표기(이름 분류는 뒤에 A, B…), 되돌리기 토큰은 그대로', () => {
+  const removeLabels = { client: '협력사', ip: '[주소]' }
+  const r = maskText(SAMPLE, detect(SAMPLE), restore({ mode: 'remove', removeLabels }), table())
+  expect(r.text).toBe('협력사A에서 받은 SRS를 협력사B는 [주소]의 [파일 경로] 폴더에 올림')
+  expect(maskText(SAMPLE, detect(SAMPLE), restore({ removeLabels }), table()).text).toBe('CLIENT_A에서 받은 SRS를 CLIENT_B는 IP_1의 PATH_1 폴더에 올림')
+})
+
+it('빼기 모드 머리말은 바꾼 표기를 예로 든다', () => {
+  expect(maskPreamble('remove', { client: '협력사', ip: '[주소]' })).toBe("'협력사A', '[주소]' 같은 표시는 가린 정보입니다. 실제 이름을 추측하지 말고 표시 그대로 써 주세요.")
+  expect(maskPreamble('remove', {})).toBe(maskPreamble('remove'))
+})
+
 it('분류 하나를 끄면 그 분류만 원문', () => {
   const r = maskText(SAMPLE, detect(SAMPLE), restore({ categories: { ...allOn, ip: false } }), table())
   expect(r.text).toBe('CLIENT_A에서 받은 SRS를 CLIENT_B는 10.0.3.15의 PATH_1 폴더에 올림')
