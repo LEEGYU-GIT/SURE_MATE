@@ -6,7 +6,8 @@
   - dev 앱(`npm run dev`)을 띄우고, 앱 로그의 `app.ready`에서 팔레트 단축키를 읽어 시험 스크립트에 넘긴 뒤 모두 정리한다.
   - 결과와 dev 로그는 `%TEMP%\sure-mate-smoke`, 앱 로그는 `%APPDATA%\Sure-Mate\logs`.
   - `-TimeoutSec`: 시험 스크립트 제한 시간(기본 60초), `-ScriptArgs`: 시험 스크립트에 덧붙일 인자(예: `'-AutoHide'`).
-- 설치본: `t10-installed.ps1` (dist의 설치 파일을 조용히 설치 → t9 → 삭제 → 시작 프로그램 항목 정리)
+- 설치본: `t10-installed.ps1` (dist의 설치 파일을 조용히 설치 → 15초 뒤 메모리·30초 CPU 측정 → t9 → 삭제 → 시작 프로그램 항목 정리)
+  - 메모리는 `info_private_mb`(사용 메모리, 작업 관리자의 메모리 열에 가깝다)로 설계 §16 목표 350MB와 비교한다. `info_memory_mb`(작업 집합 합)는 프로세스들이 함께 쓰는 DLL을 겹쳐 세어 더 크게 나온다. 2026-11-10 main(e39ab8a) 설치본: 프로세스 6개, 사용 메모리 286MB, 작업 집합 합 526MB, 가만히 있을 때 CPU 0.1%
 - koffi 차단: `t12-run-blocked.ps1` (koffi.node를 잠시 숨기고 t12 → 되돌림)
 
 | 스크립트 | 확인하는 것 |

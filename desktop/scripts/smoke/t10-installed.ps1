@@ -25,6 +25,19 @@ while ((Get-Date) -lt $deadline -and -not $ready) { Start-Sleep -Milliseconds 40
 "   ready: $ready"
 "   login item: " + ((Get-ItemProperty $runKey -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Value -like '*Sure-Mate*' } | ForEach-Object { "$($_.Name) = $($_.Value)" })
 
+"2b) idle memory and CPU (bar, flyout and palette windows exist; the palette stays hidden)"
+if ($ready) {
+  Start-Sleep -Seconds 15
+  $procs = @(Get-Process Sure-Mate -ErrorAction SilentlyContinue)
+  "   info_processes = $($procs.Count)"
+  "   info_memory_mb = " + [int](($procs | Measure-Object WorkingSet64 -Sum).Sum / 1MB) + " (working set, design target 350)"
+  "   info_private_mb = " + [int](($procs | Measure-Object PrivateMemorySize64 -Sum).Sum / 1MB)
+  $cpu0 = ($procs | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum
+  Start-Sleep -Seconds 30
+  $cpu1 = (@(Get-Process Sure-Mate -ErrorAction SilentlyContinue) | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum
+  "   info_idle_cpu_percent = " + [Math]::Round(($cpu1 - $cpu0) / (30000 * [Environment]::ProcessorCount) * 100, 2) + " (30 s, all cores, target < 1)"
+}
+
 "3) smoke on installed app"
 if ($ready) {
   $combo = ($ready | ConvertFrom-Json).paletteHotkey
