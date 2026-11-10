@@ -1,6 +1,9 @@
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from '../../../shared/flyout/flyout-content'
-import type { AppStatus, SureMateApi } from '../../../shared/ipc-channels'
+import { allAiTargets } from '../../../shared/ai-targets'
+import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-channels'
+import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
+import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import type { PaletteItem } from '../../../shared/types'
 
 /**
@@ -22,13 +25,18 @@ export interface FakeFixtures {
   barState: BarViewState | null
   /** 펼침 창 화면(`<Flyout />`)의 내용·배치 */
   flyout: FakeFlyoutHost | null
+  /** 설정 창·온보딩이 받는 상태. 저장하면 진짜 검사·적용 규칙으로 이 값을 바꾼다 */
+  settings: SettingsSnapshot | null
+  hotkeyCandidates: HotkeyCandidate[]
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
   status: { paletteHotkey: null, maskingMode: 'restore', aiTargetName: 'Claude' },
   items: [],
   barState: null,
-  flyout: null
+  flyout: null,
+  settings: null,
+  hotkeyCandidates: []
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -71,6 +79,37 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     onFlyoutHidden: () => () => {},
     flyoutReady: (seq, width, height) => fx.flyout?.ready(seq, width, height),
     flyoutPointer: () => {},
-    flyoutAction: async (a) => (fx.flyout?.action ? fx.flyout.action(a) : false)
+    flyoutAction: async (a) => (fx.flyout?.action ? fx.flyout.action(a) : false),
+    settings: fakeSettingsApi(fx)
+  }
+}
+
+/** 설정 창 미리 보기: 저장은 진짜 검사(validateSettingsPatch)·적용 규칙으로 메모리의 스냅숏만 바꾼다 */
+function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
+  let snap = fx.settings
+  const listeners = new Set<(s: SettingsSnapshot) => void>()
+  return {
+    get: async () => snap,
+    update: async (patch) => {
+      if (!snap) return { ok: false, errors: ['미리 보기 설정 없음'] }
+      const v = validateSettingsPatch(patch, snap.settings)
+      if (!v.ok) return { ok: false, errors: v.errors }
+      const settings = applySettingsPatch(snap.settings, v.patch)
+      snap = { ...snap, settings, aiTargets: allAiTargets(settings.ai.custom) }
+      for (const cb of listeners) cb(snap)
+      return { ok: true, snapshot: snap }
+    },
+    onChanged: (cb) => {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    },
+    hotkeyCheck: async () => ({ level: 'ok' }),
+    hotkeyRecord: () => {},
+    hotkeySet: async (_id, acc) => ({ ok: true, acc }),
+    openFile: () => {},
+    openOnboarding: () => {},
+    onboardingCandidates: async () => fx.hotkeyCandidates,
+    finishOnboarding: async () => {},
+    onOnboardingProgress: () => () => {}
   }
 }

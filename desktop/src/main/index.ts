@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
+import { app, dialog, shell as electronShell, globalShortcut, screen, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
+import { IPC } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
@@ -20,6 +21,7 @@ import { createGlossaryRuntime, type GlossaryRuntime } from './glossary/glossary
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
+import { createHotkeyChanger, type HotkeyChanger } from './hotkeys/hotkey-change'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -37,11 +39,15 @@ import type { PromptSession } from './prompts/prompt-session'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
+import { registerSettingsIpc } from './settings/settings-ipc'
+import { createSettingsService } from './settings/settings-service'
 import { createSettingsWriter } from './settings/settings-writer'
+import { realTimers } from './timers'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, type SettingsRoute } from './windows/settings-window'
 
 app.setName('Sure-Mate')
 
@@ -90,6 +96,7 @@ function applySettings(next: Settings): void {
   settings = next
   shell?.refresh()
   barRuntime?.refresh()
+  settingsService.changed()
 }
 
 /**
@@ -108,6 +115,45 @@ const onSettingsLoadError: SettingsLoadError = (what, e, kept) => {
 const settingsWriter = createSettingsWriter({ dir: () => userData, current: () => settings, apply: applySettings, notify, log })
 
 const changeSettings = (update: (current: Settings) => Settings): Promise<void> => settingsWriter.change(update)
+
+/** 단축키 바꾸기(설정 창·온보딩). 트레이·단축키를 만드는 startShell에서 만든다 */
+let hotkeyChanger: HotkeyChanger | null = null
+/** 조회 단축키를 등록했는지(설정 창 표시) */
+let lookupBound = false
+const NOT_READY = '단축키를 아직 준비하지 못했어요'
+/** 설정 IPC는 startShell보다 먼저 열리므로, 단축키 바꾸기가 생기기 전에는 거절한다 */
+const changerProxy: HotkeyChanger = {
+  check: (id, acc) => hotkeyChanger?.check(id, acc) ?? { level: 'block', reason: NOT_READY },
+  startRecording: () => hotkeyChanger?.startRecording(),
+  stopRecording: () => hotkeyChanger?.stopRecording(),
+  set: async (id, acc) => (hotkeyChanger ? hotkeyChanger.set(id, acc) : { ok: false, reason: NOT_READY }),
+  candidates: () => hotkeyChanger?.candidates() ?? [],
+  dispose: () => hotkeyChanger?.dispose()
+}
+
+/** 설정 창의 읽기·저장(설계 문서 §14). 저장은 보낸 필드만 그때의 설정에 덮는다 */
+const settingsService = createSettingsService({
+  current: () => settings,
+  change: changeSettings,
+  hotkeys: () => ({
+    palette: { acc: hotkeys?.current('palette') ?? settings.hotkeys.palette, registered: paletteHotkey() !== null },
+    lookup: { acc: hotkeys?.current('lookup') ?? settings.hotkeys.lookup, registered: lookupBound }
+  }),
+  displays: () => {
+    const primary = screen.getPrimaryDisplay().id
+    return screen.getAllDisplays().map((d) => ({ id: String(d.id), label: `${d.label || '모니터'} · ${d.size.width}×${d.size.height}`, primary: d.id === primary }))
+  },
+  prompts: () => templates.filter((t) => t.kind === 'prompt').map((t) => ({ id: t.id, name: t.name })),
+  packaged: () => app.isPackaged,
+  setLoginItem: (open) => app.setLoginItemSettings({ openAtLogin: open, args: ['--hidden'] }),
+  log
+})
+settingsService.onChanged((s) => sendToSettings(IPC.settingsChanged, s))
+
+/** 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1) */
+function openSettings(route: SettingsRoute = '/settings'): void {
+  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording() })
+}
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
 const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
@@ -132,7 +178,7 @@ async function togglePet(): Promise<void> {
  * 설정 화면이 생기기 전까지 바의 설정 단추·바 메뉴 "설정 열기"는 settings.json을 기본 프로그램으로 연다.
  * 파일이 없으면 지금 설정으로 만들고, .json을 열 프로그램이 없으면 폴더를 연다(가명 사전 열기와 같은 처리).
  */
-async function openSettings(): Promise<void> {
+async function openSettingsFile(): Promise<void> {
   const path = join(userData, SETTINGS_FILE)
   // 없을 때(ENOENT)만 만든다. 다른 설정 저장과 같은 임시 파일을 쓰므로 같은 줄에서
   const created = await settingsWriter.ensureFile()
@@ -155,7 +201,7 @@ function startBar(): void {
     showPalette,
     runPrompt: (templateId) => (prompts ? prompts.runFromBar(templateId) : Promise.resolve('missing')),
     togglePet,
-    openSettings,
+    openSettings: openSettingsFile,
     setMaskingMode,
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
@@ -254,6 +300,22 @@ async function startShell(): Promise<void> {
     isAcceleratorHeld
   )
   hotkeys = manager
+  hotkeyChanger = createHotkeyChanger({
+    manager,
+    // 등록해 보고 바로 풀어 다른 앱이 쓰는지 본다
+    probe: (acc) => {
+      try {
+        if (!globalShortcut.register(acc, () => {})) return false
+        globalShortcut.unregister(acc)
+        return true
+      } catch {
+        return false
+      }
+    },
+    save: (id, acc) => changeSettings((cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, [id]: acc } })),
+    timers: realTimers,
+    log
+  })
 
   let suspended = false
   shell = createTray({
@@ -303,6 +365,7 @@ async function startShell(): Promise<void> {
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
     if (!isPaletteVisible()) lookupSelection()
   })
+  lookupBound = lookup.ok
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
   flushFileErrors()
@@ -457,6 +520,21 @@ if (!app.requestSingleInstanceLock()) {
       paletteContentsId,
       imeLoggerContentsId
     })
+    registerSettingsIpc({
+      contentsId: settingsContentsId,
+      service: settingsService,
+      hotkeys: changerProxy,
+      openFile: (which) => {
+        if (which === 'settings') void openSettingsFile()
+        else void electronShell.openPath(join(userData, 'logs'))
+      },
+      openOnboarding: () => openSettings('/onboarding'),
+      finishOnboarding: async () => {
+        await changeSettings((cur) => ({ ...cur, onboardingDone: true }))
+        log('onboarding.finish', {})
+        closeSettingsWindow()
+      }
+    })
 
     try {
       await startShell()
@@ -475,6 +553,7 @@ if (!app.requestSingleInstanceLock()) {
   // 창이 모두 닫혀도 트레이에 남는다
   app.on('window-all-closed', () => {})
   app.on('will-quit', () => {
+    hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()
     // 맨 앞 유지·전체 화면 확인·펼침 창 타이머와 화면 이벤트 구독을 멈춘다
     barRuntime?.dispose()

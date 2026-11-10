@@ -19,3 +19,9 @@ export interface SettingsSnapshot {
 }
 
 export type SettingsUpdateResult = { ok: true; snapshot: SettingsSnapshot } | { ok: false; errors: string[] }
+
+/** 단축키 조합 검사 결과(설계 문서 §6): 막힘·경고·다른 앱이 씀·다른 단축키와 같음 */
+export type HotkeyCheck = { level: 'ok' | 'warn' | 'block' | 'in-use' | 'same-as-other'; reason?: string }
+export type HotkeySetResult = { ok: true; acc: string; warning?: string } | { ok: false; reason: string }
+/** 첫 실행 단축키 후보 */
+export type HotkeyCandidate = { acc: string; available: boolean; suggested: boolean }

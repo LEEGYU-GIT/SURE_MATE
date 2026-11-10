@@ -1,7 +1,30 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
-import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import type { SettingsSnapshot } from '../shared/settings/settings-snapshot'
+
+const settings: SettingsApi = {
+  get: () => ipcRenderer.invoke(IPC.settingsGet),
+  update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
+  onChanged: (cb) => {
+    const listener = (_e: IpcRendererEvent, s: SettingsSnapshot): void => cb(s)
+    ipcRenderer.on(IPC.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.settingsChanged, listener)
+  },
+  hotkeyCheck: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeyCheck, id, acc),
+  hotkeyRecord: (on) => ipcRenderer.send(IPC.settingsHotkeyRecord, on),
+  hotkeySet: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeySet, id, acc),
+  openFile: (which) => ipcRenderer.send(IPC.settingsOpenFile, which),
+  openOnboarding: () => ipcRenderer.send(IPC.settingsOpenOnboarding),
+  onboardingCandidates: () => ipcRenderer.invoke(IPC.onboardingCandidates),
+  finishOnboarding: () => ipcRenderer.invoke(IPC.onboardingFinish),
+  onOnboardingProgress: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.onboardingProgress, listener)
+    return () => ipcRenderer.removeListener(IPC.onboardingProgress, listener)
+  }
+}
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.
 const api: SureMateApi = {
@@ -51,7 +74,8 @@ const api: SureMateApi = {
   },
   flyoutReady: (seq, width, height) => ipcRenderer.send(IPC.flyoutReady, seq, width, height),
   flyoutPointer: (inside) => ipcRenderer.send(IPC.flyoutPointer, inside),
-  flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a)
+  flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a),
+  settings
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

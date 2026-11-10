@@ -2,6 +2,8 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
+import type { SettingsPatch } from './settings/settings-patch'
+import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
@@ -90,7 +92,24 @@ export const IPC = {
   flyoutReady: 'flyout:ready',
   flyoutPointer: 'flyout:pointer',
   /** 펼침 창 → main(invoke → boolean): 메뉴 행·카드 단추 */
-  flyoutAction: 'flyout:action'
+  flyoutAction: 'flyout:action',
+  /** 설정 창 → main(invoke): 지금 설정과 화면에 필요한 상태 */
+  settingsGet: 'settings:get',
+  /** 설정 창 → main(invoke): 바꾼 필드만 저장 */
+  settingsUpdate: 'settings:update',
+  /** main → 설정 창: 설정이 바뀜(어디서든) */
+  settingsChanged: 'settings:changed',
+  settingsHotkeyCheck: 'settings:hotkey-check',
+  /** 설정 창 → main(send): 단축키 녹화 시작·끝(녹화 중에는 모든 단축키를 잠시 푼다) */
+  settingsHotkeyRecord: 'settings:hotkey-record',
+  settingsHotkeySet: 'settings:hotkey-set',
+  /** 설정 창 → main(send): settings.json·로그 폴더를 기본 프로그램으로 */
+  settingsOpenFile: 'settings:open-file',
+  settingsOpenOnboarding: 'settings:open-onboarding',
+  onboardingCandidates: 'onboarding:candidates',
+  onboardingFinish: 'onboarding:finish',
+  /** main → 온보딩: 따라 해 보기의 프롬프트가 실행됐다 */
+  onboardingProgress: 'onboarding:progress'
 } as const
 
 /**
@@ -157,4 +176,22 @@ export interface SureMateApi {
   flyoutPointer(inside: boolean): void
   /** 메뉴 행·카드 단추. main이 받아 처리했으면 true */
   flyoutAction(a: FlyoutAction): Promise<boolean>
+  /** 설정 창·온보딩(설계 문서 §14·§6). 설정 창이 아닌 창이 부르면 main이 거절한다 */
+  settings: SettingsApi
+}
+
+/** 설정 창·온보딩이 쓰는 main 기능 */
+export interface SettingsApi {
+  get(): Promise<SettingsSnapshot | null>
+  update(patch: SettingsPatch): Promise<SettingsUpdateResult>
+  onChanged(cb: (s: SettingsSnapshot) => void): () => void
+  hotkeyCheck(id: SettingsHotkeyId, acc: string): Promise<HotkeyCheck>
+  hotkeyRecord(on: boolean): void
+  hotkeySet(id: SettingsHotkeyId, acc: string): Promise<HotkeySetResult>
+  openFile(which: 'settings' | 'logs'): void
+  openOnboarding(): void
+  onboardingCandidates(): Promise<HotkeyCandidate[]>
+  finishOnboarding(): Promise<void>
+  /** 따라 해 보기: 회의록 정리 프롬프트가 실행됐다 */
+  onOnboardingProgress(cb: () => void): () => void
 }

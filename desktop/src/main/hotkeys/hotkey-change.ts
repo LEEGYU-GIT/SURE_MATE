@@ -1,3 +1,4 @@
+import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult } from '../../shared/settings/settings-snapshot'
 import type { Timers } from '../timers'
 import { checkAccelerator } from './accelerator-rules'
 import type { HotkeyId, HotkeyManager } from './hotkey-manager'
@@ -7,8 +8,7 @@ export const RECORD_TIMEOUT_MS = 30000
 /** 첫 실행 단축키 후보(설계 문서 §6): Alt+Space는 비어 있을 때만, Ctrl+Alt+Space를 제안, 쓰는 중이면 Alt+` */
 export const ONBOARDING_CANDIDATES = ['Alt+Space', 'Ctrl+Alt+Space', 'Alt+`'] as const
 
-export type HotkeyCheck = { level: 'ok' | 'warn' | 'block' | 'in-use' | 'same-as-other'; reason?: string }
-export type HotkeySetResult = { ok: true; acc: string; warning?: string } | { ok: false; reason: string }
+export type { HotkeyCheck, HotkeySetResult }
 
 export interface HotkeyChangerDeps {
   manager: Pick<HotkeyManager, 'rebind' | 'suspendAll' | 'resumeAll' | 'current'>
@@ -26,7 +26,7 @@ export interface HotkeyChanger {
   startRecording(): void
   stopRecording(): void
   set(id: HotkeyId, acc: string): Promise<HotkeySetResult>
-  candidates(): { acc: string; available: boolean; suggested: boolean }[]
+  candidates(): HotkeyCandidate[]
   dispose(): void
 }
 
