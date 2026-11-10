@@ -36,7 +36,11 @@ const settings: SettingsApi = {
   references: () => ipcRenderer.invoke(IPC.settingsReferences),
   referenceGet: (kind) => ipcRenderer.invoke(IPC.settingsReferenceGet, kind),
   referenceSave: (kind, text) => ipcRenderer.invoke(IPC.settingsReferenceSave, kind, text),
-  referenceDelete: (kind) => ipcRenderer.invoke(IPC.settingsReferenceDelete, kind)
+  referenceDelete: (kind) => ipcRenderer.invoke(IPC.settingsReferenceDelete, kind),
+  glossary: () => ipcRenderer.invoke(IPC.settingsGlossary),
+  glossarySave: (draft, o) => ipcRenderer.invoke(IPC.settingsGlossarySave, draft, o),
+  glossaryDelete: (id) => ipcRenderer.invoke(IPC.settingsGlossaryDelete, id),
+  glossaryPack: (which) => ipcRenderer.invoke(IPC.settingsGlossaryPack, which)
 }
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.

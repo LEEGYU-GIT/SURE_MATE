@@ -404,7 +404,8 @@ export const SCENES: Scene[] = [
   settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
   settingsScene('settings-bar', '설정: 바', 'bar'),
   settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking'),
-  settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts')
+  settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts'),
+  settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary')
 ]
 
 /** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
@@ -435,7 +436,8 @@ function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
         { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
         { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
       ],
-      templates: PREVIEW_TEMPLATES
+      templates: PREVIEW_TEMPLATES,
+      glossary: PACK.slice(0, 12)
     },
     render: () => (
       <div style={{ width: 880, height: '100vh', overflow: 'hidden', position: 'relative' }}>

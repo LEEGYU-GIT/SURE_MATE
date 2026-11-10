@@ -124,7 +124,11 @@ export const IPC = {
   settingsReferences: 'settings:references',
   settingsReferenceGet: 'settings:reference-get',
   settingsReferenceSave: 'settings:reference-save',
-  settingsReferenceDelete: 'settings:reference-delete'
+  settingsReferenceDelete: 'settings:reference-delete',
+  settingsGlossary: 'settings:glossary',
+  settingsGlossarySave: 'settings:glossary-save',
+  settingsGlossaryDelete: 'settings:glossary-delete',
+  settingsGlossaryPack: 'settings:glossary-pack'
 } as const
 
 /**
@@ -230,6 +234,12 @@ export interface SettingsApi {
   referenceGet(kind: string): Promise<string | null>
   referenceSave(kind: string, text: string): Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
   referenceDelete(kind: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** 용어 사전(설계 문서 §9): 전체 용어와 기본 용어 id */
+  glossary(): Promise<{ entries: GlossaryEntry[]; builtinIds: string[] }>
+  glossarySave(draft: WikiDraft, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
+  glossaryDelete(id: string): Promise<{ ok: true } | { ok: false; reason: 'builtin' | 'missing' | 'save-failed' }>
+  /** 용어 팩 가져오기·내보내기(팔레트 명령과 같은 흐름, 결과는 알림으로) */
+  glossaryPack(which: 'import' | 'export'): Promise<void>
 }
 
 /** 기준 예시 한 종류: 파일 글자 수(없으면 null)와 쓰는 템플릿 이름 */

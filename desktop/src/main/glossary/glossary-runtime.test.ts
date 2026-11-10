@@ -237,3 +237,20 @@ it('제한을 넘는 항목은 저장하지 않고 까닭을 돌려준다', asyn
   expect(r).toMatchObject({ ok: false, errors: [expect.stringContaining('설명')] })
   expect(s.saved).toEqual([])
 })
+
+it('지우기: 내 용어는 지우고, 고친 기본 용어 사본을 지우면 기본으로, 기본 용어는 builtin, 없으면 missing, 저장 실패는 save-failed', async () => {
+  const mine: GlossaryEntry = { ...entry, id: 'u1', term: '가상 용어', source: 'user' }
+  const editedBuiltin: GlossaryEntry = { ...entry, definition: '고친 설명', source: 'user' }
+  const s = saving([mine, editedBuiltin])
+  const rt = createGlossaryRuntime(s.deps)
+  expect(await rt.remove('u1')).toEqual({ ok: true })
+  expect(await rt.remove('mcdc')).toEqual({ ok: true })
+  expect((await rt.get('mcdc'))?.definition).toBe(entry.definition)
+  expect(await rt.remove('mcdc')).toEqual({ ok: false, reason: 'builtin' })
+  expect(await rt.remove('nope')).toEqual({ ok: false, reason: 'missing' })
+  const failing = saving([mine])
+  failing.deps.saveUserEntries = async () => {
+    throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+  }
+  expect(await createGlossaryRuntime(failing.deps).remove('u1')).toEqual({ ok: false, reason: 'save-failed' })
+})

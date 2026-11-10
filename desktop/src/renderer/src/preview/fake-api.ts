@@ -5,6 +5,7 @@ import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-ch
 import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
 import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import type { MaskTerm } from '../../../shared/masking/dictionary'
+import type { GlossaryEntry } from '../../../shared/glossary/types'
 import type { Template } from '../../../shared/template/types'
 import type { PaletteItem } from '../../../shared/types'
 
@@ -32,6 +33,7 @@ export interface FakeFixtures {
   hotkeyCandidates: HotkeyCandidate[]
   dictionary: MaskTerm[]
   templates: Template[]
+  glossary: GlossaryEntry[]
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -42,7 +44,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   settings: null,
   hotkeyCandidates: [],
   dictionary: [],
-  templates: []
+  templates: [],
+  glossary: []
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -132,6 +135,10 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
     ],
     referenceGet: async () => null,
     referenceSave: async () => ({ ok: true }),
-    referenceDelete: async () => ({ ok: true })
+    referenceDelete: async () => ({ ok: true }),
+    glossary: async () => ({ entries: fx.glossary, builtinIds: fx.glossary.filter((e) => e.source === 'builtin').map((e) => e.id) }),
+    glossarySave: async () => ({ ok: false, errors: ['미리 보기에서는 저장하지 않아요'] }),
+    glossaryDelete: async () => ({ ok: true }),
+    glossaryPack: async () => {}
   }
 }

@@ -19,6 +19,12 @@ export interface SettingsIpcDeps {
     importFile(): Promise<unknown>
     exportFile(): Promise<unknown>
   }
+  glossary: {
+    list(): Promise<unknown>
+    save(draft: unknown, o: { id?: string; allowDuplicate: boolean }): Promise<unknown>
+    remove(id: string): Promise<unknown>
+    pack(which: 'import' | 'export'): Promise<void>
+  }
   references: {
     list(): unknown
     get(kind: string): string | null
@@ -90,4 +96,17 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
     fromSettings(e) && isKind(kind) && typeof text === 'string' ? d.references.save(kind, text) : { ok: false, reason: BAD }
   )
   ipcMain.handle(IPC.settingsReferenceDelete, (e, kind: unknown) => (fromSettings(e) && isKind(kind) ? d.references.remove(kind) : { ok: false, reason: BAD }))
+  ipcMain.handle(IPC.settingsGlossary, (e) => (fromSettings(e) ? d.glossary.list() : { entries: [], builtinIds: [] }))
+  ipcMain.handle(IPC.settingsGlossarySave, (e, draft: unknown, o: unknown) => {
+    if (!fromSettings(e)) return { ok: false, errors: ['설정 창에서만 할 수 있어요'] }
+    const opts = typeof o === 'object' && o !== null ? (o as Record<string, unknown>) : {}
+    const id = typeof opts.id === 'string' && opts.id.length <= 64 ? opts.id : undefined
+    return d.glossary.save(draft, { ...(id ? { id } : {}), allowDuplicate: opts.allowDuplicate === true })
+  })
+  ipcMain.handle(IPC.settingsGlossaryDelete, (e, id: unknown) =>
+    fromSettings(e) && typeof id === 'string' && id.length <= 64 ? d.glossary.remove(id) : { ok: false, reason: 'missing' }
+  )
+  ipcMain.handle(IPC.settingsGlossaryPack, async (e, which: unknown) => {
+    if (fromSettings(e) && (which === 'import' || which === 'export')) await d.glossary.pack(which)
+  })
 }

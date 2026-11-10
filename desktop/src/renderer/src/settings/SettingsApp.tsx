@@ -3,6 +3,7 @@ import { isImeComposing } from '../../../shared/ime'
 import { AiTab } from './AiTab'
 import { BarTab } from './BarTab'
 import { GeneralTab } from './GeneralTab'
+import { GlossaryTab } from './GlossaryTab'
 import { MaskingTab } from './MaskingTab'
 import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
@@ -14,6 +15,7 @@ const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   ai: AiTab,
   prompts: PromptsTab,
   masking: MaskingTab,
+  glossary: GlossaryTab,
   bar: BarTab
 }
 

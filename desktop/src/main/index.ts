@@ -10,6 +10,7 @@ import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
 import { IPC } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
+import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
@@ -579,6 +580,8 @@ if (!app.requestSingleInstanceLock()) {
       paletteContentsId,
       imeLoggerContentsId
     })
+    /** 기본 용어 id(설정 창이 기본 용어·고친 기본 용어를 가린다) */
+    const builtinGlossaryIds = parseGlossaryPack(builtinGlossary, 'builtin').entries.map((e) => e.id)
     /** 기본 템플릿 id(설정 창이 '기본'·'기본을 고침'을 가린다) */
     const builtinTemplateIds = parseTemplatePack(builtinPrompts, 'builtin').templates.map((t) => t.id)
     /** 템플릿을 저장·지운 뒤: 다시 읽고 바의 고정 프롬프트·설정 창의 이름 목록을 고친다 */
@@ -654,6 +657,15 @@ if (!app.requestSingleInstanceLock()) {
           }
           log('template.export', {})
           return { ok: true }
+        }
+      },
+      glossary: {
+        list: async () => ({ entries: (await glossaryCache.get()).entries, builtinIds: builtinGlossaryIds }),
+        save: (draft, o) => wiki.save(draft, o),
+        remove: (id) => wiki.remove(id),
+        // 팔레트 명령과 같은 흐름(대화상자·미리 보기 확인·알림)
+        pack: async (which) => {
+          await packCommands?.run(which === 'import' ? 'cmd.glossary-import' : 'cmd.glossary-export')
         }
       },
       references: {

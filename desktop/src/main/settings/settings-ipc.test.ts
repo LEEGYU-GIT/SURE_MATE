@@ -48,6 +48,12 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
       importFile: vi.fn(async () => ({ canceled: true })),
       exportFile: vi.fn(async () => ({ canceled: true }))
     },
+    glossary: {
+      list: vi.fn(async () => ({ entries: [], builtinIds: [] })),
+      save: vi.fn(async () => ({ ok: true })),
+      remove: vi.fn(async () => ({ ok: true })),
+      pack: vi.fn(async () => {})
+    },
     references: { list: vi.fn(() => []), get: vi.fn(() => '글'), save: vi.fn(async () => ({ ok: true })), remove: vi.fn(async () => ({ ok: true })) },
     dictionary: { get: vi.fn(async () => ({ terms: [], errors: [] })), save: vi.fn(async () => ({ ok: true, count: 0 })), importFile: vi.fn(async () => ({ canceled: true })), exportFile: vi.fn(async () => ({ canceled: true })) }
   }
@@ -133,4 +139,14 @@ it('기준 예시: 설정 창만, 종류는 40자 안의 글자·글은 문자�
   expect(d.references.save).not.toHaveBeenCalled()
   await handle(IPC.settingsReferenceSave, SETTINGS, '회의록', '글')
   expect(d.references.save).toHaveBeenCalledWith('회의록', '글')
+})
+
+it('용어: 설정 창만, 저장 옵션은 id(64자)·allowDuplicate(true일 때만)만 넘기고, 팩은 import·export만', async () => {
+  expect(await handle(IPC.settingsGlossarySave, PALETTE, {}, {})).toEqual({ ok: false, errors: ['설정 창에서만 할 수 있어요'] })
+  await handle(IPC.settingsGlossarySave, SETTINGS, { term: 'x' }, { id: 'mcdc', allowDuplicate: 'yes', extra: 1 })
+  expect(d.glossary.save).toHaveBeenCalledWith({ term: 'x' }, { id: 'mcdc', allowDuplicate: false })
+  await handle(IPC.settingsGlossaryPack, SETTINGS, 'delete-all')
+  expect(d.glossary.pack).not.toHaveBeenCalled()
+  await handle(IPC.settingsGlossaryPack, SETTINGS, 'export')
+  expect(d.glossary.pack).toHaveBeenCalledWith('export')
 })
