@@ -47,6 +47,8 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
   }
   route = next
   const w = new BrowserWindow(settingsWindowOptions(join(__dirname, '../preload/index.js'), next))
+  // 메뉴 막대를 없앤다(Alt를 눌러 단축키를 녹화할 때 기본 메뉴가 나오지 않게)
+  w.removeMenu()
   win = w
   loadRoute(w, next)
   w.once('ready-to-show', () => {

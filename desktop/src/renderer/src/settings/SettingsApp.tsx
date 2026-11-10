@@ -4,6 +4,7 @@ import { AiTab } from './AiTab'
 import { BarTab } from './BarTab'
 import { GeneralTab } from './GeneralTab'
 import { GlossaryTab } from './GlossaryTab'
+import { HotkeysTab } from './HotkeysTab'
 import { MaskingTab } from './MaskingTab'
 import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
@@ -12,6 +13,7 @@ import { SettingsContext, useSettingsState } from './use-settings'
 /** 탭별 화면. 아직 없는 탭은 '준비 중' */
 const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   general: GeneralTab,
+  hotkeys: HotkeysTab,
   ai: AiTab,
   prompts: PromptsTab,
   masking: MaskingTab,
@@ -32,7 +34,7 @@ export function SettingsApp({ initialTab = 'general' }: { initialTab?: SettingsT
   const current = SETTINGS_TABS[index]
 
   return (
-    <div className="flex h-screen flex-col bg-surface-solid font-ui text-fg select-none">
+    <div className="flex h-full flex-col bg-surface-solid font-ui text-fg select-none">
       {/* 제목 줄: 창 끌기 자리. 오른쪽 140은 Windows 창 단추(titleBarOverlay) 자리 */}
       <header className="flex h-10 shrink-0 items-center gap-2 pr-[140px] pl-4 [-webkit-app-region:drag]">
         <span className="size-2 rounded-full bg-brand" aria-hidden="true" />

@@ -13,6 +13,8 @@ import type { MaskingMode, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
+import { Onboarding } from '../onboarding/Onboarding'
+import type { OnboardingState } from '../onboarding/onboarding-state'
 import { SettingsApp } from '../settings/SettingsApp'
 import type { SettingsTabId } from '../settings/tabs'
 import { allAiTargets } from '../../../shared/ai-targets'
@@ -405,8 +407,33 @@ export const SCENES: Scene[] = [
   settingsScene('settings-bar', '설정: 바', 'bar'),
   settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking'),
   settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts'),
-  settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary')
+  settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
+  settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
+  onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
+  onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
 ]
+
+/** 첫 실행 안내 장면: 640×560 창 하나 */
+function onboardingScene(id: string, title: string, start: Partial<OnboardingState>): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: settingsSnapshot(),
+      hotkeyCandidates: [
+        { acc: 'Alt+Space', available: true, suggested: false },
+        { acc: 'Ctrl+Alt+Space', available: false, suggested: false },
+        { acc: 'Alt+`', available: true, suggested: true }
+      ]
+    },
+    render: () => (
+      <div style={{ width: 640, height: 560, overflow: 'hidden', position: 'relative' }}>
+        <Onboarding start={start} />
+      </div>
+    )
+  }
+}
 
 /** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
 function settingsSnapshot(): SettingsSnapshot {
@@ -425,7 +452,7 @@ function settingsSnapshot(): SettingsSnapshot {
   }
 }
 
-/** 설정 창 장면: 너비 880 창 하나(높이는 캡처 창 높이, 보통 640. 제목 줄 오른쪽 140은 Windows 창 단추 자리) */
+/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
 function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
   return {
     id,
@@ -440,7 +467,7 @@ function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
       glossary: PACK.slice(0, 12)
     },
     render: () => (
-      <div style={{ width: 880, height: '100vh', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
         <SettingsApp initialTab={tab} />
       </div>
     )

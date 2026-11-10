@@ -45,6 +45,7 @@ import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
 import { registerSettingsIpc } from './settings/settings-ipc'
+import { shouldShowOnboarding } from './settings/first-run'
 import { createSettingsService } from './settings/settings-service'
 import { createSettingsWriter } from './settings/settings-writer'
 import { realTimers } from './timers'
@@ -120,6 +121,11 @@ const onSettingsLoadError: SettingsLoadError = (what, e, kept) => {
 const settingsWriter = createSettingsWriter({ dir: () => userData, current: () => settings, apply: applySettings, notify, log })
 
 const changeSettings = (update: (current: Settings) => Settings): Promise<void> => settingsWriter.change(update)
+
+/** 팔레트에서 마지막으로 고른 프롬프트(첫 실행 안내의 따라 해 보기를 알아본다) */
+let lastPreparedTemplate: string | null = null
+/** 첫 실행 안내에서 따라 해 보는 프롬프트 */
+const ONBOARDING_TEMPLATE = 'meeting-notes'
 
 /** 단축키 바꾸기(설정 창·온보딩). 트레이·단축키를 만드는 startShell에서 만든다 */
 let hotkeyChanger: HotkeyChanger | null = null
@@ -296,7 +302,10 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
-  if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
+  if (id.startsWith('prompt:') && prompts) {
+    lastPreparedTemplate = id.slice('prompt:'.length)
+    return prompts.prepare(lastPreparedTemplate)
+  }
   if (id.startsWith('snippet:') && snippets) {
     await snippets.run(id.slice('snippet:'.length))
     return
@@ -565,6 +574,8 @@ if (!app.requestSingleInstanceLock()) {
         const result = await session.run(req)
         // 복사만이면 팔레트가 남아 있으니 숨기고 원래 창으로 돌아간다(AI를 열었으면 이미 숨김)
         if (result.ok) hidePalette({ restoreFocus: true })
+        // 첫 실행 안내의 따라 해 보기(회의록 정리)를 마쳤다고 안내 창에 알린다
+        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE) sendToSettings(IPC.onboardingProgress)
         return result
       },
       cancelPrompt: () => session.cancel(),
@@ -696,6 +707,9 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) {
       log('bar.startError', { error: errorText(e) })
     }
+
+    // 첫 실행 안내(설계 문서 §6). 끝내지 않았으면 다음 실행에도 띄운다
+    if (shouldShowOnboarding(settings)) openSettings('/onboarding')
   })
 
   // 창이 모두 닫혀도 트레이에 남는다
