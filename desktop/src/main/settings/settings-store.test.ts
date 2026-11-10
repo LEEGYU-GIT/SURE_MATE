@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, settingsLoadNotice, SettingsUnreadableError, updateSettings } from './settings-store'
+import { DEFAULT_SETTINGS, loadSettings, mergeSettings, saveSettings, settingsLoadNotice, SettingsUnreadableError, updateSettings } from './settings-store'
 
 // 백신·EDR이 파일을 잡고 있어 이름 바꾸기·복사가 실패하는 경우를 흉내 내려고 rename·copyFile만 감싼다(평소에는 그대로 통과)
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -22,6 +22,12 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
+})
+
+it('빼기 모드 표기는 올바른 것만 남긴다(알려진 분류, 1~20자, 줄바꿈·중괄호 없음)', () => {
+  const s = mergeSettings({ masking: { removeLabels: { client: ' 협력사 ', ip: '', email: 'x'.repeat(21), phone: '줄\n바꿈', url: '{{u}}', money: '돈' } } })
+  expect(s.masking.removeLabels).toEqual({ client: '협력사' })
+  expect(mergeSettings({}).masking.removeLabels).toEqual({})
 })
 
 it('파일이 없으면 기본값', async () => {

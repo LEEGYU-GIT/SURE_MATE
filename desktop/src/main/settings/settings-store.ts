@@ -1,42 +1,20 @@
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { allAiTargets, FALLBACK_AI_TARGET, sanitizeAiTargets, type AiTarget } from '../../shared/ai-targets'
+import { allAiTargets, sanitizeAiTargets } from '../../shared/ai-targets'
 import { ALL_CATEGORIES, type MaskCategory } from '../../shared/masking/types'
-import { DEFAULT_BAR_SETTINGS, sanitizeBarSettings, type BarSettings } from '../../shared/bar/bar-settings'
-import type { MaskingMode } from '../../shared/types'
+import { sanitizeBarSettings } from '../../shared/bar/bar-settings'
+import {
+  DEFAULT_SETTINGS,
+  isInternalDomain,
+  isRemoveLabel,
+  PALETTE_DISPLAYS,
+  SETTING_MASKING_MODES,
+  SETTINGS_LIMITS,
+  type Settings
+} from '../../shared/settings/settings'
 
-export interface Settings {
-  version: 1
-  hotkeys: { palette: string; lookup: string }
-  palette: { display: 'cursor' | 'primary' | 'active' }
-  launchAtLogin: boolean
-  /** 가명 처리(설계 문서 §8): 전체 기본 모드, 분류별 켜기/끄기, 사내 도메인, 대응표 보관 시간 */
-  masking: { mode: MaskingMode; categories: Record<MaskCategory, boolean>; internalDomains: string[]; ttlHours: number }
-  /** 기본 AI 대상과 사용자가 더한 대상(사내 LLM 등) */
-  ai: { defaultTarget: string; custom: AiTarget[] }
-  onboardingDone: boolean
-  /** 화면 가장자리 바(설계 문서 §14-1) */
-  bar: BarSettings
-  /** 말랑 메이트. 나머지 필드는 M6이 더한다 */
-  pet: { visible: boolean }
-}
-
-export const DEFAULT_SETTINGS: Settings = {
-  version: 1,
-  hotkeys: { palette: 'Ctrl+Alt+Space', lookup: 'Ctrl+Alt+W' },
-  palette: { display: 'cursor' },
-  launchAtLogin: true,
-  masking: {
-    mode: 'restore',
-    categories: Object.fromEntries(ALL_CATEGORIES.map((c) => [c, true])) as Record<MaskCategory, boolean>,
-    internalDomains: [],
-    ttlHours: 8
-  },
-  ai: { defaultTarget: FALLBACK_AI_TARGET, custom: [] },
-  onboardingDone: false,
-  bar: { ...DEFAULT_BAR_SETTINGS, positions: [], pinnedPrompts: [...DEFAULT_BAR_SETTINGS.pinnedPrompts] },
-  pet: { visible: true }
-}
+// 설정 타입·기본값은 설정 창도 쓰므로 shared에 있다. 기존 main 코드는 여기서 가져간다
+export { DEFAULT_SETTINGS, type Settings }
 
 /** 팔레트 단축키가 다른 앱과 겹칠 때 차례로 시도할 조합(Claude 데스크톱 앱이 Ctrl+Alt+Space를 씀) */
 export const PALETTE_HOTKEY_FALLBACKS = ['Ctrl+Alt+Space', 'Alt+`']
@@ -44,8 +22,6 @@ export const PALETTE_HOTKEY_FALLBACKS = ['Ctrl+Alt+Space', 'Alt+`']
 /** 설정 파일 이름(사용자 데이터 폴더 안). 설정 화면 전까지 바의 설정 단추가 이 파일을 연다 */
 export const SETTINGS_FILE = 'settings.json'
 const FILE = SETTINGS_FILE
-const DISPLAYS = ['cursor', 'primary', 'active'] as const
-const MASKING_MODES = ['off', 'restore', 'remove'] as const
 
 type Obj = Record<string, unknown>
 
@@ -54,6 +30,17 @@ const str = (v: unknown, fallback: string): string => (typeof v === 'string' && 
 const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback)
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback
+
+/** 빼기 모드 표기 중 올바른 것만(알려진 분류, 1~20자, 줄바꿈·중괄호 없음) */
+function sanitizeRemoveLabels(raw: unknown): Partial<Record<MaskCategory, string>> {
+  if (!isObj(raw)) return {}
+  const out: Partial<Record<MaskCategory, string>> = {}
+  for (const c of ALL_CATEGORIES) {
+    const v = raw[c]
+    if (typeof v === 'string' && isRemoveLabel(v.trim())) out[c] = v.trim()
+  }
+  return out
+}
 
 /** 키별로 타입이 맞는 값만 받고 나머지는 기본값으로 채운다. */
 export function mergeSettings(raw: unknown): Settings {
@@ -70,19 +57,23 @@ export function mergeSettings(raw: unknown): Settings {
   return {
     version: 1,
     hotkeys: { palette: str(hotkeys.palette, d.hotkeys.palette), lookup: str(hotkeys.lookup, d.hotkeys.lookup) },
-    palette: { display: oneOf(palette.display, DISPLAYS, d.palette.display) },
+    palette: { display: oneOf(palette.display, PALETTE_DISPLAYS, d.palette.display) },
     launchAtLogin: bool(r.launchAtLogin, d.launchAtLogin),
     masking: {
-      mode: oneOf(masking.mode, MASKING_MODES, d.masking.mode),
+      mode: oneOf(masking.mode, SETTING_MASKING_MODES, d.masking.mode),
       categories: Object.fromEntries(ALL_CATEGORIES.map((c) => [c, bool(categories[c], true)])) as Record<MaskCategory, boolean>,
       internalDomains: Array.isArray(masking.internalDomains)
         ? masking.internalDomains
             .filter((x): x is string => typeof x === 'string')
             .map((x) => x.trim().toLowerCase())
-            .filter((x) => /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(x))
-            .slice(0, 20)
+            .filter(isInternalDomain)
+            .slice(0, SETTINGS_LIMITS.internalDomains)
         : [],
-      ttlHours: typeof masking.ttlHours === 'number' && Number.isFinite(masking.ttlHours) ? Math.min(24, Math.max(1, Math.round(masking.ttlHours))) : d.masking.ttlHours
+      ttlHours:
+        typeof masking.ttlHours === 'number' && Number.isFinite(masking.ttlHours)
+          ? Math.min(SETTINGS_LIMITS.ttlHours.max, Math.max(SETTINGS_LIMITS.ttlHours.min, Math.round(masking.ttlHours)))
+          : d.masking.ttlHours,
+      removeLabels: sanitizeRemoveLabels(masking.removeLabels)
     },
     ai: { defaultTarget: oneOf(ai.defaultTarget, targetIds, d.ai.defaultTarget), custom },
     onboardingDone: bool(r.onboardingDone, d.onboardingDone),
