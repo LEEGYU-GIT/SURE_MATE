@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto'
-import { copyFile, mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
+import { keepBrokenCopy, RENAME_RETRY_MS, writeFileAtomic, type SaveIo } from '../files/atomic-write'
 import { GLOSSARY_FORMAT, parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 
@@ -55,61 +54,18 @@ export async function loadGlossary(userDir: string, builtin: unknown): Promise<L
   }
 }
 
-/** 저장할 때 쓰는 파일 기능(시험에서 이름 바꾸기 실패를 흉내 내려고 주입한다) */
-export interface SaveIo {
-  rename(from: string, to: string): Promise<void>
-  sleep(ms: number): Promise<void>
-}
-
-const defaultIo: SaveIo = {
-  rename,
-  sleep: async (ms) => {
-    await delay(ms)
-  }
-}
-
-/** 이름 바꾸기를 다시 해 보기 전에 기다리는 시간(모두 합쳐 1초 안) */
-export const RENAME_RETRY_MS = [50, 100, 200, 400]
-/** Windows에서 백신·검색 색인·동기화 프로그램이 파일을 잠깐 잡고 있을 때 나는 오류 */
-const RETRYABLE = new Set(['EPERM', 'EBUSY', 'EACCES'])
-
-async function renameWithRetry(from: string, to: string, io: SaveIo): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      await io.rename(from, to)
-      return
-    } catch (e) {
-      if (!RETRYABLE.has((e as NodeJS.ErrnoException).code ?? '') || attempt >= RENAME_RETRY_MS.length) throw e
-      await io.sleep(RENAME_RETRY_MS[attempt])
-    }
-  }
-}
-
-const stamp = (): string => new Date().toISOString().replace(/[:.]/g, '-')
+// 원자적 저장·다시 시도·깨진 파일 사본은 main/files/atomic-write.ts(설정 창의 사용자 파일 저장도 함께 쓴다)
+export { RENAME_RETRY_MS, type SaveIo }
 
 /**
  * 사용자 용어를 저장한다(겹치지 않는 임시 파일에 쓰고 디스크에 내린 뒤 이름 바꾸기).
  * 지금 파일을 읽을 때 문제가 있었으면(깨졌거나, 일부 항목을 건너뛰었거나 줄였으면) 덮어쓰기 전에
  * `glossary.json.broken-<시각>`으로 사본을 남겨, 읽지 못한 사용자 용어를 잃지 않는다.
  */
-export async function saveUserEntries(userDir: string, entries: GlossaryEntry[], io: SaveIo = defaultIo): Promise<void> {
-  await mkdir(userDir, { recursive: true })
+export async function saveUserEntries(userDir: string, entries: GlossaryEntry[], io?: SaveIo): Promise<void> {
   const path = join(userDir, GLOSSARY_FILE)
-  if ((await readUserFile(path)).errors.length > 0) await copyFile(path, `${path}.broken-${stamp()}`)
-  const tmp = `${path}.${randomUUID()}.tmp`
-  try {
-    const file = await open(tmp, 'w')
-    try {
-      await file.writeFile(JSON.stringify({ format: GLOSSARY_FORMAT, version: 1, savedAt: new Date().toISOString(), entries }, null, 2), 'utf8')
-      await file.sync()
-    } finally {
-      await file.close()
-    }
-    await renameWithRetry(tmp, path, io)
-  } catch (e) {
-    await rm(tmp, { force: true }).catch(() => undefined)
-    throw e
-  }
+  if ((await readUserFile(path)).errors.length > 0) await keepBrokenCopy(path)
+  await writeFileAtomic(path, JSON.stringify({ format: GLOSSARY_FORMAT, version: 1, savedAt: new Date().toISOString(), entries }, null, 2), io)
 }
 
 /**
