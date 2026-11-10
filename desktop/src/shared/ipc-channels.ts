@@ -2,6 +2,7 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
+import type { PetView } from './pet/pet-view'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
@@ -90,7 +91,15 @@ export const IPC = {
   flyoutReady: 'flyout:ready',
   flyoutPointer: 'flyout:pointer',
   /** 펼침 창 → main(invoke → boolean): 메뉴 행·카드 단추 */
-  flyoutAction: 'flyout:action'
+  flyoutAction: 'flyout:action',
+  /** 펫 창 → main(invoke): 지금 펫 화면 상태 */
+  petGetView: 'pet:get-view',
+  /** main → 펫 창: 펫 화면 상태가 바뀜 */
+  petView: 'pet:view',
+  /** 펫 창 → main(send): 펫 위에서 왼쪽 버튼 누름·뗌 */
+  petPress: 'pet:press',
+  /** 펫 창 → main(send): 펫 위에서 오른쪽 클릭 */
+  petContextMenu: 'pet:context-menu'
 } as const
 
 /**
@@ -157,4 +166,11 @@ export interface SureMateApi {
   flyoutPointer(inside: boolean): void
   /** 메뉴 행·카드 단추. main이 받아 처리했으면 true */
   flyoutAction(a: FlyoutAction): Promise<boolean>
+  /** 펫 창: 지금 펫 화면 상태(펫이 없으면 null) */
+  getPetView(): Promise<PetView | null>
+  onPetView(cb: (v: PetView) => void): () => void
+  /** 펫 위에서 왼쪽 버튼을 눌렀다(true)·뗐다(false). 클릭·끌기 판단은 main이 한다 */
+  petPress(down: boolean): void
+  /** 펫 위에서 오른쪽 클릭(펫 메뉴) */
+  petContextMenu(): void
 }

@@ -1,6 +1,7 @@
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from '../../../shared/flyout/flyout-content'
 import type { AppStatus, SureMateApi } from '../../../shared/ipc-channels'
+import type { PetView } from '../../../shared/pet/pet-view'
 import type { PaletteItem } from '../../../shared/types'
 
 /**
@@ -22,13 +23,16 @@ export interface FakeFixtures {
   barState: BarViewState | null
   /** 펼침 창 화면(`<Flyout />`)의 내용·배치 */
   flyout: FakeFlyoutHost | null
+  /** 펫 창 화면(`<Pet />`)이 getPetView로 받는 상태 */
+  petView: PetView | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
   status: { paletteHotkey: null, maskingMode: 'restore', aiTargetName: 'Claude' },
   items: [],
   barState: null,
-  flyout: null
+  flyout: null,
+  petView: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -71,6 +75,10 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     onFlyoutHidden: () => () => {},
     flyoutReady: (seq, width, height) => fx.flyout?.ready(seq, width, height),
     flyoutPointer: () => {},
-    flyoutAction: async (a) => (fx.flyout?.action ? fx.flyout.action(a) : false)
+    flyoutAction: async (a) => (fx.flyout?.action ? fx.flyout.action(a) : false),
+    getPetView: async () => fx.petView,
+    onPetView: () => () => {},
+    petPress: () => {},
+    petContextMenu: () => {}
   }
 }

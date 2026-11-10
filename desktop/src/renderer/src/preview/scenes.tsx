@@ -9,10 +9,16 @@ import { parseGlossaryPack } from '../../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/glossary/wiki-lookup'
 import { CAPTURE_NOTES } from '../../../shared/labels'
-import type { MaskingMode, Rect } from '../../../shared/types'
+import { petBox, petWindowRect } from '../../../shared/pet/pet-frame'
+import type { PetSize } from '../../../shared/pet/pet-settings'
+import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
+import { petWorld, type PetWorld } from '../../../shared/pet/pet-world'
+import type { MaskingMode, MonitorInfo, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
+import { Pet } from '../pet/Pet'
+import { PetSprite } from '../pet/PetSprite'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -339,6 +345,204 @@ const CARD_SCENES: Scene[] = [
   )
 ]
 
+// ── 말랑 메이트 장면: 바는 barRect, 펫 창은 main과 같은 계산(petWorld·petBox·petWindowRect)으로 놓는다 ──────────
+
+/** 미리 보기 모니터(Desktop 640×600, 작업 영역은 작업 표시줄 위 574까지) */
+const MONITOR: MonitorInfo = { id: 'preview', bounds: { x: 0, y: 0, width: 640, height: 600 }, workArea: WORK_AREA, scaleFactor: 1, isPrimary: true, isInternal: true }
+
+/** 펫 발 자리: 바닥(발 x), 바 꼭대기 가운데, 바 옆면(아래 0 ~ 꼭대기 1), 들림(커서가 격자 (32, 4)) */
+type PetSpot = { at: 'floor'; x: number } | { at: 'ledge' } | { at: 'side'; t: number } | { at: 'cursor'; x: number; y: number }
+
+const petLook = (o: Partial<PetLook> = {}): PetLook => ({ pose: 'stand', face: 'normal', props: [], facing: 'right', cue: null, cueSeq: 0, ...o })
+
+function petFoot(world: PetWorld, spot: PetSpot, size: number): { x: number; y: number } {
+  switch (spot.at) {
+    case 'floor':
+      return { x: spot.x, y: world.floorY }
+    case 'ledge':
+      if (!world.ledge) throw new Error('바 꼭대기에 앉을 수 없는 세계')
+      return { x: world.ledge.cx, y: world.ledge.y }
+    case 'side':
+      if (!world.side) throw new Error('바 옆면을 오를 수 없는 세계')
+      return { x: world.side.x, y: world.side.bottom + (world.side.top - world.side.bottom) * spot.t }
+    case 'cursor':
+      // 상태 기계와 같이 발 = 커서 + (0, 54/64·크기)
+      return { x: spot.x, y: spot.y + (54 / 64) * size }
+  }
+}
+
+interface PetSceneOptions {
+  bar: BarViewState
+  spot: PetSpot
+  look: Partial<PetLook>
+  size?: PetSize
+  reduceMotion?: boolean
+  /** 펫 뒤의 창(기본: 바 반대쪽 위 작은 흰 문서 창) */
+  backdrop?: React.ReactNode
+}
+
+/** 바 하나와 펫 창 하나. 펫 창(320×240, 투명)은 <Pet />이 가짜 getPetView()로 받은 상태를 그린다 */
+function petScene(id: string, title: string, o: PetSceneOptions): Scene {
+  const size = o.size ?? 56
+  const world = petWorld(MONITOR, { rect: barWindowRect(o.bar), edge: o.bar.edge }, size)
+  const box = petBox(petFoot(world, o.spot, size), size)
+  const win = petWindowRect(box, MONITOR.bounds)
+  const view: PetView = {
+    size,
+    box: { x: box.x - win.x, y: box.y - win.y },
+    look: petLook(o.look),
+    bubble: null,
+    menu: null,
+    controlling: false,
+    reduceMotion: o.reduceMotion ?? false
+  }
+  return {
+    id,
+    title,
+    fixtures: { petView: view },
+    render: () => (
+      <Desktop edge={o.bar.edge}>
+        <Stage>
+          {o.backdrop ?? <AppWindow side={o.bar.edge === 'right' ? 'left' : 'right'} />}
+          <BarWindow state={o.bar} />
+          <div data-pet-window="" style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height }}>
+            <Pet />
+          </div>
+        </Stage>
+      </Desktop>
+    )
+  }
+}
+
+const EDGE_LEFT = barState({ edge: 'left', paletteHotkey: 'Ctrl+Alt+Space' })
+const CAPSULE_RIGHT = barState({ shape: 'capsule', edge: 'right', paletteHotkey: 'Ctrl+Alt+Space' })
+
+const GALLERY_POSES: PetPose[] = ['stand', 'walk', 'air', 'sit', 'sleep', 'climb', 'held']
+const GALLERY_FACES: PetFace[] = ['normal', 'happy', 'worried', 'surprised', 'content', 'asleep', 'up']
+const GALLERY_PROPS: { label: string; look: Partial<PetLook> }[] = [
+  { label: '복사', look: { face: 'happy', props: ['envelope'] } },
+  { label: '경고', look: { face: 'worried', props: ['alert'] } },
+  { label: '꼭대기 경고', look: { pose: 'sit', face: 'worried', props: ['alert'] } },
+  { label: '졸기', look: { pose: 'sleep', face: 'asleep', props: ['zzz'] } },
+  { label: '조종', look: { props: ['control'] } },
+  { label: '선글라스 복사', look: { face: 'happy', props: ['sunglasses', 'envelope'] } },
+  { label: '선글라스 졸기', look: { pose: 'sleep', face: 'asleep', props: ['sunglasses', 'zzz'] } },
+  { label: '왼쪽 걷기', look: { pose: 'walk', facing: 'left' } }
+]
+
+const galleryLabel: React.CSSProperties = { color: 'var(--text-2)', fontSize: 11, lineHeight: '14px', textAlign: 'center' }
+
+/** 개발용: 모든 표정 × 모든 자세(멈춘 그림)와 소품 조합. 열은 표정, 마지막 열은 보통 얼굴 + 선글라스 */
+function PetGallery(): React.JSX.Element {
+  const cell = (key: string, look: PetLook): React.JSX.Element => (
+    <div key={key} style={{ display: 'grid', placeItems: 'end center', height: 64 }}>
+      <PetSprite look={look} size={56} reduceMotion />
+    </div>
+  )
+  return (
+    <Desktop edge="left">
+      <div style={{ padding: '6px 12px', display: 'grid', gridTemplateColumns: '52px repeat(8, 66px)', alignItems: 'end' }}>
+        <span />
+        {[...GALLERY_FACES, 'normal+선글라스'].map((f) => (
+          <span key={f} style={galleryLabel}>
+            {f}
+          </span>
+        ))}
+        {GALLERY_POSES.flatMap((pose) => [
+          <span key={`${pose}-label`} style={{ ...galleryLabel, alignSelf: 'center' }}>
+            {pose}
+          </span>,
+          ...GALLERY_FACES.map((face) => cell(`${pose}-${face}`, petLook({ pose, face }))),
+          cell(`${pose}-shades`, petLook({ pose, props: ['sunglasses'] }))
+        ])}
+        <span style={{ ...galleryLabel, alignSelf: 'center' }}>소품</span>
+        {GALLERY_PROPS.map((p) => (
+          <div key={p.label} style={{ display: 'grid', placeItems: 'end center', height: 78 }}>
+            <PetSprite look={petLook(p.look)} size={56} reduceMotion />
+          </div>
+        ))}
+        <span />
+        {GALLERY_PROPS.map((p) => (
+          <span key={`${p.label}-label`} style={galleryLabel}>
+            {p.label}
+          </span>
+        ))}
+      </div>
+    </Desktop>
+  )
+}
+
+/** 개발용: 움직임을 시간별로 멈춰 그린다(캡처는 애니메이션 시작 직후라 중간 모습이 안 보인다) */
+const FRAME_ROWS: { label: string; look: Partial<PetLook>; times: number[] }[] = [
+  { label: '폴짝 0.45초(편지 함께)', look: { face: 'happy', props: ['envelope'], cue: 'hop', cueSeq: 1 }, times: [0, 40, 68, 130, 216, 290, 351, 400, 450] },
+  { label: '내려앉기 0.36초', look: { cue: 'land', cueSeq: 1 }, times: [0, 50, 100, 144, 220, 290, 360] },
+  { label: '통통 걷기 0.9초', look: { pose: 'walk' }, times: [0, 120, 240, 360, 500, 630, 760, 900] },
+  { label: '대롱대롱 1.6초', look: { pose: 'held', face: 'surprised' }, times: [0, 400, 800, 1200] },
+  { label: '숨쉬기 1.2초·깜빡임 3.8초·느낌표 떠오르기', look: { face: 'worried', props: ['alert'] }, times: [0, 1000, 1200, 3800] }
+]
+
+function PetFrames(): React.JSX.Element {
+  return (
+    <Desktop edge="left">
+      <style>{'.pet-frame * { animation-play-state: paused !important; animation-delay: var(--frame-t) !important; }'}</style>
+      <div style={{ padding: '4px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {FRAME_ROWS.map((row) => (
+          <div key={row.label}>
+            <div style={{ ...galleryLabel, textAlign: 'left' }}>{row.label}</div>
+            <div style={{ display: 'flex' }}>
+              {row.times.map((t) => (
+                <div key={t} style={{ width: 68, display: 'grid', justifyItems: 'center' }}>
+                  <div className="pet-frame" style={{ '--frame-t': `-${t}ms`, paddingTop: 26 } as React.CSSProperties}>
+                    <PetSprite look={petLook(row.look)} size={56} reduceMotion={false} />
+                  </div>
+                  <span style={galleryLabel}>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Desktop>
+  )
+}
+
+const PET_SCENES: Scene[] = [
+  petScene('pet-stand', '말랑 메이트: 가만히(숨쉬기·깜빡임), 작업 표시줄 위', { bar: EDGE_RIGHT, spot: { at: 'floor', x: 200 }, look: {} }),
+  petScene('pet-walk', '말랑 메이트: 통통 걷기(오른쪽으로, 얼굴이 가는 쪽을 봄)', { bar: EDGE_RIGHT, spot: { at: 'floor', x: 260 }, look: { pose: 'walk' } }),
+  petScene('pet-climb', '말랑 메이트: 오른쪽 띠 바의 옆면 오르기(바 면에 붙음, 눈은 위)', { bar: EDGE_RIGHT, spot: { at: 'side', t: 0.5 }, look: { pose: 'climb', face: 'up' } }),
+  petScene('pet-climb-left', '말랑 메이트: 왼쪽 띠 바의 옆면 오르기(좌우 뒤집힘, 선글라스)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'side', t: 0.5 },
+    look: { pose: 'climb', face: 'up', facing: 'left', props: ['sunglasses'] }
+  }),
+  petScene('pet-sit-edge', '말랑 메이트: 가장자리 띠 꼭대기에 앉아 쉬기(반달 눈·볼)', { bar: EDGE_RIGHT, spot: { at: 'ledge' }, look: { pose: 'sit', face: 'content' } }),
+  petScene('pet-sit-capsule', '말랑 메이트: 떠 있는 캡슐 꼭대기에 앉아 쉬기', { bar: CAPSULE_RIGHT, spot: { at: 'ledge' }, look: { pose: 'sit', face: 'content' } }),
+  petScene('pet-sleep', '말랑 메이트: 졸기(z는 멈춤), 흰 문서 창 앞', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 170 },
+    look: { pose: 'sleep', face: 'asleep', props: ['zzz'] },
+    backdrop: <AppWindow side="left" under />
+  }),
+  petScene('pet-held', '말랑 메이트: 집어 들림(대롱대롱, 놀란 눈과 입)', { bar: EDGE_RIGHT, spot: { at: 'cursor', x: 300, y: 180 }, look: { pose: 'held', face: 'surprised' } }),
+  petScene('pet-sunglasses', '말랑 메이트: 가명 처리 켬(선글라스), 가만히', { bar: EDGE_RIGHT, spot: { at: 'floor', x: 200 }, look: { props: ['sunglasses'] } }),
+  petScene('pet-sunglasses-sit', '말랑 메이트: 선글라스를 쓰고 띠 꼭대기에 앉기(선글라스가 앉은 얼굴을 따라감)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content', props: ['sunglasses'] }
+  }),
+  petScene('pet-size-40', '말랑 메이트: 크기 40, 가만히', { bar: EDGE_RIGHT, spot: { at: 'floor', x: 200 }, look: {}, size: 40 }),
+  // 미리 보기 화면(높이 574)에서 기본 띠 바는 위 끝이 59라 크기 72(머리 위 여유 65.25)는 띠에 오를 수 없다. 캡슐(위 끝 73)에 앉힌다
+  petScene('pet-size-72', '말랑 메이트: 크기 72, 캡슐 꼭대기에 앉기', { bar: CAPSULE_RIGHT, spot: { at: 'ledge' }, look: { pose: 'sit', face: 'content' }, size: 72 }),
+  petScene('pet-reduced', '말랑 메이트: 움직임 줄이기(복사 축하여도 폴짝·떠오르기 없이 멈춘 그림)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 220 },
+    look: { face: 'happy', props: ['envelope'], cue: 'hop', cueSeq: 1 },
+    reduceMotion: true
+  }),
+  { id: 'pet-gallery', title: '개발용: 말랑 메이트 모든 표정 × 자세와 소품(멈춘 그림)', fixtures: {}, render: () => <PetGallery /> },
+  { id: 'pet-frames', title: '개발용: 말랑 메이트 움직임을 시간별로 멈춘 그림(폴짝·내려앉기·걷기·흔들림)', fixtures: {}, render: () => <PetFrames /> }
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -383,5 +587,6 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
-  ...CARD_SCENES
+  ...CARD_SCENES,
+  ...PET_SCENES
 ]

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
 import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import type { PetView } from '../shared/pet/pet-view'
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.
 const api: SureMateApi = {
@@ -51,7 +52,15 @@ const api: SureMateApi = {
   },
   flyoutReady: (seq, width, height) => ipcRenderer.send(IPC.flyoutReady, seq, width, height),
   flyoutPointer: (inside) => ipcRenderer.send(IPC.flyoutPointer, inside),
-  flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a)
+  flyoutAction: (a) => ipcRenderer.invoke(IPC.flyoutAction, a),
+  getPetView: () => ipcRenderer.invoke(IPC.petGetView),
+  onPetView: (cb) => {
+    const listener = (_e: IpcRendererEvent, v: PetView): void => cb(v)
+    ipcRenderer.on(IPC.petView, listener)
+    return () => ipcRenderer.removeListener(IPC.petView, listener)
+  },
+  petPress: (down) => ipcRenderer.send(IPC.petPress, down),
+  petContextMenu: () => ipcRenderer.send(IPC.petContextMenu)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

@@ -1,0 +1,209 @@
+/*
+ * 말랑 메이트 움직임(설계 문서 §14-2, 확정 시안 docs/design/mallang-mate.html의 키프레임 값).
+ * transform·opacity만 쓴다. 반복 움직임이 있는 그룹에만 will-change를 둔다.
+ * 단위 px은 SVG 안에서 64 격자 한 칸이다(펫 56 DIP면 한 칸 0.875 DIP).
+ */
+
+.pet-sprite {
+  overflow: visible;
+}
+
+/* 몸 레이어의 기준점: 바닥선 가운데 (32, 58) */
+.pet-cue,
+.pet-motion,
+.pet-lift {
+  transform-box: view-box;
+  transform-origin: 32px 58px;
+}
+
+/* 흔들림의 기준점: 잡힌 머리 위 가운데 (32, 4) */
+.pet-swing {
+  transform-box: view-box;
+  transform-origin: 32px 4px;
+}
+
+/* ── 반복 움직임 ─────────────────────────────────────────── */
+
+.pet-breathe {
+  animation: pet-breathe 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-walk {
+  animation: pet-walk 0.9s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-sway {
+  animation: pet-sway 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-blink {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: pet-blink 4s infinite;
+  will-change: transform;
+}
+
+.pet-float {
+  animation: pet-float 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-zzz {
+  font-family: var(--font-ui);
+}
+
+/* ── 한 번 도는 움직임(cueSeq가 바뀔 때마다 처음부터) ─────────── */
+
+/* 폴짝: 웅크림 → 늘어나며 위로 격자 14(말풍선이 비키는 높이) → 납작하게 내려앉음 → 제자리. 0.45초 */
+.pet-hop {
+  animation: pet-hop 450ms linear;
+}
+
+/* 소품(편지·느낌표·조종 표시)은 찌그러지지 않고 몸과 함께 오르내린다 */
+.pet-hop-lift {
+  animation: pet-hop-lift 450ms linear;
+}
+
+/* 바닥에 내려앉음: 납작(1.08×0.9)에서 살짝 늘어났다가(숨쉬기 폭의 반대 0.97×1.03) 제자리로. 0.36초 */
+.pet-land {
+  animation: pet-land 360ms linear;
+}
+
+/* ── 선글라스 쓰기·벗기: 위에서 내려와 쓰고, 위로 올리며 벗는다(--dur-open, --ease-out) ── */
+
+.pet-shades {
+  transition:
+    transform var(--dur-open) var(--ease-out),
+    opacity var(--dur-open) var(--ease-out);
+}
+
+.pet-shades[data-on='false'] {
+  transform: translateY(-8px);
+  opacity: 0;
+}
+
+/* 렌즈가 눈을 거의 덮은 뒤(140ms) 눈을 감춘다. 벗을 때는 전환 없이 바로 보인다 */
+.pet-eyes[data-hidden] {
+  opacity: 0;
+  transition: opacity 0s linear 140ms;
+}
+
+/* 움직임 줄이기(설정 pet.reduceMotion 또는 Windows 애니메이션 효과 끔): 모든 움직임·전환을 끈다 */
+[data-reduce-motion],
+[data-reduce-motion] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@keyframes pet-breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.03, 0.97);
+  }
+}
+
+@keyframes pet-walk {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.08, 0.9);
+  }
+  40% {
+    transform: translateY(-14px) scale(0.94, 1.08);
+  }
+  70% {
+    transform: translateY(-4px) scale(1, 1);
+  }
+}
+
+@keyframes pet-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes pet-sway {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes pet-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.6;
+  }
+}
+
+/* 구간마다 곡선이 다르다: 웅크림 ease-out, 오름은 점점 느려지고(포물선), 떨어짐은 점점 빨라지고, 제자리는 ease-out */
+@keyframes pet-hop {
+  0% {
+    transform: translateY(0) scale(1, 1);
+    animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.08, 0.9);
+    animation-timing-function: cubic-bezier(0.33, 0.67, 0.67, 1);
+  }
+  48% {
+    transform: translateY(-14px) scale(0.94, 1.08);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 0.33);
+  }
+  78% {
+    transform: translateY(0) scale(1.08, 0.9);
+    animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes pet-hop-lift {
+  0%,
+  15% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.33, 0.67, 0.67, 1);
+  }
+  48% {
+    transform: translateY(-14px);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.67, 0.33);
+  }
+  78%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* 구간마다 곡선: 납작에서 빨리 튀어 오르고(ease-out), 늘어난 모양에서 천천히 제자리로(ease-in-out) */
+@keyframes pet-land {
+  0% {
+    transform: scale(1.08, 0.9);
+    animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  40% {
+    transform: scale(0.97, 1.03);
+    animation-timing-function: ease-in-out;
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}

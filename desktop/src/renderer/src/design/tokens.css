@@ -30,6 +30,8 @@
   --cheek: #FF8FA3;
   --lens: #BFF3EC;
   --mist: #E8ECF2;
+  /* 흰색: 펫 하이라이트·놀란 눈·편지, 말풍선 바탕 */
+  --white: #FFFFFF;
   --row-selected: rgba(255, 255, 255, 0.08);
   --row-hover: rgba(255, 255, 255, 0.05);
 

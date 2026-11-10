@@ -26,6 +26,10 @@ it('설계 문서 §14-4 색 토큰', () => {
   expect(token('--mist')).toBe('#E8ECF2')
 })
 
+it('흰색(펫 하이라이트·놀란 눈·편지, 말풍선 바탕)은 --white 토큰', () => {
+  expect(token('--white')).toBe('#FFFFFF')
+})
+
 it('창 안에 한 단 들어간 바탕(입력칸·사용 예·미리 보기)은 --surface-inset 토큰이고, Tailwind에서는 bg-surface-inset', () => {
   expect(token('--surface-inset')).toBe('rgba(0,0,0,0.20)')
   expect(read('../assets/tailwind.css')).toMatch(/--color-surface-inset:\s*var\(--surface-inset\);/)
