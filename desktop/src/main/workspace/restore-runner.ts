@@ -1,5 +1,6 @@
 import { rectDiff } from '../../shared/geometry'
 import type { Rect } from '../../shared/types'
+import type { OutcomeResult, RestoreReport, WindowOutcome } from '../../shared/workspace/restore-result'
 import type { ReadyPlan, RestoreStep } from '../../shared/workspace/restore-plan'
 
 export interface RestorePorts {
@@ -15,22 +16,7 @@ export interface RestorePorts {
   now(): number
 }
 
-export type OutcomeResult = 'placed' | 'off' | 'gone' | 'hung' | 'blocked' | 'failed' | 'timeout' | 'missing' | 'elevated'
-export interface WindowOutcome {
-  ruleId: string
-  app: string
-  result: OutcomeResult
-  diff?: number
-}
-export interface RestoreReport {
-  total: number
-  placed: number
-  outcomes: WindowOutcome[]
-  gathered: boolean
-  ms: number
-  maxDiff: number
-  restoredFocus: boolean
-}
+export type { OutcomeResult, RestoreReport, WindowOutcome }
 
 export const RESTORE_TIMING = {
   settleMs: 120,
@@ -61,7 +47,7 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
     }
   }
 
-  async function place(step: RestoreStep): Promise<{ result: OutcomeResult; diff?: number }> {
+  async function place(step: RestoreStep, seen: { max: number }): Promise<{ result: OutcomeResult; diff?: number }> {
     const s0 = p.state(step.hwnd)
     if (!s0) return { result: 'gone' }
     if (s0.hung) return { result: 'hung' }
@@ -91,7 +77,10 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
       }
       await p.sleep(T.verifyDelayMs)
       const s = p.state(step.hwnd)
-      return s ? { s, diff: rectDiff(s.frame, target) } : 'gone'
+      if (!s) return 'gone'
+      const diff = rectDiff(s.frame, target)
+      if (diff > seen.max) seen.max = diff
+      return { s, diff }
     }
 
     let m = await moveAndMeasure()
@@ -118,7 +107,7 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
     const start = p.now()
     const remembered = p.foreground()
     const outcomes: WindowOutcome[] = plan.skipped.map((k) => ({ ruleId: k.ruleId, app: k.app, result: k.reason }))
-    let maxDiff = 0
+    const seen = { max: 0 }
 
     for (const step of plan.steps) {
       let r: { result: OutcomeResult; diff?: number }
@@ -126,25 +115,37 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
         r = { result: 'timeout' }
       } else {
         try {
-          r = await place(step)
+          r = await place(step, seen)
         } catch {
           r = { result: 'failed' }
         }
       }
-      if (r.diff !== undefined && r.diff > maxDiff) maxDiff = r.diff
+      if (r.result === 'placed' || r.result === 'off') {
+        try {
+          p.raise(step.hwnd)
+        } catch {
+          r = { ...r, result: 'failed' }
+        }
+      }
       outcomes.push({ ruleId: step.ruleId, app: step.app, result: r.result, ...(r.diff !== undefined ? { diff: r.diff } : {}) })
-      if (r.result === 'placed' || r.result === 'off') p.raise(step.hwnd)
     }
 
     // 최소화 해제·최대화가 다른 창을 활성화할 수 있으므로 시작 때 창으로 한 번 되돌린다.
-    const restoredFocus = remembered ? p.setForeground(remembered) : false
+    let restoredFocus = false
+    if (remembered) {
+      try {
+        restoredFocus = p.setForeground(remembered)
+      } catch {
+        restoredFocus = false
+      }
+    }
     return {
       total: plan.total,
       placed: outcomes.filter((o) => o.result === 'placed').length,
       outcomes,
       gathered: plan.gathered,
       ms: p.now() - start,
-      maxDiff,
+      maxDiff: seen.max,
       restoredFocus
     }
   }

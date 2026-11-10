@@ -23,13 +23,14 @@ interface Win {
   moveCost?: number
   goneAfterNormalize?: boolean
   noMaximize?: boolean
+  raiseThrows?: boolean
   moves: number
 }
 
 const R = (x: number, y = 0, w = 800, h = 600): Rect => ({ x, y, width: w, height: h })
 const win = (o: Partial<Win> = {}): Win => ({ minimized: false, maximized: false, hung: false, frame: R(5, 5, 100, 100), moves: 0, ...o })
 
-function world(wins: Record<string, Win>, fg: string | null = 'fg') {
+function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgThrows?: boolean } = {}) {
   const calls: string[] = []
   let clock = 0
   // 가짜 sleep이 시계를 앞당기고 지정 시간 뒤 상태가 풀린다
@@ -69,11 +70,15 @@ function world(wins: Record<string, Win>, fg: string | null = 'fg') {
       calls.push(`maximize:${h}`)
       if (!wins[h].noMaximize) wins[h].maximized = true
     },
-    raise: (h) => void calls.push(`raise:${h}`),
+    raise: (h) => {
+      calls.push(`raise:${h}`)
+      if (wins[h].raiseThrows) throw new Error('raise')
+    },
     toPhysical: (d) => d,
     foreground: () => fg,
     setForeground: (h) => {
       calls.push(`fg:${h}`)
+      if (opts.fgThrows) throw new Error('fg')
       return true
     },
     sleep: async (ms) => {
@@ -231,5 +236,26 @@ describe('createRestoreRunner', () => {
     const w = world({ a: win(), b: win({ alwaysOff: 25 }), c: win({ hung: true }), d: win() })
     await createRestoreRunner(w.ports).run(plan([step('a'), step('b'), step('c'), step('d')]))
     expect(only(w.calls, /^raise/)).toEqual(['raise:a', 'raise:b', 'raise:d'])
+  })
+
+  it('첫 이동이 30px 어긋났다 고쳐져도 maxDiff는 30', async () => {
+    const w = world({ a: win({ firstOff: 30 }) })
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a')]))
+    expect(rep.outcomes[0].diff).toBe(0)
+    expect(rep.maxDiff).toBe(30)
+  })
+
+  it('raise가 던지면 그 창만 failed로 기록하고 run은 끝까지 간다', async () => {
+    const w = world({ a: win({ raiseThrows: true }), b: win() })
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]))
+    expect(rep.outcomes.map((o) => o.result)).toEqual(['failed', 'placed'])
+    expect(only(w.calls, /^fg:/)).toEqual(['fg:fg'])
+  })
+
+  it('setForeground가 던져도 report를 돌려준다', async () => {
+    const w = world({ a: win() }, 'fg', { fgThrows: true })
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a')]))
+    expect(rep.restoredFocus).toBe(false)
+    expect(rep.placed).toBe(1)
   })
 })

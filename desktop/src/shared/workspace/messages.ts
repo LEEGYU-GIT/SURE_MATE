@@ -1,4 +1,4 @@
-import type { RestoreReport, OutcomeResult } from '../../main/workspace/restore-runner'
+import type { RestoreReport, OutcomeResult } from './restore-result'
 import type { CaptureSkipped } from './capture'
 
 const MAX_NAMES = 2

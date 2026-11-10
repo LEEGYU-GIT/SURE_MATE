@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { restoreSummary, saveSummary, WORKSPACE_NOTES } from './messages'
-import type { RestoreReport, WindowOutcome } from '../../main/workspace/restore-runner'
+import type { RestoreReport, WindowOutcome } from './restore-result'
 
 const o = (app: string, result: WindowOutcome['result']): WindowOutcome => ({ ruleId: app, app, result })
 const report = (outcomes: WindowOutcome[], total: number, extra: Partial<RestoreReport> = {}): RestoreReport => ({
