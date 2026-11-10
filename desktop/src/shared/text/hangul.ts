@@ -118,3 +118,90 @@ export function isChoseongOnly(s: string): boolean {
   const compact = s.replace(/\s+/g, '')
   return compact.length > 0 && [...compact].every(isConsonantJamo)
 }
+
+// ---- 두벌식 자판 글자 → 한글 조합(toQwerty의 역) ----
+
+const KEY_TO_JAMO: Record<string, string> = {}
+for (const [jamo, key] of Object.entries(QWERTY)) KEY_TO_JAMO[key] = jamo
+
+const COMPOUND_JUNG: Record<string, string> = { ㅗㅏ: 'ㅘ', ㅗㅐ: 'ㅙ', ㅗㅣ: 'ㅚ', ㅜㅓ: 'ㅝ', ㅜㅔ: 'ㅞ', ㅜㅣ: 'ㅟ', ㅡㅣ: 'ㅢ' }
+const COMPOUND_JONG: Record<string, string> = {
+  ㄱㅅ: 'ㄳ', ㄴㅈ: 'ㄵ', ㄴㅎ: 'ㄶ', ㄹㄱ: 'ㄺ', ㄹㅁ: 'ㄻ', ㄹㅂ: 'ㄼ', ㄹㅅ: 'ㄽ', ㄹㅌ: 'ㄾ', ㄹㅍ: 'ㄿ', ㄹㅎ: 'ㅀ', ㅂㅅ: 'ㅄ'
+}
+
+/** 키 글자 하나를 자모로. Shift 쌍자음·ㅒ·ㅖ(R E Q T W O P) 외 대문자는 소문자와 같다. 자판에 없으면 null */
+function keyToJamo(ch: string): string | null {
+  return KEY_TO_JAMO[ch] ?? KEY_TO_JAMO[ch.toLowerCase()] ?? null
+}
+
+/**
+ * 영문 자판으로 친 글자를 한글로 조합한다(두벌식). 겹모음·겹받침을 만들고, 받침 뒤에 모음이 오면
+ * 받침(겹받침이면 뒤 자음)이 다음 음절 초성으로 넘어간다. ㄸ·ㅃ·ㅉ는 받침이 되지 않는다.
+ * 자판에 없는 글자(공백·숫자·기호)는 그대로 두고 조합을 끊는다.
+ */
+export function fromQwerty(s: string): string {
+  let out = ''
+  let cho = ''
+  let jung = ''
+  let jong = ''
+  const flush = (): void => {
+    if (cho && jung) {
+      out += String.fromCharCode(SYLLABLE_FIRST + (CHO.indexOf(cho) * JUNG_COUNT + JUNG.indexOf(jung)) * JONG_COUNT + JONG.indexOf(jong))
+    } else {
+      out += cho + jung + jong
+    }
+    cho = jung = jong = ''
+  }
+  for (const ch of s) {
+    const j = keyToJamo(ch)
+    if (j === null) {
+      flush()
+      out += ch
+    } else if (JUNG.includes(j)) {
+      if (jong) {
+        const second = jong.length ? ([...Object.entries(COMPOUND_JONG)].find(([, v]) => v === jong)?.[0] ?? '') : ''
+        const keep = second ? second[0] : ''
+        const move = second ? second[1] : jong
+        jong = keep
+        flush()
+        cho = move
+        jung = j
+      } else if (cho && jung) {
+        const c = COMPOUND_JUNG[jung + j]
+        if (c) jung = c
+        else {
+          flush()
+          jung = j
+        }
+      } else if (jung) {
+        flush()
+        jung = j
+      } else {
+        jung = j
+      }
+    } else if (!cho && !jung) {
+      cho = j
+    } else if (!jung) {
+      flush()
+      cho = j
+    } else if (!cho) {
+      flush()
+      cho = j
+    } else if (!jong) {
+      if (JONG.includes(j)) jong = j
+      else {
+        flush()
+        cho = j
+      }
+    } else {
+      const c = COMPOUND_JONG[jong + j]
+      if (c) jong = c
+      else {
+        flush()
+        cho = j
+      }
+    }
+  }
+  flush()
+  return out
+}
