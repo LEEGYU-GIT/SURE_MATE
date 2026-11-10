@@ -3,6 +3,7 @@ import type { FlyoutAction, FlyoutContent, WikiCardEntry, WikiCardView } from '.
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardPasteIcon, CopyIcon, OpenOutIcon, PinIcon, SearchIcon, XIcon } from '../design/icons'
 import { sourceLabel } from '../palette/wiki-state'
 import { MenuSeparator } from './Menu'
+import { press } from './press'
 import {
   CARD_TEXT,
   cardReducer,
@@ -220,7 +221,7 @@ function IconButton({
       className={`grid size-7 place-items-center rounded-control transition-colors duration-(--dur-hover) active:transition-none ${
         pressed ? 'bg-row-selected text-brand' : 'text-fg-2 hover:bg-row-hover hover:text-fg active:bg-row-selected'
       }`}
-      onClick={onClick}
+      {...press(onClick)}
     >
       {children}
     </button>
@@ -255,7 +256,7 @@ function BackButton({ onClick }: { onClick(): void }): React.JSX.Element {
       tabIndex={-1}
       aria-label={CARD_TEXT.backLabel}
       className="flex h-7 items-center gap-1 rounded-control pr-2 pl-1 text-caption leading-4 font-semibold text-fg-2 transition-colors duration-(--dur-hover) hover:bg-row-hover hover:text-fg active:bg-row-selected active:transition-none"
-      onClick={onClick}
+      {...press(onClick)}
     >
       <ChevronLeftIcon size={16} />
       {CARD_TEXT.back}
@@ -338,7 +339,7 @@ function EntryRow({ entry, hint = null, chevron = false, onClick }: { entry: Wik
       aria-labelledby={`${id}-term`}
       aria-describedby={`${id}-line`}
       className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-control px-2 py-2 text-left transition-colors duration-(--dur-hover) hover:bg-row-hover active:bg-row-selected active:transition-none"
-      onClick={onClick}
+      {...press(onClick)}
     >
       <span className="min-w-0">
         <span id={`${id}-term`} className="block text-body leading-5 break-keep wrap-break-word text-fg">
@@ -367,7 +368,7 @@ function FooterButton({ icon, title, className = '', onClick, children }: { icon
       tabIndex={-1}
       title={title}
       className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-control px-2 text-body leading-5 whitespace-nowrap text-fg transition-colors duration-(--dur-hover) hover:bg-row-hover active:bg-row-selected active:transition-none ${className}`}
-      onClick={onClick}
+      {...press(onClick)}
     >
       <span aria-hidden="true" className="grid place-items-center text-fg-2">
         {icon}
