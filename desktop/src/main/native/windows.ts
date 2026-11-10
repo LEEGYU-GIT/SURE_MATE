@@ -126,12 +126,18 @@ export function setForeground(hwnd: string): boolean {
  * 최소화·최대화면 먼저 되돌리고, 배율(DPI)이 다른 모니터로 갈 때는 먼저 옮긴 뒤
  * 창이 스스로 크기를 바꾸고 나서 최종 크기를 한 번 더 맞춘다.
  */
-export async function moveWindow(hwnd: string, targetPhysical: Rect, targetDpi: number): Promise<{ before: Rect; after: Rect; steps: number }> {
+export async function moveWindow(
+  hwnd: string,
+  targetPhysical: Rect,
+  targetDpi: number,
+  o: { async?: boolean } = {}
+): Promise<{ before: Rect; after: Rect; steps: number }> {
   const w = win32()
   const h = w.toHwnd(hwnd)
   const before = frameRect(h) ?? windowRect(h) ?? targetPhysical
   if (w.IsIconic(h) || w.IsZoomed(h)) w.ShowWindow(h, w.SW_RESTORE)
-  const flags = w.SWP_NOZORDER | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER
+  // 응답 없는 앱 창에 동기 호출하면 main이 멈추므로 복원 실행기는 비동기로 호출한다.
+  const flags = w.SWP_NOZORDER | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | (o.async ? w.SWP_ASYNCWINDOWPOS : 0)
 
   let steps = 1
   if (w.GetDpiForWindow(h) !== targetDpi) {
@@ -166,4 +172,36 @@ export function raiseTopmost(hwnd: string): boolean {
   const w = win32()
   const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER
   return Boolean(w.SetWindowPos(w.toHwnd(hwnd), w.HWND_TOPMOST, 0, 0, 0, 0, flags))
+}
+
+/** 창 상태 읽기(복원 실행기용). 창이 없어졌거나 Win32를 쓸 수 없으면 null. frame은 보이는 테두리(물리 픽셀) */
+export function readWindowState(hwnd: string): { minimized: boolean; maximized: boolean; hung: boolean; frame: Rect } | null {
+  if (!nativeStatus().ok) return null
+  const w = win32()
+  const h = w.toHwnd(hwnd)
+  if (!w.IsWindow(h)) return null
+  const frame = frameRect(h) ?? windowRect(h)
+  if (!frame) return null
+  return { minimized: Boolean(w.IsIconic(h)), maximized: Boolean(w.IsZoomed(h)), hung: Boolean(w.IsHungAppWindow(h)), frame }
+}
+
+/** 최소화·최대화를 풀어 보통 상태로(비동기 호출). activate가 true면 SW_RESTORE, 아니면 활성화 없이 SW_SHOWNOACTIVATE */
+export function showWindowNormal(hwnd: string, activate: boolean): void {
+  if (!nativeStatus().ok) return
+  const w = win32()
+  w.ShowWindowAsync(w.toHwnd(hwnd), activate ? w.SW_RESTORE : w.SW_SHOWNOACTIVATE)
+}
+
+export function showWindowMaximized(hwnd: string): void {
+  if (!nativeStatus().ok) return
+  const w = win32()
+  w.ShowWindowAsync(w.toHwnd(hwnd), w.SW_SHOWMAXIMIZED)
+}
+
+/** 위치·크기·활성 상태를 건드리지 않고 z-순서 맨 위로(HWND_TOP, 비동기 호출) */
+export function raiseWindow(hwnd: string): void {
+  if (!nativeStatus().ok) return
+  const w = win32()
+  const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | w.SWP_ASYNCWINDOWPOS
+  w.SetWindowPos(w.toHwnd(hwnd), null, 0, 0, 0, 0, flags)
 }
