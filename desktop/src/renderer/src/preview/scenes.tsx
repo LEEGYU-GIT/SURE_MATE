@@ -8,8 +8,11 @@ import type { FlyoutContent, FlyoutMessage, FlyoutPad, WikiCardView } from '../.
 import { parseGlossaryPack } from '../../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/glossary/wiki-lookup'
+import type { AppEvent } from '../../../shared/app-events'
 import { CAPTURE_NOTES } from '../../../shared/labels'
-import { petBox, petWindowRect } from '../../../shared/pet/pet-frame'
+import type { MaskCategory } from '../../../shared/masking/types'
+import { bubbleSlot, hopRoom, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
+import { reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
 import { petWorld, type PetWorld } from '../../../shared/pet/pet-world'
@@ -379,6 +382,20 @@ interface PetSceneOptions {
   reduceMotion?: boolean
   /** 펫 뒤의 창(기본: 바 반대쪽 위 작은 흰 문서 창) */
   backdrop?: React.ReactNode
+  /** 앱 반응(Task 7): 상태 기계와 같은 계산(reactionFor·bubbleSlot)으로 표정·소품·말풍선을 얹는다. sunglasses는 가명 처리 기본값 켬 */
+  react?: { event: AppEvent; sunglasses: boolean }
+  /** 개발용: 펫 창의 모든 움직임을 이 시각(ms)에 멈춰 그린다(폴짝 꼭대기에서 말풍선과 소품 간격 확인) */
+  freezeAt?: number
+}
+
+/** 상태 기계(react)와 같이 반응의 표정·소품·cue로 모습을 덮어쓰고 말풍선 자리를 계산한다 */
+function reactionView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): Pick<PetView, 'look' | 'bubble'> {
+  const r = o.react ? reactionFor(o.react.event, { reactions: true, bubbles: true }) : null
+  if (!o.react || !r) return { look: petLook(o.look), bubble: null }
+  const look = petLook({ ...o.look, face: r.face, props: [...(o.react.sunglasses ? (['sunglasses'] as const) : []), ...r.props], cue: r.cue, cueSeq: r.cue ? 1 : 0 })
+  if (!r.bubble) return { look, bubble: null }
+  const s = bubbleSlot({ box, window: win, bounds: MONITOR.bounds, hop: hopRoom(size) })
+  return { look, bubble: { seq: 1, text: r.bubble, side: s.side, slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } } }
 }
 
 /** 바 하나와 펫 창 하나. 펫 창(320×240, 투명)은 <Pet />이 가짜 getPetView()로 받은 상태를 그린다 */
@@ -390,8 +407,7 @@ function petScene(id: string, title: string, o: PetSceneOptions): Scene {
   const view: PetView = {
     size,
     box: { x: box.x - win.x, y: box.y - win.y },
-    look: petLook(o.look),
-    bubble: null,
+    ...reactionView(o, box, win, size),
     menu: null,
     controlling: false,
     reduceMotion: o.reduceMotion ?? false
@@ -405,7 +421,12 @@ function petScene(id: string, title: string, o: PetSceneOptions): Scene {
         <Stage>
           {o.backdrop ?? <AppWindow side={o.bar.edge === 'right' ? 'left' : 'right'} />}
           <BarWindow state={o.bar} />
-          <div data-pet-window="" style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height }}>
+          {o.freezeAt !== undefined ? <style>{'.pet-frame * { animation-play-state: paused !important; animation-delay: var(--frame-t) !important; }'}</style> : null}
+          <div
+            data-pet-window=""
+            className={o.freezeAt !== undefined ? 'pet-frame' : undefined}
+            style={{ position: 'absolute', left: win.x, top: win.y, width: win.width, height: win.height, ...(o.freezeAt !== undefined ? { '--frame-t': `-${o.freezeAt}ms` } : {}) } as React.CSSProperties}
+          >
             <Pet />
           </div>
         </Stage>
@@ -543,6 +564,107 @@ const PET_SCENES: Scene[] = [
   { id: 'pet-frames', title: '개발용: 말랑 메이트 움직임을 시간별로 멈춘 그림(폴짝·내려앉기·걷기·흔들림)', fixtures: {}, render: () => <PetFrames /> }
 ]
 
+// ── 말랑 메이트 앱 반응과 말풍선(Task 7): 상태 기계와 같은 계산(reactionFor·petBubbleText·bubbleSlot) ──────────
+
+const copied = (masked: { category: MaskCategory; count: number }[], target: string | null): AppEvent => ({ type: 'prompt-copied', masking: 'restore', masked, target })
+const WARN_EVENT: AppEvent = { type: 'prompt-copied', masking: 'off', masked: [], target: 'Claude' }
+
+const REACTION_SCENES: Scene[] = [
+  petScene('pet-celebrate', '말랑 메이트 반응: 복사 축하(편지·폴짝·말풍선, 설계 예시 문장)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    react: { event: copied([{ category: 'client', count: 1 }], 'Claude'), sunglasses: false }
+  }),
+  petScene('pet-celebrate-copy-only', '말랑 메이트 반응: 복사만(열 AI 없음 → "원하는 곳에"), 선글라스', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    react: {
+      event: copied(
+        [
+          { category: 'client', count: 2 },
+          { category: 'person', count: 1 }
+        ],
+        null
+      ),
+      sunglasses: true
+    }
+  }),
+  petScene('pet-celebrate-sunglasses', '말랑 메이트 반응: 가명 처리 켬(선글라스), 분류 넷(많은 순 두 개 + 외 N건), ChatGPT', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 230 },
+    look: {},
+    react: {
+      event: copied(
+        [
+          { category: 'client', count: 2 },
+          { category: 'ip', count: 2 },
+          { category: 'path', count: 3 },
+          { category: 'email', count: 1 }
+        ],
+        'ChatGPT'
+      ),
+      sunglasses: true
+    }
+  }),
+  petScene('pet-warn', '말랑 메이트 반응: 가명 처리 끈 채 복사(걱정 눈썹·주황 느낌표·경고, 폴짝 없음)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    react: { event: WARN_EVENT, sunglasses: false }
+  }),
+  petScene('pet-unmask', '말랑 메이트 반응: 가명 되돌리기(폴짝·한 줄 말풍선)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    react: { event: { type: 'unmasked', restored: 3 }, sunglasses: true }
+  }),
+  petScene('pet-note', '말랑 메이트 반응: 선택한 글을 못 가져옴(터미널), 흰 문서 창 앞(외곽선 대비)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 170 },
+    look: {},
+    backdrop: <AppWindow side="left" under />,
+    react: { event: { type: 'capture-failed', reason: 'terminal' }, sunglasses: true }
+  }),
+  petScene('pet-bubble-side', '말랑 메이트 반응: 바 꼭대기가 화면 위쪽(위에 자리가 없어 말풍선이 옆, 가장 긴 4줄)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit' },
+    react: {
+      event: copied(
+        [
+          { category: 'project', count: 12 },
+          { category: 'person', count: 10 },
+          { category: 'phone', count: 8 },
+          { category: 'email', count: 17 }
+        ],
+        'ChatGPT'
+      ),
+      sunglasses: true
+    }
+  }),
+  petScene('pet-react-climb', '개발용: 왼쪽 띠 옆면을 오르다 경고(소품은 바 반대쪽, 꼬리는 뒤집힌 얼굴)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'side', t: 0.5 },
+    look: { pose: 'climb', facing: 'left' },
+    react: { event: WARN_EVENT, sunglasses: false }
+  }),
+  petScene('pet-bubble-narrow', '개발용: 화면 위쪽 가운데(양옆 여유가 모자람 → 좁고 긴 말풍선, 창 안)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'cursor', x: 320, y: 4 },
+    look: {},
+    react: { event: copied([{ category: 'client', count: 1 }], 'Claude'), sunglasses: true }
+  }),
+  petScene('pet-celebrate-apex', '개발용: 복사 축하 폴짝 꼭대기(216ms)에서 멈춤(편지가 말풍선 꼬리에 닿지 않음)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    react: { event: copied([{ category: 'client', count: 1 }], 'Claude'), sunglasses: true },
+    freezeAt: 216
+  })
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -588,5 +710,6 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
   ...CARD_SCENES,
-  ...PET_SCENES
+  ...PET_SCENES,
+  ...REACTION_SCENES
 ]

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import type { AppEvent } from '../../shared/app-events'
 import { PET_TIMING } from '../../shared/pet/pet-behavior'
-import { hitShape, petBox } from '../../shared/pet/pet-frame'
+import { bubbleSlot, hitShape, hopRoom, petBox } from '../../shared/pet/pet-frame'
 import { DEFAULT_PET_SETTINGS, type PetSettings } from '../../shared/pet/pet-settings'
 import type { PetView } from '../../shared/pet/pet-view'
 import { petWorld, type PetBar, type PetWorld } from '../../shared/pet/pet-world'
@@ -10,6 +11,7 @@ import {
   createPetController,
   GESTURE,
   PET_LOOP,
+  REDUCED_CLICK_FACE_MS,
   type PetController,
   type PetMode
 } from './pet-controller'
@@ -1473,5 +1475,642 @@ describe('시계가 뒤로 가도', () => {
     expect(mode(t)).toBe('sit')
     vi.advanceTimersByTime(PET_LOOP.frameMs)
     expect(mode(t)).toBe('air')
+  })
+})
+
+// ── 앱 반응과 말풍선(Task 7, 설계 §14-2 "앱과 연결", Review Focus 1·5) ──────────────
+
+const COPIED: AppEvent = {
+  type: 'prompt-copied',
+  masking: 'restore',
+  masked: [{ category: 'client', count: 1 }],
+  target: 'Claude'
+}
+const COPIED_TEXT = '복사했어요. 고객사명 1건은 가명으로 바꿨어요. Claude 창에 붙여넣어 주세요.'
+const WARN: AppEvent = { type: 'prompt-copied', masking: 'off', masked: [], target: 'Claude' }
+const WARN_TEXT = '가명 처리가 꺼져 있어요. 이름이 그대로 들어갔어요.'
+const UNMASKED: AppEvent = { type: 'unmasked', restored: 2 }
+const NOTE: AppEvent = { type: 'capture-failed', reason: 'terminal' }
+
+const reacts = (t: T): Record<string, unknown>[] =>
+  t.log.mock.calls.filter(([e]) => e === 'pet.react').map(([, d]) => d)
+const bubble = (t: T): PetView['bubble'] => t.c.view()!.bubble
+
+/** 렌더러가 잰 말풍선(창 좌표): 자리 아래 가운데 180×58 */
+function reportBubble(t: T): Rect {
+  const slot = bubble(t)!.slot
+  const r = {
+    x: slot.x + (slot.width - 180) / 2,
+    y: slot.y + slot.height - 58,
+    width: 180,
+    height: 58
+  }
+  t.c.bubbleRect(r)
+  return r
+}
+
+describe('앱 반응', () => {
+  it('걷는 중 복사: 같은 호출 안에서 말풍선·편지·폴짝을 보내고 멈춘다. 4초 뒤 말풍선이 사라진다', () => {
+    const t = make()
+    t.c.start()
+    vi.advanceTimersByTime(5000)
+    expect(mode(t)).toBe('walk')
+    t.window.send.mockClear()
+    const bounds = t.window.setBounds.mock.calls.length
+    t.c.react(COPIED)
+    expect(t.window.send).toHaveBeenCalledTimes(1)
+    const v = t.window.send.mock.lastCall![0]
+    expect(v.bubble).toMatchObject({ seq: 1, text: COPIED_TEXT, side: 'above' })
+    expect(v.look).toMatchObject({ pose: 'stand', face: 'happy', cue: 'hop', cueSeq: 1 })
+    // 선글라스(가명 처리 켬)는 그대로, 편지를 든다
+    expect(v.look.props).toEqual(['sunglasses', 'envelope'])
+    expect(mode(t)).toBe('idle')
+    expect(reacts(t)).toEqual([{ kind: 'celebrate', bubble: true }])
+
+    // 말풍선 자리: placeSlot(200×96, hop = hopRoom(56))을 창 좌표로
+    const win = t.c.status().window!
+    const box = petBox(foot(t), 56)
+    const want = bubbleSlot({ box, window: win, bounds: MAIN.bounds, hop: hopRoom(56) })
+    expect(v.bubble!.slot).toEqual({
+      x: want.rect.x - win.x,
+      y: want.rect.y - win.y,
+      width: 200,
+      height: 96
+    })
+
+    vi.advanceTimersByTime(3999)
+    expect(bubble(t)?.text).toBe(COPIED_TEXT)
+    vi.advanceTimersByTime(1)
+    expect(bubble(t)).toBeNull()
+    expect(t.window.send.mock.lastCall![0].bubble).toBeNull()
+    expect(look(t).face).toBe('normal')
+    expect(look(t).props).toEqual(['sunglasses'])
+    // 반응 동안 창을 옮기지 않았다
+    expect(t.window.setBounds.mock.calls.length).toBe(bounds)
+  })
+
+  it('반응이 끝나면 새 계획을 세운다(가만히였으면 다음 계획으로)', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(NOTE)
+    vi.advanceTimersByTime(PET_TIMING.firstIdleMs + 500)
+    // 첫 가만히 3초가 지났어도 반응 동안에는 계획하지 않는다
+    expect(mode(t)).toBe('idle')
+    vi.advanceTimersByTime(4000 - PET_TIMING.firstIdleMs - 500)
+    expect(mode(t)).toBe('walk') // 바 오르기 계획
+  })
+
+  it('표의 네 줄: 경고는 걱정·느낌표(폴짝 없음), 되돌리기는 기쁨·폴짝, 가져오기 실패는 보통 얼굴', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(WARN)
+    expect(look(t)).toMatchObject({
+      face: 'worried',
+      props: ['sunglasses', 'alert'],
+      cue: null,
+      cueSeq: 0
+    })
+    expect(bubble(t)).toMatchObject({ seq: 1, text: WARN_TEXT })
+    t.c.react(UNMASKED)
+    expect(look(t)).toMatchObject({ face: 'happy', props: ['sunglasses'], cue: 'hop', cueSeq: 1 })
+    expect(bubble(t)).toMatchObject({ seq: 2, text: '원래 이름으로 되돌렸어요.' })
+    t.c.react(NOTE)
+    expect(look(t)).toMatchObject({ face: 'normal', props: ['sunglasses'], cue: 'hop', cueSeq: 1 })
+    expect(bubble(t)).toMatchObject({ seq: 3, text: '터미널에서는 가져오지 않아요.' })
+    expect(reacts(t)).toEqual([
+      { kind: 'warn', bubble: true },
+      { kind: 'hop', bubble: true },
+      { kind: 'note', bubble: true }
+    ])
+  })
+
+  it('(Review Focus 5) 1초에 10번: 마지막 문구 하나, seq 10, 반응 타이머는 하나(쉼 대신)라 타이머 수가 그대로', () => {
+    const t = make()
+    t.c.start()
+    expect(vi.getTimerCount()).toBe(3) // 쉼·졸기·조회
+    for (let i = 1; i <= 10; i++) {
+      t.c.react({ ...COPIED, masked: [{ category: 'client', count: i }] } as AppEvent)
+      expect(vi.getTimerCount(), `${i}번째`).toBe(3) // 반응·졸기·조회
+      vi.advanceTimersByTime(100)
+    }
+    const v = t.c.view()!
+    expect(v.bubble!.seq).toBe(10)
+    expect(v.bubble!.text).toBe(
+      '복사했어요. 고객사명 10건은 가명으로 바꿨어요. Claude 창에 붙여넣어 주세요.'
+    )
+    expect(look(t).cueSeq).toBe(10)
+    // 새 반응이 타이머를 다시 시작한다: 마지막 반응 뒤 4초
+    vi.advanceTimersByTime(4000 - 100 - 1)
+    expect(bubble(t)).not.toBeNull()
+    vi.advanceTimersByTime(1)
+    expect(bubble(t)).toBeNull()
+    expect(reacts(t)).toHaveLength(10)
+  })
+
+  it('(Review Focus 5) 숨김·전체 화면 중에는 반응하지 않고, 다시 표시해도 지난 반응이 나오지 않는다', () => {
+    const off = make({ settings: { visible: false } })
+    off.c.start()
+    off.c.react(COPIED)
+    expect(off.window.send).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(reacts(off)).toEqual([])
+
+    const t = make()
+    t.c.start()
+    t.c.setFullscreen(true)
+    t.window.send.mockClear()
+    t.c.react(COPIED)
+    t.c.react(WARN)
+    expect(t.window.send).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    t.c.setFullscreen(false)
+    expect(bubble(t)).toBeNull()
+    expect(look(t).face).toBe('normal')
+    expect(reacts(t)).toEqual([])
+  })
+
+  it('(Review Focus 5) 들고 있는 동안 두 번: 놓아서 바닥에 선 뒤 마지막 것 하나만', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    t.window.send.mockClear()
+    t.c.react(COPIED)
+    t.c.react(WARN)
+    expect(bubble(t)).toBeNull()
+    expect(look(t)).toMatchObject({ pose: 'held', face: 'surprised' })
+    expect(t.window.send.mock.calls.every(([v]) => v.bubble === null)).toBe(true)
+    t.env.cursor = { x: 600, y: 900 }
+    vi.advanceTimersByTime(200)
+    t.c.press(false)
+    expect(mode(t)).toBe('air')
+    expect(bubble(t)).toBeNull()
+    untilMode(t, 'idle', 3000)
+    expect(bubble(t)).toMatchObject({ seq: 1, text: WARN_TEXT })
+    expect(look(t)).toMatchObject({ face: 'worried', props: ['sunglasses', 'alert'] })
+    expect(reacts(t)).toEqual([{ kind: 'warn', bubble: true }])
+    expect(
+      t.window.send.mock.calls
+        .filter(([v]) => v.bubble !== null)
+        .every(([v]) => v.bubble!.text === WARN_TEXT)
+    ).toBe(true)
+  })
+
+  it('들고 있던 반응은 바 꼭대기에 놓으면 앉은 뒤 거기서 보인다', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    t.c.react(UNMASKED)
+    t.env.cursor = { x: 1892, y: 200 }
+    vi.advanceTimersByTime(200)
+    t.c.press(false)
+    untilMode(t, 'sit', 1000)
+    expect(bubble(t)).toMatchObject({ text: '원래 이름으로 되돌렸어요.', side: 'above' })
+    expect(look(t)).toMatchObject({ pose: 'sit', face: 'happy' })
+  })
+
+  it('들림·숨김으로 저장한 반응은 버린다(숨긴 펫은 반응하지 않는다)', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    t.c.react(COPIED)
+    t.c.setFullscreen(true)
+    t.c.setFullscreen(false)
+    untilMode(t, 'idle', 3000)
+    expect(bubble(t)).toBeNull()
+    expect(reacts(t)).toEqual([])
+  })
+
+  it('반응 중 집어 들면 반응을 끝낸다(놀란 얼굴, 말풍선 없음)', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    pickUp(t)
+    expect(bubble(t)).toBeNull()
+    expect(look(t)).toMatchObject({ pose: 'held', face: 'surprised', props: ['sunglasses'] })
+    expect(vi.getTimerCount()).toBe(2) // 동작 고리·졸기(반응 타이머 없음)
+  })
+
+  it('반응 중 클릭은 폴짝만 하고 말풍선은 그대로', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(NOTE)
+    click(t)
+    expect(look(t)).toMatchObject({ cue: 'hop', cueSeq: 1, face: 'normal' })
+    expect(bubble(t)).toMatchObject({ seq: 1 })
+  })
+
+  it('졸고 있으면 깬 뒤 반응한다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000)
+    expect(mode(t)).toBe('sleep')
+    t.c.react(COPIED)
+    expect(mode(t)).toBe('idle')
+    expect(states(t)).toEqual(['sleep', 'wake'])
+    expect(look(t)).toMatchObject({
+      pose: 'stand',
+      face: 'happy',
+      props: ['sunglasses', 'envelope']
+    })
+    expect(bubble(t)).toMatchObject({ text: COPIED_TEXT })
+  })
+
+  it('잘 때가 됐어도 반응 중에는 졸지 않고, 반응이 끝나면 다시 확인한다', () => {
+    const t = make({ bar: null, random: 0, settings: { sleepAfterMin: 1 } })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(58_000)
+    t.c.react(NOTE)
+    vi.advanceTimersByTime(2500) // 졸기 확인(60초)은 반응 중
+    expect(mode(t)).toBe('idle')
+    expect(bubble(t)).not.toBeNull()
+    vi.advanceTimersByTime(1500)
+    expect(mode(t)).toBe('sleep')
+  })
+
+  it('앉아 있으면 꼭대기에서 반응하고, 쉼 시간은 반응 동안 멈췄다 이어 간다(타이머 3개 이하)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    const sitAt = Date.now()
+    vi.advanceTimersByTime(10_000) // 쉼 60초 중 10초
+    t.c.react(COPIED)
+    expect(mode(t)).toBe('sit')
+    expect(look(t)).toMatchObject({ pose: 'sit', face: 'happy', props: ['sunglasses', 'envelope'] })
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(3) // 반응·졸기·조회
+    vi.advanceTimersByTime(4000)
+    expect(bubble(t)).toBeNull()
+    expect(mode(t)).toBe('sit')
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(3) // 쉼·졸기·조회
+    // 남은 쉼 50초 뒤(반응 4초만큼 늦게) 뛰어내린다. sitAt은 앉은 프레임보다 최대 한 프레임 늦게 잰 값
+    vi.advanceTimersByTime(sitAt + 64_000 - Date.now() - 100)
+    expect(mode(t)).toBe('sit')
+    vi.advanceTimersByTime(200)
+    expect(mode(t)).toBe('air')
+  })
+
+  it('오르는 중 반응: 반응 동안 멈췄다가(동작 고리 없음, 창 그대로) 이어 오른다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'climb')
+    vi.advanceTimersByTime(1000)
+    const y0 = foot(t).y
+    const bounds = t.window.setBounds.mock.calls.length
+    t.c.react(WARN)
+    expect(mode(t)).toBe('climb')
+    expect(look(t)).toMatchObject({
+      pose: 'climb',
+      face: 'worried',
+      props: ['sunglasses', 'alert']
+    })
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(3) // 반응·졸기·조회
+    vi.advanceTimersByTime(3900)
+    expect(foot(t).y).toBe(y0)
+    expect(t.window.setBounds.mock.calls.length).toBe(bounds)
+    vi.advanceTimersByTime(100 + 1000)
+    expect(bubble(t)).toBeNull()
+    expect(mode(t)).toBe('climb')
+    expect(y0 - foot(t).y).toBeGreaterThan(40)
+    untilMode(t, 'sit', 15_000)
+  })
+
+  it('반응 중 누르고 있어도(동작 고리) 오르기는 멈춘 채다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'climb')
+    vi.advanceTimersByTime(1000)
+    const y0 = foot(t).y
+    t.c.react(NOTE)
+    t.env.cursor = bodyPoint(t)
+    t.c.press(true)
+    vi.advanceTimersByTime(300)
+    expect(foot(t).y).toBe(y0)
+    t.c.press(false)
+  })
+
+  it('뛰어오르는 중 반응은 옆면에 붙어 오르기를 시작할 때 보인다(1초 안)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'leap', 30_000)
+    const at = Date.now()
+    t.c.react(COPIED)
+    expect(bubble(t)).toBeNull()
+    until(() => bubble(t) !== null, 1000)
+    expect(Date.now() - at).toBeLessThan(1000)
+    expect(mode(t)).toBe('climb')
+    expect(look(t)).toMatchObject({ pose: 'climb', face: 'happy' })
+  })
+
+  it('꼭대기로 올라서는 300ms 동안 온 반응은 앉은 뒤 보인다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'climb')
+    until(() => foot(t).y === 292, 12_000)
+    vi.advanceTimersByTime(PET_LOOP.frameMs) // 올라서는 중
+    expect(mode(t)).toBe('climb')
+    t.c.react(UNMASKED)
+    expect(bubble(t)).toBeNull()
+    untilMode(t, 'sit', 1000)
+    expect(bubble(t)).toMatchObject({ text: '원래 이름으로 되돌렸어요.' })
+  })
+
+  it('뛰어내리는 중 반응은 바닥에 선 뒤 보인다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    untilMode(t, 'air', 61_000)
+    t.c.react(NOTE)
+    expect(bubble(t)).toBeNull()
+    untilMode(t, 'idle', 5000)
+    expect(bubble(t)).toMatchObject({ text: '터미널에서는 가져오지 않아요.' })
+  })
+
+  it('꼭대기가 화면 위쪽이면 말풍선은 옆(창 안)', () => {
+    const t = make({ bar: { rect: { x: 1864, y: 120, width: 56, height: 456 }, edge: 'right' } })
+    t.c.start()
+    dropFrom(t, { x: 1892, y: 110 })
+    untilMode(t, 'sit', 1000)
+    t.c.react(COPIED)
+    const win = t.c.status().window!
+    expect(win).toEqual({ x: 1600, y: 0, width: 320, height: 240 })
+    expect(bubble(t)).toMatchObject({
+      side: 'left',
+      slot: { x: 56, y: 49.25, width: 200, height: 96 }
+    })
+  })
+
+  it('앉은 채 바를 옮기면 말풍선도 따라간다(창은 한 번 옮김)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    t.c.react(COPIED)
+    const before = bubble(t)!
+    const winBefore = t.c.status().window!
+    const bounds = t.window.setBounds.mock.calls.length
+    t.env.bar = { rect: { x: 1864, y: 400, width: 56, height: 456 }, edge: 'right' }
+    t.c.worldChanged()
+    const after = bubble(t)!
+    const winAfter = t.c.status().window!
+    expect(after.seq).toBe(before.seq)
+    // 화면에서 말풍선 자리가 바와 같이 108 DIP 내려간다
+    expect(winAfter.y + after.slot.y).toBe(winBefore.y + before.slot.y + (400 - 292))
+    expect(t.window.setBounds.mock.calls.length).toBe(bounds + 1)
+  })
+
+  it('앉은 채 바가 없어져 떨어지면 반응을 끝낸다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    t.c.react(COPIED)
+    t.env.bar = null
+    t.c.worldChanged()
+    expect(mode(t)).toBe('air')
+    expect(bubble(t)).toBeNull()
+    untilMode(t, 'idle', 3000)
+    expect(bubble(t)).toBeNull()
+  })
+
+  it('숨겼다 다시 표시하면 반응은 끝나 있고 앉은 쉼은 남은 시간대로 이어 간다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    const sitAt = Date.now()
+    vi.advanceTimersByTime(20_000)
+    t.c.react(COPIED)
+    vi.advanceTimersByTime(1000)
+    t.c.setFullscreen(true)
+    vi.advanceTimersByTime(30_000)
+    t.c.setFullscreen(false)
+    expect(mode(t)).toBe('sit')
+    expect(bubble(t)).toBeNull()
+    // 쉼 60초 중 20초 + 반응 1초 + 숨김 30초: 남은 40초 뒤 뛰어내린다(sitAt은 최대 한 프레임 늦게 잰 값)
+    vi.advanceTimersByTime(sitAt + 20_000 + 1000 + 30_000 + 40_000 - Date.now() - 100)
+    expect(mode(t)).toBe('sit')
+    vi.advanceTimersByTime(200)
+    expect(mode(t)).toBe('air')
+  })
+
+  it('반응 끔이면 반응하지 않는다. 말풍선 끔이면 말풍선 없이 1.5초, 가져오기 실패는 없음', () => {
+    const off = make({ settings: { reactions: false } })
+    off.c.start()
+    off.window.send.mockClear()
+    off.c.react(COPIED)
+    expect(off.window.send).not.toHaveBeenCalled()
+    expect(reacts(off)).toEqual([])
+
+    const quiet = make({ settings: { bubbles: false } })
+    quiet.c.start()
+    quiet.c.react(NOTE)
+    expect(reacts(quiet)).toEqual([])
+    quiet.c.react(COPIED)
+    expect(look(quiet)).toMatchObject({
+      face: 'happy',
+      props: ['sunglasses', 'envelope'],
+      cue: 'hop'
+    })
+    expect(bubble(quiet)).toBeNull()
+    expect(reacts(quiet)).toEqual([{ kind: 'celebrate', bubble: false }])
+    vi.advanceTimersByTime(1499)
+    expect(look(quiet).face).toBe('happy')
+    vi.advanceTimersByTime(1)
+    expect(look(quiet).face).toBe('normal')
+  })
+
+  it('refresh로 반응을 끄면 보이던 반응도 끝나고, 말풍선을 끄면 말풍선이 닫힌다', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    t.env.settings = { ...t.env.settings, bubbles: false }
+    t.c.refresh()
+    expect(bubble(t)).toBeNull()
+    t.c.react(COPIED)
+    expect(look(t).face).toBe('happy')
+    t.env.settings = { ...t.env.settings, reactions: false }
+    t.c.refresh()
+    expect(look(t).face).toBe('normal')
+  })
+
+  it('가명 처리 모드 변경(refresh)은 반응이 아니다: 말풍선 없이 선글라스만 바뀐다', () => {
+    const t = make()
+    t.c.start()
+    t.env.masking = 'off'
+    t.c.refresh()
+    expect(t.window.send.mock.lastCall![0]).toMatchObject({
+      bubble: null,
+      look: { face: 'normal', props: [] }
+    })
+    t.env.masking = 'remove'
+    t.c.refresh()
+    expect(t.window.send.mock.lastCall![0]).toMatchObject({
+      bubble: null,
+      look: { face: 'normal', props: ['sunglasses'] }
+    })
+    expect(reacts(t)).toEqual([])
+  })
+
+  it('기록 pet.react에는 종류와 말풍선 여부만(문구·AI 이름 없음)', () => {
+    const t = make()
+    t.c.start()
+    for (const e of [COPIED, WARN, UNMASKED, NOTE]) t.c.react(e)
+    const json = JSON.stringify(t.log.mock.calls)
+    for (const word of [
+      '복사했어요',
+      'Claude',
+      '고객사명',
+      '가명 처리가 꺼져',
+      '되돌렸어요',
+      '터미널'
+    ])
+      expect(json, word).not.toContain(word)
+  })
+
+  it('dispose하면 반응 타이머도 지운다', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    t.c.dispose()
+    expect(vi.getTimerCount()).toBe(0)
+    t.c.react(COPIED)
+    t.c.bubbleClick()
+    t.c.bubbleRect({ x: 0, y: 0, width: 10, height: 10 })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('말풍선 누르기·클릭 판정', () => {
+  it('bubbleClick: 즉시 말풍선을 닫고 반응을 끝낸다', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    t.window.send.mockClear()
+    t.c.bubbleClick()
+    expect(t.window.send).toHaveBeenCalledTimes(1)
+    expect(t.window.send.mock.lastCall![0]).toMatchObject({
+      bubble: null,
+      look: { face: 'normal' }
+    })
+    // 말풍선이 없을 때 누름은 무시
+    t.window.send.mockClear()
+    t.c.bubbleClick()
+    expect(t.window.send).not.toHaveBeenCalled()
+  })
+
+  it('(Review Focus 1) 보고한 말풍선 위에서는 클릭을 받고, 눌러 닫은 뒤 커서가 몸 밖이면 마지막 setIgnoreMouse는 true', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    const r = reportBubble(t)
+    const win = t.c.status().window!
+    t.env.cursor = { x: win.x + r.x + 90, y: win.y + r.y + 20 }
+    vi.advanceTimersByTime(150)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.bubbleClick()
+    expect(bubble(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true)
+    vi.advanceTimersByTime(500)
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('(Review Focus 1) 커서가 말풍선 위에 있는 채 4초가 지나 사라져도 마지막 setIgnoreMouse는 true', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(NOTE)
+    const r = reportBubble(t)
+    const win = t.c.status().window!
+    t.env.cursor = { x: win.x + r.x + 10, y: win.y + r.y + 10 }
+    vi.advanceTimersByTime(200)
+    expect(lastIgnore(t)).toBe(false)
+    vi.advanceTimersByTime(3800)
+    expect(bubble(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('bubbleRect(null)이면 판정에서 빼고, 말풍선이 없을 때 온 사각형·잘못된 사각형은 무시한다', () => {
+    const t = make()
+    t.c.start()
+    const win = t.c.status().window!
+    // 반응 전에 온(늦은) 사각형
+    t.c.bubbleRect({ x: 60, y: 80, width: 180, height: 58 })
+    t.env.cursor = { x: win.x + 100, y: win.y + 100 }
+    vi.advanceTimersByTime(200)
+    expect(lastIgnore(t)).toBe(true)
+
+    t.c.react(COPIED)
+    for (const bad of [
+      { x: Number.NaN, y: 80, width: 180, height: 58 },
+      { x: 60, y: 80, width: 0, height: 58 },
+      { x: 60, y: 80, width: -5, height: 58 }
+    ]) {
+      t.c.bubbleRect(bad)
+      vi.advanceTimersByTime(100)
+      expect(lastIgnore(t)).toBe(true)
+    }
+    t.c.bubbleRect({ x: 60, y: 80, width: 180, height: 58 })
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.bubbleRect(null)
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('새 반응이 이전 말풍선을 대체하면 렌더러가 새로 잴 때까지 옛 사각형으로 클릭을 막지 않는다', () => {
+    const t = make()
+    t.c.start()
+    t.c.react(COPIED)
+    const r = reportBubble(t)
+    const win = t.c.status().window!
+    t.env.cursor = { x: win.x + r.x + 5, y: win.y + r.y + 5 }
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.react(NOTE)
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(true)
+  })
+})
+
+describe('(Task 6 이월) 움직임 줄이기의 클릭 표시', () => {
+  it(`클릭하면 폴짝 대신 ${REDUCED_CLICK_FACE_MS}ms 동안 웃는다(타이머를 늘리지 않음, 커서 조회로 되돌림)`, () => {
+    const t = make({ bar: null, settings: { reduceMotion: true } })
+    t.c.start()
+    expect(vi.getTimerCount()).toBe(3)
+    click(t)
+    expect(look(t)).toMatchObject({ face: 'happy', cue: null, cueSeq: 0 })
+    expect(t.window.send.mock.lastCall![0].look.face).toBe('happy')
+    expect(vi.getTimerCount()).toBe(3)
+    // 뗀 순간(클릭)부터 잰다
+    vi.advanceTimersByTime(REDUCED_CLICK_FACE_MS - 1)
+    expect(look(t).face).toBe('happy')
+    vi.advanceTimersByTime(2)
+    expect(look(t).face).toBe('normal')
+    expect(t.window.send.mock.lastCall![0].look.face).toBe('normal')
+    expect(vi.getTimerCount()).toBe(3)
+  })
+
+  it('움직임이 켜져 있으면 클릭은 폴짝만(얼굴은 그대로), 반응 중에는 반응 얼굴이 이긴다', () => {
+    const moving = make({ bar: null })
+    moving.c.start()
+    click(moving)
+    expect(look(moving)).toMatchObject({ face: 'normal', cue: 'hop' })
+
+    const t = make({ bar: null, settings: { reduceMotion: true } })
+    t.c.start()
+    t.c.react(WARN)
+    click(t)
+    expect(look(t)).toMatchObject({ face: 'worried', cue: null })
+  })
+
+  it('앉아 있을 때 클릭해도 같고, 들어 올리면 놀란 얼굴이 이긴다', () => {
+    const t = make({ settings: { reduceMotion: true } })
+    t.c.start()
+    untilMode(t, 'sit')
+    t.env.cursor = bodyPoint(t)
+    click(t)
+    expect(look(t)).toMatchObject({ pose: 'sit', face: 'happy' })
+    vi.advanceTimersByTime(REDUCED_CLICK_FACE_MS)
+    expect(look(t)).toMatchObject({ pose: 'sit', face: 'content' })
+    click(t)
+    pickUp(t)
+    expect(look(t)).toMatchObject({ pose: 'held', face: 'surprised' })
   })
 })

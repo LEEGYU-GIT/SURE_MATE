@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { hitShape, hopRoom, isOver, menuSize, petBox, petWindowRect, placeSlot } from './pet-frame'
+import { bubbleSlot, hitShape, hopRoom, isOver, menuSize, petBox, petWindowRect, placeSlot } from './pet-frame'
+import { SLOT } from './pet-view'
 import type { Rect } from '../types'
 
 const MAIN: Rect = { x: 0, y: 0, width: 1920, height: 1080 }
@@ -66,6 +67,60 @@ describe('placeSlot', () => {
     const r = placeSlot({ size: { width: 200, height: 80 }, box: b, window: w, bounds: MAIN, hop: 12 })
     expect(r.side).toBe('right')
     expect(r.rect.x).toBe(64)
+  })
+})
+
+describe('bubbleSlot: 말풍선 자리(200×96, placeSlot)를 창 안에 둔다', () => {
+  const BUBBLE = { width: SLOT.bubbleWidth, height: SLOT.bubbleMaxHeight }
+  const inside = (r: Rect, w: Rect): boolean =>
+    r.x >= w.x + SLOT.margin && r.y >= w.y + SLOT.margin && r.x + r.width <= w.x + w.width - SLOT.margin && r.y + r.height <= w.y + w.height - SLOT.margin
+  const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+  it('자리가 있으면 placeSlot 그대로(바닥 펫은 위, 꼭대기가 화면 위쪽이면 옆)', () => {
+    const box = petBox({ x: 960, y: 1040 }, 56)
+    const window = petWindowRect(box, MAIN)
+    expect(bubbleSlot({ box, window, bounds: MAIN, hop: 12 })).toEqual(placeSlot({ size: BUBBLE, box, window, bounds: MAIN, hop: 12 }))
+    const top: Rect = { x: 1864, y: 69.25, width: 56, height: 56 }
+    const topWindow: Rect = { x: 1600, y: 0, width: 320, height: 240 }
+    const r = bubbleSlot({ box: top, window: topWindow, bounds: MAIN, hop: 12 })
+    expect(r).toEqual({ side: 'left', rect: { x: 1656, y: 49.25, width: 200, height: 96 } })
+    expect(inside(r.rect, topWindow)).toBe(true)
+  })
+
+  it('(Task 4 이월) 양옆 모두 200 + 8이 안 되면(화면 위쪽 가운데) 여유 쪽 폭으로 줄이고 높이를 늘려 창 안에 둔다', () => {
+    // 창이 펫 가운데에 있다: 양옆 여유 132 < 208. placeSlot은 오른쪽 76 DIP를 창 밖에 둔다
+    const box: Rect = { x: 932, y: 20, width: 56, height: 56 }
+    const window: Rect = { x: 800, y: 0, width: 320, height: 240 }
+    const raw = placeSlot({ size: BUBBLE, box, window, bounds: MAIN, hop: 12 })
+    expect(raw.rect.x + raw.rect.width).toBeGreaterThan(window.x + window.width)
+    const r = bubbleSlot({ box, window, bounds: MAIN, hop: 12 })
+    expect(r.side).toBe('right')
+    expect(r.rect).toEqual({ x: 996, y: 8, width: 116, height: 166 })
+    expect(inside(r.rect, window)).toBe(true)
+    expect(overlaps(r.rect, box)).toBe(false)
+    // 면적은 기본 자리만큼(글이 4줄 대신 8줄까지 들어간다)
+    expect(r.rect.width * r.rect.height).toBeGreaterThanOrEqual(SLOT.bubbleWidth * SLOT.bubbleMaxHeight)
+  })
+
+  it('(Task 4 이월) 왼쪽 여유가 더 크면 왼쪽으로 줄이고, 펫 상자와 겹치지 않는다', () => {
+    const box: Rect = { x: 950, y: 30, width: 56, height: 56 }
+    const window: Rect = { x: 800, y: 0, width: 320, height: 240 }
+    const r = bubbleSlot({ box, window, bounds: MAIN, hop: 12 })
+    expect(r.side).toBe('left')
+    expect(r.rect.x).toBe(window.x + SLOT.margin)
+    expect(r.rect.x + r.rect.width).toBe(box.x - SLOT.gap)
+    expect(inside(r.rect, window)).toBe(true)
+    expect(overlaps(r.rect, box)).toBe(false)
+  })
+
+  it('크기 72·40에서도 창 안(화면 위쪽 가운데)', () => {
+    for (const size of [40, 72]) {
+      const box = petBox({ x: 960, y: 0.9 * size }, size)
+      const window = petWindowRect(box, MAIN)
+      const r = bubbleSlot({ box, window, bounds: MAIN, hop: hopRoom(size) })
+      expect(inside(r.rect, window), String(size)).toBe(true)
+      expect(overlaps(r.rect, box), String(size)).toBe(false)
+    }
   })
 })
 

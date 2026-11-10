@@ -82,6 +82,9 @@ export function PetSprite({ look, size, reduceMotion, character = MALLANG }: Pet
   const swing = plan.motion === 'sway' ? 'pet-sway' : ''
   const loop = plan.motion === 'breathe' || plan.motion === 'walk' ? `pet-${plan.motion}` : ''
   const floating = plan.props.filter((p): p is FloatingProp => p !== 'sunglasses')
+  // 반응 소품(편지·느낌표)은 자세마다 머리 가까이로 옮긴다(앉기·졸기의 퍼진 머리, 오르기의 벽 반대쪽)
+  const near = character.props(plan.pose, plan.mirror)
+  const nearHead = near.dx !== 0 || near.dy !== 0 ? `translate(${near.dx} ${near.dy})` : undefined
   return (
     <svg
       viewBox="0 0 64 64"
@@ -110,9 +113,15 @@ export function PetSprite({ look, size, reduceMotion, character = MALLANG }: Pet
       */}
       <g className={plan.floatProps && floating.length > 0 ? 'pet-float' : undefined}>
         <CueGroup key={look.cueSeq} base="pet-lift" cue={plan.cue === 'hop' ? 'pet-hop-lift' : ''}>
-          {floating.map((p) => (
-            <Prop key={p} prop={p} />
-          ))}
+          {floating.map((p) =>
+            REACTION_PROPS.has(p) ? (
+              <g key={p} transform={nearHead}>
+                <Prop prop={p} />
+              </g>
+            ) : (
+              <Prop key={p} prop={p} />
+            )
+          )}
         </CueGroup>
       </g>
     </svg>
@@ -211,6 +220,9 @@ function Sunglasses({ on }: { on: boolean }): React.JSX.Element {
 }
 
 type FloatingProp = Exclude<PetProp, 'sunglasses'>
+
+/** 앱 반응이 드는 소품: 자세별 자리(character.props)를 따른다. z·조종 표시는 각자 자리에 있다 */
+const REACTION_PROPS: ReadonlySet<FloatingProp> = new Set(['envelope', 'alert'])
 
 function Prop({ prop }: { prop: FloatingProp }): React.JSX.Element {
   switch (prop) {

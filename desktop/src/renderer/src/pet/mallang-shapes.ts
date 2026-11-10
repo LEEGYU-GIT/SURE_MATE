@@ -82,6 +82,40 @@ export const FACE_SHAPES = {
   sunglasses: { lenses: [[19, 33], [33, 33]] as Point[], width: 12, height: 8, radius: 4, bridge: 'M31 36 h2', glint: 'M22 35 h4', glintOpacity: 0.7 }
 } as const
 
+export interface PropPlace {
+  dx: number
+  dy: number
+}
+
+/**
+ * 반응 소품(편지·느낌표)의 자세별 자리: 서 있는 몸 기준(시안 자리) 이동(격자).
+ * 앉기·졸기는 퍼진 머리에 맞춰 내리고(그대로 두면 머리 위 12~16칸에 뜬다), 오르기는 벽(바 면) 반대쪽 머리 위,
+ * 들림은 늘어난 몸 옆으로. 몸 외곽선과 닿지 않으면서 머리에서 10칸 안에 둔다(mallang-shapes.test).
+ * z와 조종 표시는 각자 자리가 있어 옮기지 않는다.
+ */
+export const MALLANG_PROPS: Record<PetPose, PropPlace> = {
+  stand: { dx: 0, dy: 0 },
+  walk: { dx: 0, dy: 0 },
+  air: { dx: 0, dy: 0 },
+  sit: { dx: 0, dy: 12 },
+  sleep: { dx: 0, dy: 15 },
+  climb: { dx: -48, dy: -9 },
+  held: { dx: 5, dy: 0 }
+}
+
+/** 소품 묶음(편지 x 40~60)의 가로 가운데. 왼쪽 벽을 오를 때 자리를 x 32 기준으로 옮긴다 */
+const PROP_CENTER_X = 50
+
+/**
+ * 자세와 좌우로 반응 소품 자리를 정한다. 몸은 왼쪽을 볼 때 뒤집히지만 소품은 글자·모양을 뒤집지 않으므로,
+ * 벽 쪽이 바뀌는 오르기만 자리를 반대쪽으로 옮긴다(둥근 몸은 좌우 대칭이라 그대로).
+ */
+export function mallangPropPlace(pose: PetPose, mirror: boolean): PropPlace {
+  const p = MALLANG_PROPS[pose]
+  if (pose === 'climb' && mirror) return { dx: 64 - 2 * PROP_CENTER_X - p.dx, dy: p.dy }
+  return p
+}
+
 /** 조종 표시가 들어가는 머리 위 띠(격자 y). 말풍선은 이 위로 비킨다(hopRoom) */
 export const CONTROL_BAND = { top: -14, bottom: -2 } as const
 

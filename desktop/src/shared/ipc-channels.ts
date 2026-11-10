@@ -3,7 +3,7 @@ import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
 import type { PetView } from './pet/pet-view'
-import type { CaptureSkipReason, MaskingMode, PaletteItem } from './types'
+import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
 export type PromptSource = 'selection' | 'clipboard' | 'input'
@@ -99,7 +99,11 @@ export const IPC = {
   /** 펫 창 → main(send): 펫 위에서 왼쪽 버튼 누름·뗌 */
   petPress: 'pet:press',
   /** 펫 창 → main(send): 펫 위에서 오른쪽 클릭 */
-  petContextMenu: 'pet:context-menu'
+  petContextMenu: 'pet:context-menu',
+  /** 펫 창 → main(send): 말풍선을 눌렀다(닫기) */
+  petBubbleClick: 'pet:bubble-click',
+  /** 펫 창 → main(send): 잰 말풍선 사각형(창 좌표, DIP). 말풍선이 사라지면 null */
+  petBubbleRect: 'pet:bubble-rect'
 } as const
 
 /**
@@ -173,4 +177,8 @@ export interface SureMateApi {
   petPress(down: boolean): void
   /** 펫 위에서 오른쪽 클릭(펫 메뉴) */
   petContextMenu(): void
+  /** 말풍선을 눌렀다: main이 닫고 반응을 끝낸다 */
+  petBubbleClick(): void
+  /** 그린 말풍선 사각형(창 좌표, DIP)을 클릭 판정에 알린다. 사라지면 null */
+  petBubbleRect(r: Rect | null): void
 }

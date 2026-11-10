@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest'
+import type { AppEvent } from '../../shared/app-events'
 import type { MaskItem } from '../../shared/masking/types'
 import type { CaptureSkipReason, MaskingMode } from '../../shared/types'
 import { createMaskingCommands, type MaskingCommandDeps } from './masking-commands'
@@ -13,6 +14,10 @@ interface Calls {
   modes: MaskingMode[]
   opened: string[]
   shown: string[]
+  /** 펫에 내보낸 앱 일 */
+  events: AppEvent[]
+  /** 클립보드 쓰기·앱 일 순서 */
+  flow: string[]
 }
 
 function fake(
@@ -28,7 +33,7 @@ function fake(
     keysHeld?: boolean
   } = {}
 ): { deps: MaskingCommandDeps; calls: Calls } {
-  const calls: Calls = { writes: [], notes: [], logs: [], hides: [], masks: [], modes: [], opened: [], shown: [] }
+  const calls: Calls = { writes: [], notes: [], logs: [], hides: [], masks: [], modes: [], opened: [], shown: [], events: [], flow: [] }
   let mode: MaskingMode = over.mode ?? 'restore'
   const deps: MaskingCommandDeps = {
     masking: {
@@ -47,7 +52,12 @@ function fake(
     },
     readClipboard: async () => over.clipboard ?? 'CLIENT_A와 CLIENT_B는 씁니다',
     writeClipboard: async (text, o) => {
+      calls.flow.push('write')
       calls.writes.push({ text, excludeFromHistory: o.excludeFromHistory })
+    },
+    emit: (e) => {
+      calls.flow.push(`emit:${e.type}`)
+      calls.events.push(e)
     },
     waitKeysReleased: async () => !over.keysHeld,
     hidePalette: (restoreFocus) => {
@@ -171,4 +181,59 @@ it('Enter를 뗄 때까지 기다렸다가 팔레트를 숨기고, 계속 누르
 
 it('가명 처리 명령이 아니면 false', async () => {
   expect(await createMaskingCommands(fake().deps).run('dev.listWindows')).toBe(false)
+})
+
+// ── 말랑 메이트에 알리는 앱 일(M6, 설계 §14-2 "앱과 연결") ─────────
+
+it('가명 되돌리기: 되돌린 글을 클립보드에 쓴 뒤 unmasked(건수)', async () => {
+  const f = fake()
+  await createMaskingCommands(f.deps).run('cmd.unmask')
+  expect(f.calls.events).toEqual([{ type: 'unmasked', restored: 2 }])
+  expect(f.calls.flow).toEqual(['write', 'emit:unmasked'])
+})
+
+it('가명 되돌리기: 되돌린 것이 없거나(0건·대응표 빔) 클립보드가 비었으면 알리지 않는다', async () => {
+  const none = fake({ unmask: { text: '그냥 글', restored: 0, unknownTokens: [] } })
+  await createMaskingCommands(none.deps).run('cmd.unmask')
+  const empty = fake({ unmask: { text: 'CLIENT_A', restored: 0, unknownTokens: ['CLIENT_A'] }, tableSize: 0 })
+  await createMaskingCommands(empty.deps).run('cmd.unmask')
+  const blank = fake({ clipboard: '  ' })
+  await createMaskingCommands(blank.deps).run('cmd.unmask')
+  expect([...none.calls.events, ...empty.calls.events, ...blank.calls.events]).toEqual([])
+})
+
+it('선택한 글 가명 처리: 선택이 없으면 capture-failed nothing-selected, 가져오지 못한 이유(busy 제외)는 그 이유로', async () => {
+  const nothing = fake({ captured: { text: null } })
+  await createMaskingCommands(nothing.deps).run('cmd.mask-selection')
+  expect(nothing.calls.events).toEqual([{ type: 'capture-failed', reason: 'nothing-selected' }])
+
+  const blank = fake({ captured: { text: '  \n ' } })
+  await createMaskingCommands(blank.deps).run('cmd.mask-selection')
+  expect(blank.calls.events).toEqual([{ type: 'capture-failed', reason: 'nothing-selected' }])
+
+  const terminal = fake({ captured: { text: null, skipped: 'terminal' } })
+  await createMaskingCommands(terminal.deps).run('cmd.mask-selection')
+  expect(terminal.calls.events).toEqual([{ type: 'capture-failed', reason: 'terminal' }])
+
+  const keys = fake({ captured: { text: null, skipped: 'keys-held' } })
+  await createMaskingCommands(keys.deps).run('cmd.mask-selection')
+  expect(keys.calls.events).toEqual([{ type: 'capture-failed', reason: 'keys-held' }])
+})
+
+it('선택한 글 가명 처리: 가져오기 busy·가려 복사함·가릴 것 없음은 알리지 않는다', async () => {
+  const busy = fake({ captured: { text: null, skipped: 'busy' } })
+  await createMaskingCommands(busy.deps).run('cmd.mask-selection')
+  const ok = fake()
+  await createMaskingCommands(ok.deps).run('cmd.mask-selection')
+  const plain = fake({ masked: { text: '회의 메모', items: [] } })
+  await createMaskingCommands(plain.deps).run('cmd.mask-selection')
+  expect([...busy.calls.events, ...ok.calls.events, ...plain.calls.events]).toEqual([])
+})
+
+it('가명 처리 기본값 바꾸기·사전 열기는 앱 일이 아니다(선글라스는 설정 반영으로 바뀐다)', async () => {
+  const f = fake()
+  const commands = createMaskingCommands(f.deps)
+  await commands.run('cmd.masking-mode')
+  await commands.run('cmd.open-dictionary')
+  expect(f.calls.events).toEqual([])
 })

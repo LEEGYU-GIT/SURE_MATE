@@ -11,6 +11,7 @@ import type { WikiCardView } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
+import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
@@ -361,7 +362,9 @@ if (!app.requestSingleInstanceLock()) {
       readClipboard: readClipboardText,
       entries: async () => (await glossaryCache.get()).entries,
       show: showWikiCard,
-      log
+      log,
+      // 말랑 메이트 반응(설계 §14-2 "앱과 연결")
+      emit: appEvents.emit
     })
     // 용어 팩 내보내기·가져오기(설계 문서 §9). 대화상자는 팔레트를 숨긴 뒤 부모 창 없이 띄운다
     packCommands = createPackCommands({

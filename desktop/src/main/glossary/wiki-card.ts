@@ -1,3 +1,4 @@
+import type { AppEvent } from '../../shared/app-events'
 import type { WikiCardView } from '../../shared/flyout/flyout-content'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { buildGlossaryIndex, wikiCardView } from '../../shared/glossary/wiki-lookup'
@@ -19,6 +20,8 @@ export interface WikiCardDeps {
   show(view: WikiCardView): void
   /** 길이·종류·수만 넘긴다(선택한 글·클립보드 글·용어 이름 금지) */
   log(event: string, data: Record<string, unknown>): void
+  /** 말랑 메이트에 앱 일을 알린다(선택한 글을 가져오지 못함) */
+  emit(e: AppEvent): void
 }
 
 export interface WikiCard {
@@ -95,6 +98,8 @@ export function createWikiCard(d: WikiCardDeps): WikiCard {
         const reason = r.skipped ?? 'nothing-selected'
         const canUseClipboard = (await readClipboard()).trim() !== ''
         present(fields, { kind: 'note', reason, message: CAPTURE_NOTES[reason], canUseClipboard })
+        // busy는 위에서 끝났다(먼저 시작한 가져오기가 카드를 띄운다)
+        d.emit({ type: 'capture-failed', reason })
         return
       }
       present(fields, await viewFor(r.text, 'selection'))

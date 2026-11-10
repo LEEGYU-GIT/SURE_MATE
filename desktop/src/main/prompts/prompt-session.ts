@@ -1,7 +1,8 @@
 import { pickAiTarget, type AiTarget } from '../../shared/ai-targets'
+import type { AppEvent } from '../../shared/app-events'
 import type { PromptDraft, PromptPreview, PromptRequest, PromptRunResult } from '../../shared/ipc-channels'
 import { withObjectParticle } from '../../shared/josa'
-import type { MaskItem } from '../../shared/masking/types'
+import { ALL_CATEGORIES, type MaskCategory, type MaskItem } from '../../shared/masking/types'
 import type { FillResult, Template } from '../../shared/template/types'
 import { errorCode } from '../error-text'
 import type { CaptureResult, MaskingMode } from '../../shared/types'
@@ -54,6 +55,16 @@ export interface PromptSessionDeps {
   log(event: string, data: Record<string, unknown>): void
   targets(): { list: AiTarget[]; defaultId: string }
   now(): number
+  /** 말랑 메이트에 앱 일을 알린다(복사함, 가져오지 못함). 글·이름은 담지 않는다 */
+  emit(e: AppEvent): void
+}
+
+/** 켠 항목의 분류별 건수 합(0건 제외, ALL_CATEGORIES 순서) */
+function maskedCounts(items: MaskItem[]): { category: MaskCategory; count: number }[] {
+  return ALL_CATEGORIES.map((category) => ({
+    category,
+    count: items.filter((i) => i.enabled && i.category === category).reduce((n, i) => n + i.count, 0)
+  })).filter((m) => m.count > 0)
 }
 
 interface Session {
@@ -126,6 +137,8 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       masking: modeOf(template)
     })
     if (event === 'prompt.prepare') d.log(event, { templateId: template.id, selectionLength: got.selection.length, skipped: got.skipped ?? null, clipboardLength: clipboard.length })
+    // 가져오지 못했으면 펫이 까닭을 알린다. busy(다른 가져오기가 진행 중)는 먼저 시작한 쪽이 처리한다
+    if (got.skipped && got.skipped !== 'busy') d.emit({ type: 'capture-failed', reason: got.skipped })
   }
   /** 채우기 → 가리기 → 클립보드 → AI 열기 → 알림(run·바 공통) */
   const execute = async (template: Template, input: string, clip: string, req: PromptRequest | undefined) => {
@@ -139,6 +152,8 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
     const { list, defaultId } = d.targets()
     const target = pickAiTarget({ override: req?.target, template: template.aiTarget, defaultId, targets: list })
     await d.writeClipboard(masked.text, { excludeFromHistory })
+    // 펫 반응은 복사한 직후, 브라우저를 열기 전에(여는 시간과 무관하게 1초 안에 반응한다)
+    d.emit({ type: 'prompt-copied', masking: mode, masked: maskedCounts(masked.items), target: target.url ? target.name : null })
     if (target.url) await d.openUrl(target.url)
     const head = `복사했어요${mode === 'off' ? '(가명 처리 꺼짐)' : ''}${mode !== 'off' && maskedCount > 0 ? ` · 가명 ${maskedCount}건` : ''}`
     const message = target.url ? `${head} · ${withObjectParticle(target.name)} 열었어요. Ctrl+V로 붙여넣으세요.` : `${head}. 붙여넣을 곳에서 Ctrl+V를 누르세요.`

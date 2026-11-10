@@ -1,8 +1,24 @@
+import type { AppEvent } from '../../shared/app-events'
 import { choosePlan, pickMs, PET_TIMING } from '../../shared/pet/pet-behavior'
-import { hitShape, isOver, petBox, petWindowRect } from '../../shared/pet/pet-frame'
+import {
+  bubbleSlot,
+  hitShape,
+  hopRoom,
+  isOver,
+  petBox,
+  petWindowRect
+} from '../../shared/pet/pet-frame'
 import { jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
+import { reactionFor, type PetReaction } from '../../shared/pet/pet-reactions'
 import { WALK_SPEED, type PetSettings } from '../../shared/pet/pet-settings'
-import type { PetFace, PetLook, PetPose, PetProp, PetView } from '../../shared/pet/pet-view'
+import {
+  PET_WINDOW,
+  type PetFace,
+  type PetLook,
+  type PetPose,
+  type PetProp,
+  type PetView
+} from '../../shared/pet/pet-view'
 import { PET_BASELINE, type PetWorld } from '../../shared/pet/pet-world'
 import type { MaskingMode, Rect } from '../../shared/types'
 import type { Timers } from '../timers'
@@ -34,6 +50,12 @@ export interface PetController {
   worldChanged(): void
   setFullscreen(on: boolean): void
   press(down: boolean): void
+  /** 앱 일(복사·되돌리기·가져오기 실패)에 반응한다. 숨긴 동안(설정·전체 화면)은 무시한다 */
+  react(e: AppEvent): void
+  /** 말풍선을 눌렀다: 닫고 반응을 끝낸다 */
+  bubbleClick(): void
+  /** 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 더하고, null이면 뺀다 */
+  bubbleRect(r: Rect | null): void
   status(): PetStatus
   view(): PetView | null
   dispose(): void
@@ -78,6 +100,8 @@ export const STEP_UP_MS = 300
 export const JUMP_DOWN = { vx: 240, vy: -520 } as const
 /** 바닥과 옆면 아래 끝의 틈이 몸 크기의 이 배율보다 크면 뛰어올라 붙는다 */
 export const LEAP_MIN_GAP = 0.5
+/** 움직임 줄이기에서 클릭하면 폴짝 대신 이만큼(ms) 웃는다(움직임 없는 클릭 표시) */
+export const REDUCED_CLICK_FACE_MS = 600
 /** 들린 펫은 커서가 64 격자 (32, 4)에 오도록 발을 커서 아래 54칸에 둔다 */
 const HOLD_DROP = 54 / 64
 /** 던진 속도 계산에 남기는 커서 표본 수(34ms × 8 > 100ms 창) */
@@ -188,6 +212,24 @@ export function createPetController(d: PetControllerDeps): PetController {
   let restLeft: number | null = null
   let sleepTimer: unknown = null
 
+  /**
+   * 지금 보이는 반응(설계 §14-2 "앱과 연결"). 표정·소품·cue를 덮어쓰고 말풍선을 띄운다(자세 유지).
+   * restLeft: 앉아 있던 쉼의 남은 시간(반응 동안 멈췄다 이어 간다)
+   */
+  let reacting: { r: PetReaction; restLeft: number | null } | null = null
+  /** 들림·공중·뛰어오르기·꼭대기로 올라서기 동안 온 마지막 반응. 바닥·꼭대기·옆면에 선 뒤 보인다(Review Focus 5) */
+  let pending: PetReaction | null = null
+  let bubbleSeq = 0
+  /** 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 쓴다 */
+  let bubbleHit: Rect | null = null
+  /**
+   * 반응 시간 타이머. 쉼 타이머 자리를 쓴다: 반응하는 동안 쉼(다음 계획·뛰어내리기)은 멈추므로 둘이 함께 돌지 않는다
+   * (가만히·앉기·오르기 중 반응도 반응·졸기·조회 3개)
+   */
+  let holdTimer: unknown = null
+  /** 움직임 줄이기 클릭 표시(웃는 얼굴)가 끝나는 시각. 새 타이머 없이 커서 조회가 되돌린다 */
+  let clickFaceUntil: number | null = null
+
   const now = (): number => d.now()
   const size = (): number => cfg.size
 
@@ -217,24 +259,50 @@ export function createPetController(d: PetControllerDeps): PetController {
     }
   }
 
+  /** 움직임 줄이기 클릭 표시가 아직 보이는지(시계가 뒤로 갔으면 끝난 것으로 본다) */
+  function clickFaceActive(): boolean {
+    if (clickFaceUntil === null) return false
+    const t = now()
+    return t < clickFaceUntil && t >= clickFaceUntil - REDUCED_CLICK_FACE_MS
+  }
+
+  /** 반응 동안 표정·소품을 덮어쓴다(자세·선글라스는 그대로). 반응이 없으면 움직임 줄이기 클릭 표시(웃음) */
   function look(): PetLook {
     const props: PetProp[] = []
     if (masking !== 'off') props.push('sunglasses')
     if (mode === 'sleep') props.push('zzz')
-    return { pose: POSE[mode], face: faceOf(), props, facing, cue, cueSeq }
+    let face = faceOf()
+    if (reacting) {
+      face = reacting.r.face
+      for (const p of reacting.r.props) if (!props.includes(p)) props.push(p)
+    } else if (clickFaceActive()) face = 'happy'
+    return { pose: POSE[mode], face, props, facing, cue, cueSeq }
   }
 
   const screenBox = (): Rect => petBox(foot, size())
 
+  /** 말풍선(창 좌표). 자리는 그릴 때마다 지금 자리로 다시 계산한다(앉은 채 바를 옮기면 따라간다) */
+  function bubbleView(box: Rect, win: Rect): PetView['bubble'] {
+    const text = reacting?.r.bubble
+    if (!text) return null
+    const s = bubbleSlot({ box, window: win, bounds: world!.bounds, hop: hopRoom(size()) })
+    return {
+      seq: bubbleSeq,
+      text,
+      side: s.side,
+      slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height }
+    }
+  }
+
   function currentView(): PetView {
     const box = screenBox()
     const win = placed ?? petWindowRect(box, world!.bounds)
-    // Task 7·8: 말풍선(bubble)·메뉴(menu)·조종(controlling)이 여기에 들어온다
+    // Task 8: 메뉴(menu)·조종(controlling)이 여기에 들어온다
     return {
       size: cfg.size,
       box: { x: box.x - win.x, y: box.y - win.y },
       look: look(),
-      bubble: null,
+      bubble: bubbleView(box, win),
       menu: null,
       controlling: false,
       reduceMotion: reduced
@@ -267,9 +335,18 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   // ---- 클릭 통과 ----
 
+  /** 몸 모양과 말풍선(렌더러가 잰 사각형, 창 → 화면 좌표). Task 8: 메뉴 사각형을 여기에 더한다 */
   function hitRects(): (Rect | null)[] {
-    // Task 7·8: 말풍선·메뉴 사각형(화면 좌표)을 여기에 더한다
-    return hitShape(POSE[mode], screenBox(), facing === 'left')
+    const rects: (Rect | null)[] = hitShape(POSE[mode], screenBox(), facing === 'left')
+    if (bubbleHit && placed && reacting?.r.bubble) {
+      rects.push({
+        x: placed.x + bubbleHit.x,
+        y: placed.y + bubbleHit.y,
+        width: bubbleHit.width,
+        height: bubbleHit.height
+      })
+    }
+    return rects
   }
 
   function setIgnore(ignore: boolean): void {
@@ -304,7 +381,7 @@ export function createPetController(d: PetControllerDeps): PetController {
     pollTimer = null
   }
 
-  function pollDelay(): number {
+  function hitDelay(): number {
     // 졸 때는 느리게 조회한다. 다만 클릭을 받고 있으면(커서가 몸 위) 깨어 있을 때 주기로 조회해
     // 커서가 나간 뒤 0.1초 안에 클릭 통과로 되돌린다(Review Focus 1)
     if (mode === 'sleep' && ignoring !== false) return PET_LOOP.hitSleepMs
@@ -315,6 +392,14 @@ export function createPetController(d: PetControllerDeps): PetController {
     const near =
       c.x >= r.x - p && c.x < r.x + r.width + p && c.y >= r.y - p && c.y < r.y + r.height + p
     return near ? PET_LOOP.hitNearMs : PET_LOOP.hitFarMs
+  }
+
+  /** 조회 주기. 움직임 줄이기 클릭 표시가 있으면 끝나는 시각에 맞춰 한 번 더 조회한다(새 타이머 없이 되돌린다) */
+  function pollDelay(): number {
+    const base = hitDelay()
+    if (clickFaceUntil === null) return base
+    const left = clickFaceUntil - now()
+    return Number.isFinite(left) ? Math.min(base, Math.max(0, left)) : base
   }
 
   function schedulePoll(): void {
@@ -330,22 +415,37 @@ export function createPetController(d: PetControllerDeps): PetController {
     lastCursor = c
     const before = mode
     hitTest(c)
+    const faceEnded = clickFaceUntil !== null && !clickFaceActive()
+    if (faceEnded) clickFaceUntil = null
     if (mode !== before) settle()
-    else schedulePoll()
+    else {
+      if (faceEnded) render()
+      schedulePoll()
+    }
   }
 
+  /** 반응 동안 오르기는 멈춘다(옆면에 붙은 채 반응하고, 끝나면 이어 오른다) */
   const loopNeeded = (): boolean =>
     shown &&
     (pressed !== null ||
       mode === 'walk' ||
       mode === 'leap' ||
-      mode === 'climb' ||
+      (mode === 'climb' && reacting === null) ||
       mode === 'air' ||
       mode === 'held')
 
-  /** 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다 */
+  /** 반응을 보일 수 있는 자세: 바닥에 서기, 꼭대기에 앉기, 옆면에 붙어 오르기(꼭대기로 올라서는 300ms는 제외) */
+  const canReact = (): boolean =>
+    mode === 'idle' || mode === 'sit' || (mode === 'climb' && stepUp === null)
+
+  /** 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다. 저장한 반응은 설 수 있게 되면 여기서 보인다 */
   function settle(): void {
     if (!shown || disposed) return
+    if (pending && canReact()) {
+      const r = pending
+      pending = null
+      startReaction(r)
+    }
     if (loopNeeded()) {
       stopPoll()
       if (loopTimer === null) {
@@ -410,8 +510,77 @@ export function createPetController(d: PetControllerDeps): PetController {
       armSleep(need - idleMs)
       return
     }
-    if (mode === 'idle' || mode === 'walk' || mode === 'sit') fallAsleep()
+    // 반응 중에는 졸지 않는다(반응이 끝나면 다시 확인한다)
+    if (reacting === null && (mode === 'idle' || mode === 'walk' || mode === 'sit')) fallAsleep()
     else sleepDue = true
+  }
+
+  // ---- 반응(설계 §14-2 "앱과 연결", Review Focus 5) ----
+
+  function clearHold(): void {
+    if (holdTimer !== null) T.clearTimeout(holdTimer)
+    holdTimer = null
+  }
+
+  /** 쉼(가만히의 다음 계획·앉기의 뛰어내리기)을 멈추고 남은 시간을 돌려준다. 시계가 뒤로 갔으면 끝난 것으로 본다 */
+  function pauseRest(): number | null {
+    if (restTimer === null) return null
+    const elapsed = now() - restAt
+    const left = elapsed >= 0 ? Math.max(0, restWait - elapsed) : 0
+    clearRest()
+    return left
+  }
+
+  /**
+   * 반응을 보인다: 쉼을 멈추고 그 자리에서 반응 타이머 하나로 holdMs를 잰다. 새 반응은 이전 반응을 대체한다
+   * (seq + 1, 타이머 다시 시작). 렌더러가 새 말풍선을 잴 때까지 옛 말풍선 사각형으로 클릭을 막지 않는다.
+   */
+  function startReaction(r: PetReaction): void {
+    const left = reacting ? reacting.restLeft : pauseRest()
+    clearHold()
+    clearRest()
+    reacting = { r, restLeft: mode === 'sit' ? left : null }
+    bubbleHit = null
+    clickFaceUntil = null
+    if (r.bubble !== null) bubbleSeq += 1
+    if (r.cue && !reduced) {
+      cue = r.cue
+      cueSeq += 1
+    }
+    holdTimer = T.setTimeout(
+      () => {
+        holdTimer = null
+        if (!shown || disposed) return
+        finishReaction()
+      },
+      Math.max(0, r.holdMs)
+    )
+    d.log('pet.react', { kind: r.kind, bubble: r.bubble !== null })
+  }
+
+  /** 반응을 지운다(타이머·말풍선 판정 포함). 하던 일은 부르는 쪽이 정한다 */
+  function endReaction(): { r: PetReaction; restLeft: number | null } | null {
+    const was = reacting
+    reacting = null
+    bubbleHit = null
+    clearHold()
+    return was
+  }
+
+  /**
+   * 반응 시간이 끝났거나 말풍선을 눌렀다: 가만히였으면 새 계획, 앉아 있었으면 남은 쉼, 오르던 중이면 다시 오른다.
+   * 말풍선이 사라졌으므로 커서를 한 번 조회해 몸 밖이면 바로 클릭 통과로 되돌린다(Review Focus 1).
+   */
+  function finishReaction(): void {
+    const was = endReaction()
+    if (!was) return
+    if (mode === 'idle') plan()
+    else if (mode === 'sit') rest(was.restLeft ?? pickMs(PET_TIMING.sitMs, d.random()))
+    if (sleepDue) sleepCheck()
+    const c = d.cursor()
+    lastCursor = c
+    hitTest(c)
+    settle()
   }
 
   // ---- 상태 바꾸기(타이머·화면은 바깥에서 settle이 맞춘다) ----
@@ -442,6 +611,8 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   function enterAir(v: { vx: number; vy: number }, face: PetFace): void {
+    // 떨어지면(바가 없어짐 등) 보이던 반응은 끝난다
+    endReaction()
     clearRest()
     setMode('air')
     walk = null
@@ -463,6 +634,8 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   function toFloorMiddle(): void {
     const asleep = mode === 'sleep'
+    // 다른 모니터 바닥으로 옮기면 보이던 반응은 끝난다
+    endReaction()
     foot = floorMiddle(world!, size())
     enterIdle(pickMs(PET_TIMING.idleMs, d.random()))
     // 자던 펫을 다른 모니터 바닥 가운데로 옮기면 깬다(깸으로 기록)
@@ -584,6 +757,9 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   function pickUp(): void {
     leaveTop()
+    // 집어 들면 반응은 끝나고(놀란 얼굴), 움직임 줄이기 클릭 표시도 지운다. 저장해 둔 반응은 내려놓은 뒤 보인다
+    endReaction()
+    clickFaceUntil = null
     clearRest()
     setMode('held')
     walk = null
@@ -608,6 +784,9 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (!reduced) {
       cue = 'hop'
       cueSeq += 1
+    } else if (reacting === null && Number.isFinite(t)) {
+      // 움직임 줄이기: 폴짝 대신 잠깐 웃어 클릭을 받았다고 보인다(반응 중이면 반응 얼굴이 이긴다)
+      clickFaceUntil = t + REDUCED_CLICK_FACE_MS
     }
     d.log('pet.click', { kind: 'hop' })
   }
@@ -756,7 +935,8 @@ export function createPetController(d: PetControllerDeps): PetController {
           stepLeap(dt)
           break
         case 'climb':
-          stepClimb(dt)
+          // 반응 동안 멈춘다(누르고 있어 동작 고리가 돌 때도)
+          if (reacting === null) stepClimb(dt)
           break
         case 'air':
           stepFall(dt)
@@ -894,6 +1074,11 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (pressed) pressed = null
     samples = []
     if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
+    // 숨긴 펫은 반응하지 않는다: 보이던 반응을 끝내고 저장한 반응도 버린다. 앉아 있던 쉼은 남은 시간을 이어 간다
+    const reactedRest = reacting && mode === 'sit' ? reacting.restLeft : null
+    endReaction()
+    pending = null
+    clickFaceUntil = null
     let left: number | null = null
     if (restTimer !== null) {
       // 시계가 뒤로 갔으면(음수·NaN) 쉼이 끝난 것으로 본다(다시 표시한 뒤 한 시간씩 앉아 있지 않게)
@@ -901,7 +1086,7 @@ export function createPetController(d: PetControllerDeps): PetController {
       left = elapsed >= 0 ? Math.max(0, restWait - elapsed) : 0
     }
     clearRest()
-    restLeft = left
+    restLeft = left ?? reactedRest
     clearSleepTimer()
     sleepDue = false
     stopLoop()
@@ -953,6 +1138,10 @@ export function createPetController(d: PetControllerDeps): PetController {
       const sleepMin = cfg.sleepAfterMin
       readInputs()
       if (!started) return
+      // 반응을 끄면 보이던 반응도 끝나고, 말풍선을 끄면 떠 있던 말풍선이 닫힌다(저장한 반응도 버린다)
+      if (!cfg.reactions || (!cfg.bubbles && pending?.bubble)) pending = null
+      if (shown && reacting && (!cfg.reactions || (!cfg.bubbles && reacting.r.bubble !== null)))
+        finishReaction()
       evaluate()
       if (shown && mode !== 'sleep' && cfg.sleepAfterMin !== sleepMin) armSleep()
     },
@@ -983,6 +1172,47 @@ export function createPetController(d: PetControllerDeps): PetController {
       }
       settle()
     },
+    react(e) {
+      if (disposed || !shown || !world) return
+      const r = reactionFor(e, { reactions: cfg.reactions, bubbles: cfg.bubbles })
+      if (!r) return
+      // 들림·공중·뛰어오르기·꼭대기로 올라서기: 마지막 하나만 두었다가 바닥·꼭대기·옆면에 선 뒤 보인다
+      if (!canReact() && mode !== 'walk' && mode !== 'sleep') {
+        pending = r
+        return
+      }
+      // 졸고 있으면 깬 뒤, 걷고 있으면 멈춘 뒤 반응한다(오르기는 반응 동안 멈춘다)
+      if (mode === 'sleep') wake()
+      else if (mode === 'walk') {
+        setMode('idle')
+        walk = null
+        vx = vy = 0
+      }
+      startReaction(r)
+      settle()
+    },
+    bubbleClick() {
+      if (disposed || !shown || !reacting || reacting.r.bubble === null) return
+      finishReaction()
+    },
+    bubbleRect(r) {
+      if (disposed || !shown) return
+      if (r === null) {
+        bubbleHit = null
+        return
+      }
+      // 말풍선이 없을 때 온(늦은) 사각형·잘못된 사각형은 무시한다(보이지 않는 곳이 클릭을 막지 않게)
+      if (!reacting || reacting.r.bubble === null) return
+      if (!allFinite(r.x, r.y, r.width, r.height) || r.width <= 0 || r.height <= 0) return
+      const x = clamp(r.x, 0, PET_WINDOW.width)
+      const y = clamp(r.y, 0, PET_WINDOW.height)
+      bubbleHit = {
+        x,
+        y,
+        width: Math.min(r.width, PET_WINDOW.width - x),
+        height: Math.min(r.height, PET_WINDOW.height - y)
+      }
+    },
     status: () => ({
       mode,
       foot: { ...foot },
@@ -998,6 +1228,8 @@ export function createPetController(d: PetControllerDeps): PetController {
       pressed = null
       samples = []
       if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
+      endReaction()
+      pending = null
       stopLoop()
       stopPoll()
       clearRest()

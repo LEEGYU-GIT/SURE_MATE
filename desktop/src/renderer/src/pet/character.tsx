@@ -1,5 +1,5 @@
 import type { PetPose } from '../../../shared/pet/pet-view'
-import { MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, STROKE, type FacePlace } from './mallang-shapes'
+import { MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, mallangPropPlace, STROKE, type FacePlace, type PropPlace } from './mallang-shapes'
 
 /**
  * 그림 교체 자리(§14-3 캐릭터 꾸미기). 캐릭터는 몸 레이어와 자세별 얼굴 자리만 정한다.
@@ -12,6 +12,8 @@ export interface PetCharacter {
   Body(p: { pose: PetPose }): React.JSX.Element
   /** 얼굴 레이어(눈·입·눈썹·볼·선글라스) 위치: 서 있는 얼굴 기준 이동·배율 */
   face(pose: PetPose): FacePlace
+  /** 반응 소품(편지·느낌표) 자리: 서 있는 몸 기준 이동. mirror는 왼쪽을 보는지(소품 모양은 뒤집지 않는다) */
+  props(pose: PetPose, mirror: boolean): PropPlace
 }
 
 /**
@@ -34,5 +36,6 @@ function MallangBody({ pose }: { pose: PetPose }): React.JSX.Element {
 export const MALLANG: PetCharacter = {
   id: 'mallang',
   Body: MallangBody,
-  face: (pose) => MALLANG_FACE[pose]
+  face: (pose) => MALLANG_FACE[pose],
+  props: mallangPropPlace
 }

@@ -1,5 +1,6 @@
 import { clipboard, shell } from 'electron'
 import type { MaskingMode } from '../../shared/types'
+import { appEvents } from '../app-events'
 import { errorText } from '../error-text'
 import { log } from '../log'
 import { waitPickKeysReleased } from '../native/input'
@@ -40,6 +41,8 @@ export function createMaskingCommandsRuntime(o: {
     openFile: (path) => shell.openPath(path),
     showInFolder: (path) => shell.showItemInFolder(path),
     notify,
-    log
+    log,
+    // 말랑 메이트 반응(설계 §14-2 "앱과 연결")
+    emit: appEvents.emit
   })
 }

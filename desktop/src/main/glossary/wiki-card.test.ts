@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import builtinGlossary from '../../../resources/glossary.json'
+import type { AppEvent } from '../../shared/app-events'
 import type { WikiCardView } from '../../shared/flyout/flyout-content'
 import { parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
@@ -27,14 +28,18 @@ interface Harness {
     entries: Mock<() => Promise<GlossaryEntry[]>>
     show: Mock<(v: WikiCardView) => void>
     log: Mock<(event: string, data: Record<string, unknown>) => void>
+    emit: Mock<(e: AppEvent) => void>
   }
   shown: WikiCardView[]
   logs: { event: string; data: Record<string, unknown> }[]
+  /** 펫에 내보낸 앱 일 */
+  events: AppEvent[]
 }
 
 function make(o: { capture?: CaptureResult; clipboard?: string | Error; entries?: GlossaryEntry[] } = {}): Harness {
   const shown: WikiCardView[] = []
   const logs: { event: string; data: Record<string, unknown> }[] = []
+  const events: AppEvent[] = []
   const d = {
     capture: vi.fn(async () => o.capture ?? captured('MC/DC')),
     readClipboard: vi.fn(async () => {
@@ -43,9 +48,10 @@ function make(o: { capture?: CaptureResult; clipboard?: string | Error; entries?
     }),
     entries: vi.fn(async () => o.entries ?? pack),
     show: vi.fn((v: WikiCardView) => void shown.push(v)),
-    log: vi.fn((event: string, data: Record<string, unknown>) => void logs.push({ event, data }))
+    log: vi.fn((event: string, data: Record<string, unknown>) => void logs.push({ event, data })),
+    emit: vi.fn((e: AppEvent) => void events.push(e))
   }
-  return { card: createWikiCard(d), d, shown, logs }
+  return { card: createWikiCard(d), d, shown, logs, events }
 }
 
 describe('lookupSelection: 선택한 글로 찾기', () => {
@@ -129,6 +135,43 @@ describe('lookupSelection: 선택한 글로 찾기', () => {
     await long.card.lookupSelection()
     expect(long.shown).toEqual([{ kind: 'none', source: 'selection', query: '' }])
     expect(long.logs[0].data).toMatchObject({ kind: 'none', count: 0 })
+  })
+})
+
+describe('말랑 메이트에 알리는 앱 일(M6, 설계 §14-2 "앱과 연결")', () => {
+  it('note 경로: 가져오지 못한 이유로 capture-failed(카드를 띄운 뒤)', async () => {
+    const t = make({ capture: skipped('terminal'), clipboard: 'SIL 2 요구사항' })
+    await t.card.lookupSelection()
+    expect(t.events).toEqual([{ type: 'capture-failed', reason: 'terminal' }])
+    expect(t.d.show.mock.invocationCallOrder[0]).toBeLessThan(t.d.emit.mock.invocationCallOrder[0])
+    for (const reason of ['elevated', 'no-foreground', 'native-unavailable', 'focus-changed'] as const) {
+      const r = make({ capture: skipped(reason) })
+      await r.card.lookupSelection()
+      expect(r.events, reason).toEqual([{ type: 'capture-failed', reason }])
+    }
+  })
+
+  it('선택이 없거나 공백만 가져오면 nothing-selected', async () => {
+    const blank = make({ capture: captured(' \n\t ') })
+    await blank.card.lookupSelection()
+    const none = make({ capture: captured(null) })
+    await none.card.lookupSelection()
+    expect([...blank.events, ...none.events]).toEqual([
+      { type: 'capture-failed', reason: 'nothing-selected' },
+      { type: 'capture-failed', reason: 'nothing-selected' }
+    ])
+  })
+
+  it('busy(먼저 시작한 가져오기가 카드를 띄움)·찾은 카드·[클립보드 글로 찾기]는 알리지 않는다', async () => {
+    const busy = make({ capture: skipped('busy') })
+    await busy.card.lookupSelection()
+    const found = make({ capture: captured('MC/DC') })
+    await found.card.lookupSelection()
+    const clip = make({ clipboard: '' })
+    await clip.card.lookupClipboard()
+    const clipFound = make({ clipboard: 'SIL' })
+    await clipFound.card.lookupClipboard()
+    expect([...busy.events, ...found.events, ...clip.events, ...clipFound.events]).toEqual([])
   })
 })
 

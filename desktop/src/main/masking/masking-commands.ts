@@ -1,3 +1,4 @@
+import type { AppEvent } from '../../shared/app-events'
 import { CAPTURE_NOTES, maskingModeLabel } from '../../shared/labels'
 import { nextMaskingMode } from '../../shared/masking/modes'
 import type { CaptureSkipReason, MaskingMode, PaletteItem } from '../../shared/types'
@@ -60,6 +61,8 @@ export interface MaskingCommandDeps {
   notify(message: string): void
   /** 길이·건수만 넘긴다(글·이름·토큰 금지) */
   log(event: string, data: Record<string, unknown>): void
+  /** 말랑 메이트에 앱 일을 알린다(되돌림, 가져오지 못함). 글·이름은 담지 않는다 */
+  emit(e: AppEvent): void
 }
 
 export interface MaskingCommands {
@@ -98,6 +101,7 @@ export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
       return
     }
     await d.writeClipboard(r.text, { excludeFromHistory: true })
+    d.emit({ type: 'unmasked', restored: r.restored })
     d.notify(`되돌렸어요 · 이름 ${r.restored}건${unknown}. 붙여넣을 곳에서 Ctrl+V를 누르세요.`)
   }
 
@@ -105,7 +109,10 @@ export function createMaskingCommands(d: MaskingCommandDeps): MaskingCommands {
     const captured = await d.captureSelection()
     const text = captured.text ?? ''
     if (!text.trim()) {
-      d.notify(`${CAPTURE_NOTES[captured.skipped ?? 'nothing-selected']}. 글을 선택한 뒤 다시 실행해 주세요.`)
+      const reason = captured.skipped ?? 'nothing-selected'
+      d.notify(`${CAPTURE_NOTES[reason]}. 글을 선택한 뒤 다시 실행해 주세요.`)
+      // busy(다른 가져오기가 진행 중)는 먼저 시작한 쪽이 처리한다
+      if (reason !== 'busy') d.emit({ type: 'capture-failed', reason })
       return
     }
     const configured = d.getMode()

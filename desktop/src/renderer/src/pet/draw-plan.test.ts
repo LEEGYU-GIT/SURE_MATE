@@ -55,6 +55,15 @@ describe('drawPlan: 모습(PetLook) → 그릴 것', () => {
     expect(drawPlan(look({ cue: 'land', cueSeq: 2 }), still).cue).toBe(null)
   })
 
+  it('(Task 6 이월) 움직임 줄이기에서도 반응은 표정·소품으로 보인다(폴짝 없이 반달 눈·벌린 입·편지)', () => {
+    const p = drawPlan(look({ face: 'happy', props: ['sunglasses', 'envelope'], cue: 'hop', cueSeq: 4 }), still)
+    expect(p).toMatchObject({ cue: null, motion: 'none', floatProps: false, mouth: 'open', cheeks: true, props: ['sunglasses', 'envelope'] })
+    // 선글라스를 써도 입이 바뀌어 보인다
+    expect(p.mouth).not.toBe(drawPlan(look({ props: ['sunglasses'] }), still).mouth)
+    const worried = drawPlan(look({ face: 'worried', props: ['alert'] }), still)
+    expect(worried).toMatchObject({ brows: true, mouth: 'frown', props: ['alert'], cue: null })
+  })
+
   it('표정 표(face → 눈·입·눈썹·볼)', () => {
     const table: Record<PetFace, [string, string, boolean, boolean]> = {
       normal: ['dot', 'smile', false, true],

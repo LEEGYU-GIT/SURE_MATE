@@ -91,6 +91,37 @@
   transition: opacity 0s linear 140ms;
 }
 
+/* ── 말풍선(설계 §14-2): 흰 바탕·--ink 글자, 펫 쪽 꼬리 ─────────────────────────── */
+
+/*
+ * 글은 한 덩어리(띄어쓰기·"·" 뒤)에서만 줄을 바꾸고 줄 길이를 고르게 한다(balance: 경고 두 문장이 한 줄씩,
+ * 마지막 줄에 한두 낱말만 남지 않음). 말풍선 너비는 가장 긴 줄에 맞춘다(PetBubble). 자리보다 길면 마지막 줄을 줄임표로
+ */
+.pet-bubble-text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+/* 누를 때 살짝 눌린다(움직임 줄이기에서는 쓰지 않는다) */
+.pet-bubble {
+  transition: scale var(--dur-hover) var(--ease-out);
+}
+
+/* 꼬리: 10×10을 45° 돌려 바깥 두 변만 외곽선. 말풍선 테두리 위에 얹혀 이어진 한 모양이 된다 */
+.pet-bubble-tail {
+  transform: rotate(45deg);
+}
+
+/* 나타날 때만: 꼬리 끝(펫 쪽)에서 200ms ease-out으로 커지며 들어온다(scale 0에서 시작하지 않는다). 닫을 때는 움직임이 없다 */
+.pet-bubble-in {
+  animation: pet-bubble-in var(--dur-open) var(--ease-out) both;
+}
+
 /* 움직임 줄이기(설정 pet.reduceMotion 또는 Windows 애니메이션 효과 끔): 모든 움직임·전환을 끈다 */
 [data-reduce-motion],
 [data-reduce-motion] * {
@@ -190,6 +221,17 @@
   78%,
   100% {
     transform: translateY(0);
+  }
+}
+
+@keyframes pet-bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

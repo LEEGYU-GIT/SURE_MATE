@@ -4,6 +4,7 @@ import { termsFor } from '../../shared/glossary/find-terms'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
+import { appEvents } from '../app-events'
 import { errorText } from '../error-text'
 import { log } from '../log'
 import type { MaskingService } from '../masking/masking-service'
@@ -74,6 +75,8 @@ export function createPromptRuntime(o: {
       const s = o.getSettings()
       return { list: allAiTargets(s.ai.custom), defaultId: s.ai.defaultTarget }
     },
-    now: Date.now
+    now: Date.now,
+    // 말랑 메이트 반응(설계 §14-2 "앱과 연결")
+    emit: appEvents.emit
   })
 }

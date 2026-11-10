@@ -53,6 +53,26 @@ export function placeSlot(o: {
   return { side: 'right', rect: { x: box.x + box.width + SLOT.gap, y: sy, width: w, height: h } }
 }
 
+/**
+ * 말풍선 자리(최대 200×96, 화면 DIP). placeSlot을 따르되, 옆자리가 창 밖으로 나가면(양옆 모두 200 + 8이 안 될 때:
+ * 화면 위쪽 가운데) 여유 쪽 폭으로 줄이고 같은 면적만큼 높이를 늘려 창 안에 둔다. 창은 반응 동안 옮기지 않는다.
+ */
+export function bubbleSlot(o: { box: Rect; window: Rect; bounds: Rect; hop: number }): { rect: Rect; side: SlotSide } {
+  const { box, window } = o
+  const w = SLOT.bubbleWidth
+  const h = SLOT.bubbleMaxHeight
+  const placed = placeSlot({ size: { width: w, height: h }, box, window, bounds: o.bounds, hop: o.hop })
+  if (placed.side === 'above') return placed
+  const m = SLOT.margin
+  const lo = placed.side === 'left' ? window.x + m : box.x + box.width + SLOT.gap
+  const hi = placed.side === 'left' ? box.x - SLOT.gap : window.x + window.width - m
+  if (placed.rect.x >= lo && placed.rect.x + placed.rect.width <= hi) return placed
+  const width = Math.max(1, hi - lo)
+  const height = Math.min(window.height - 2 * m, Math.ceil((w * h) / width))
+  const y = clamp(box.y + box.height / 2 - height / 2, window.y + m, window.y + window.height - m - height)
+  return { side: placed.side, rect: { x: lo, y, width, height } }
+}
+
 export function menuSize(rows: number): { width: number; height: number } {
   return { width: SLOT.menuWidth, height: rows * SLOT.menuRow + 2 * SLOT.menuPad }
 }

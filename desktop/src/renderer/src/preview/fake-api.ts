@@ -79,6 +79,8 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     getPetView: async () => fx.petView,
     onPetView: () => () => {},
     petPress: () => {},
-    petContextMenu: () => {}
+    petContextMenu: () => {},
+    petBubbleClick: () => {},
+    petBubbleRect: () => {}
   }
 }

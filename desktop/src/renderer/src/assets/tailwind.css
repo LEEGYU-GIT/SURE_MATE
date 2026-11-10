@@ -18,6 +18,8 @@
   --color-danger: var(--danger);
   --color-row-selected: var(--row-selected);
   --color-row-hover: var(--row-hover);
+  /* 말랑 메이트 말풍선 바탕(흰색, 설계 §14-2) */
+  --color-bubble: var(--white);
   --radius-window: var(--radius-window);
   --radius-control: var(--radius-control);
   --text-caption: var(--fs-caption);

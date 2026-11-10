@@ -1,5 +1,6 @@
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { BUILTIN_AI_TARGETS } from '../../shared/ai-targets'
+import type { AppEvent } from '../../shared/app-events'
 import { termsFor } from '../../shared/glossary/find-terms'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import type { PromptDraft } from '../../shared/ipc-channels'
@@ -47,7 +48,11 @@ function fake(
     notes: [] as string[],
     logs: [] as Record<string, unknown>[],
     drafts: [] as PromptDraft[],
-    masks: [] as MaskCall[]
+    masks: [] as MaskCall[],
+    /** 펫에 내보낸 앱 일 */
+    events: [] as AppEvent[],
+    /** 클립보드 쓰기·앱 일·AI 열기·알림의 순서 */
+    flow: [] as string[]
   }
   let t = 0
   const tpl = over.template ?? template
@@ -77,12 +82,21 @@ function fake(
     },
     defaultMasking: () => over.defaultMasking ?? 'restore',
     writeClipboard: async (text, o) => {
+      calls.flow.push('write')
       calls.writes.push({ text, excludeFromHistory: o.excludeFromHistory })
     },
     openUrl: async (url) => {
+      calls.flow.push('open')
       calls.opened.push(url)
     },
-    notify: (m) => calls.notes.push(m),
+    notify: (m) => {
+      calls.flow.push('notify')
+      calls.notes.push(m)
+    },
+    emit: (e) => {
+      calls.flow.push(`emit:${e.type}`)
+      calls.events.push(e)
+    },
     log: (_event, data) => calls.logs.push(data),
     targets: () => ({ list: [...BUILTIN_AI_TARGETS], defaultId: over.defaultId ?? 'claude' }),
     now: () => t
@@ -467,4 +481,178 @@ it('바: 실행 중 오류가 나면 오류 코드만 기록하고 다시 던지
   expect(f.calls.logs).toContainEqual({ templateId: 'meeting-notes', result: 'failed', selectionLength: 9, skipped: null, error: 'EBUSY' })
   expect(JSON.stringify(f.calls.logs)).not.toContain('가상자동차')
   await expect(s.runFromBar('meeting-notes')).rejects.toBe(boom)
+})
+
+// ── 말랑 메이트에 알리는 앱 일(M6, 설계 §14-2 "앱과 연결") ─────────
+
+/** 고객사 둘(하나는 이번에 끌 수 있음)·경로 하나·0건 IP를 찾는 가짜 가리기 */
+const multiMask = async (text: string, o: MaskCall): Promise<PromptMaskResult> => {
+  const on = (key: string): boolean => o.mode !== 'off' && !o.disabledKeys.includes(key)
+  const items: MaskItem[] = [
+    { key: 'path:a', category: 'path', original: '/가상/경로', replacement: 'PATH_A', count: 2, enabled: on('path:a') },
+    { key: 'client:m', category: 'client', original: '회의', replacement: 'CLIENT_A', count: 1, enabled: on('client:m') },
+    { key: 'client:n', category: 'client', original: '메모', replacement: 'CLIENT_B', count: 3, enabled: on('client:n') },
+    { key: 'ip:z', category: 'ip', original: '10.0.0.1', replacement: 'IP_A', count: 0, enabled: on('ip:z') }
+  ]
+  return { text, ranges: [], preamble: null, items, warnings: [], notes: [], partial: false, mapRanges: (r) => r }
+}
+
+const skippedCapture = (reason: NonNullable<CaptureResult['skipped']>): CaptureResult => ({ text: null, method: 'none', elapsedMs: 0, restored: false, skipped: reason })
+
+describe('말랑 메이트에 알리는 앱 일', () => {
+  it('run: 클립보드에 쓴 직후·AI를 열기 전에 prompt-copied 한 번(켠 항목의 분류별 건수, 열 AI 이름)', async () => {
+    const f = fake({ mask: fakeMask })
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    expect(f.calls.events).toEqual([])
+    await s.run({ source: 'selection', target: 'claude' })
+    expect(f.calls.events).toEqual([{ type: 'prompt-copied', masking: 'restore', masked: [{ category: 'client', count: 1 }], target: 'Claude' }])
+    expect(f.calls.flow).toEqual(['write', 'emit:prompt-copied', 'open', 'notify'])
+  })
+
+  it('run: 복사만이면 target null이고 AI를 열지 않는다', async () => {
+    const f = fake({ mask: fakeMask })
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    await s.run({ source: 'selection', target: 'copy' })
+    expect(f.calls.events).toEqual([{ type: 'prompt-copied', masking: 'restore', masked: [{ category: 'client', count: 1 }], target: null }])
+    expect(f.calls.flow).toEqual(['write', 'emit:prompt-copied', 'notify'])
+  })
+
+  it('run: 이번에 끈 항목·0건은 빼고 분류별로 더해 분류 순서(ALL_CATEGORIES)로', async () => {
+    const f = fake({ mask: multiMask })
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    await s.run({ source: 'selection', target: 'chatgpt', disabledKeys: ['client:m'] })
+    expect(f.calls.events).toEqual([
+      {
+        type: 'prompt-copied',
+        masking: 'restore',
+        masked: [
+          { category: 'client', count: 3 },
+          { category: 'path', count: 2 }
+        ],
+        target: 'ChatGPT'
+      }
+    ])
+    // 이번 실행의 모드(빼기)도 그대로 알린다
+    await s.prepare('meeting-notes')
+    await s.run({ source: 'selection', target: 'claude', masking: 'remove' })
+    expect(f.calls.events[1]).toMatchObject({ masking: 'remove', masked: [{ category: 'client', count: 4 }, { category: 'path', count: 2 }] })
+  })
+
+  it('run: 가명 처리 끔이면 masking off(가린 것 없음)', async () => {
+    const f = fake({ mask: multiMask })
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    await s.run({ source: 'selection', target: 'claude', masking: 'off' })
+    expect(f.calls.events).toEqual([{ type: 'prompt-copied', masking: 'off', masked: [], target: 'Claude' }])
+  })
+
+  it('run: 실행하지 못하면(시간 지남·넣을 글 없음) 알리지 않는다', async () => {
+    const f = fake()
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    expect((await s.run({ source: 'input', input: ' ', target: 'claude' })).ok).toBe(false)
+    f.advance(10 * 60 * 1000 + 1)
+    expect((await s.run({ source: 'selection', target: 'claude' })).ok).toBe(false)
+    expect(f.calls.events).toEqual([])
+  })
+
+  it('runFromBar: 선택 글이 있으면 같은 실행 경로로(쓰기 → 알림 → 열기)', async () => {
+    const f = fake({ mask: fakeMask })
+    expect(await createPromptSession(f.deps).runFromBar('meeting-notes')).toBe('ran')
+    expect(f.calls.events).toEqual([{ type: 'prompt-copied', masking: 'restore', masked: [{ category: 'client', count: 1 }], target: 'Claude' }])
+    expect(f.calls.flow).toEqual(['write', 'emit:prompt-copied', 'open', 'notify'])
+  })
+
+  it('prepare: 가져오지 못하면 이유(busy 제외)로 capture-failed, 확인 화면은 그대로 뜬다', async () => {
+    const cases: [NonNullable<Parameters<typeof fake>[0]>, string][] = [
+      [{ capture: skippedCapture('terminal') }, 'terminal'],
+      [{ capture: skippedCapture('elevated') }, 'elevated'],
+      [{ capture: { text: ' \n\t ', method: 'ctrl-insert', elapsedMs: 5, restored: true } }, 'nothing-selected'],
+      [{ capture: { text: null, method: 'none', elapsedMs: 800, restored: false } }, 'nothing-selected'],
+      [{ keysReleased: false }, 'keys-held'],
+      [{ refocused: false }, 'no-foreground']
+    ]
+    for (const [over, reason] of cases) {
+      const f = fake(over)
+      await createPromptSession(f.deps).prepare('meeting-notes')
+      expect(f.calls.events, reason).toEqual([{ type: 'capture-failed', reason }])
+      expect(f.calls.drafts, reason).toHaveLength(1)
+    }
+  })
+
+  it('prepare: 가져오기가 busy이거나 선택 글을 가져왔거나 바 실행 중이면 알리지 않는다', async () => {
+    const busy = fake({ capture: skippedCapture('busy') })
+    await createPromptSession(busy.deps).prepare('meeting-notes')
+    expect(busy.calls.events).toEqual([])
+
+    const ok = fake()
+    await createPromptSession(ok.deps).prepare('meeting-notes')
+    expect(ok.calls.events).toEqual([])
+
+    let release!: () => void
+    const running = fake({ captureGate: new Promise<void>((r) => (release = r)) })
+    const s = createPromptSession(running.deps)
+    const bar = s.runFromBar('meeting-notes')
+    await s.prepare('meeting-notes')
+    release()
+    await bar
+    // 바 실행의 복사 하나뿐(겹친 prepare는 가져오지도 알리지도 않았다)
+    expect(running.calls.events.map((e) => e.type)).toEqual(['prompt-copied'])
+  })
+
+  it('runFromBar: 선택이 없으면 capture-failed(확인 화면), 가져오기 busy면 알리지 않는다', async () => {
+    const none = fake({ capture: { text: '', method: 'ctrl-insert', elapsedMs: 5, restored: true }, clipboard: '클립 글' })
+    expect(await createPromptSession(none.deps).runFromBar('meeting-notes')).toBe('confirm')
+    expect(none.calls.events).toEqual([{ type: 'capture-failed', reason: 'nothing-selected' }])
+
+    const term = fake({ capture: skippedCapture('terminal') })
+    expect(await createPromptSession(term.deps).runFromBar('meeting-notes')).toBe('confirm')
+    expect(term.calls.events).toEqual([{ type: 'capture-failed', reason: 'terminal' }])
+
+    const lost = fake({ paletteVisible: true, refocused: false })
+    expect(await createPromptSession(lost.deps).runFromBar('meeting-notes')).toBe('confirm')
+    expect(lost.calls.events).toEqual([{ type: 'capture-failed', reason: 'no-foreground' }])
+
+    const busy = fake({ capture: skippedCapture('busy') })
+    expect(await createPromptSession(busy.deps).runFromBar('meeting-notes')).toBe('busy')
+    expect(busy.calls.events).toEqual([])
+  })
+
+  it('runFromBar: 없는 템플릿·겹친 호출(busy)·실행 오류는 알리지 않는다', async () => {
+    const f = fake()
+    expect(await createPromptSession(f.deps).runFromBar('nope')).toBe('missing')
+    expect(f.calls.events).toEqual([])
+
+    let release!: () => void
+    const g = fake({ captureGate: new Promise<void>((r) => (release = r)) })
+    const s = createPromptSession(g.deps)
+    const first = s.runFromBar('meeting-notes')
+    expect(await s.runFromBar('meeting-notes')).toBe('busy')
+    release()
+    await first
+    expect(g.calls.events.map((e) => e.type)).toEqual(['prompt-copied'])
+
+    const boom = fake({
+      mask: async () => {
+        throw new Error('EBUSY')
+      }
+    })
+    await expect(createPromptSession(boom.deps).runFromBar('meeting-notes')).rejects.toThrow()
+    expect(boom.calls.events).toEqual([])
+  })
+
+  it('앱 일에는 선택 글·프롬프트·원래 이름이 없다(분류·건수·AI 이름만)', async () => {
+    const f = fake({ mask: multiMask })
+    const s = createPromptSession(f.deps)
+    await s.prepare('meeting-notes')
+    await s.run({ source: 'selection', target: 'claude' })
+    const term = fake({ capture: skippedCapture('terminal'), clipboard: '가상자동차 클립 글' })
+    await createPromptSession(term.deps).prepare('meeting-notes')
+    const json = JSON.stringify([...f.calls.events, ...term.calls.events])
+    expect(json).toContain('capture-failed')
+    for (const word of [SELECTED, '정리해 주세요', '회의', '메모', '/가상/경로', 'CLIENT_A', '가상자동차']) expect(json, word).not.toContain(word)
+  })
 })

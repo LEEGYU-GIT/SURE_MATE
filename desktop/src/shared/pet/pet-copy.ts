@@ -1,0 +1,84 @@
+import type { AppEvent } from '../app-events'
+import { CAPTURE_NOTES } from '../labels'
+import { ALL_CATEGORIES, type MaskCategory } from '../masking/types'
+
+/**
+ * 말풍선에 쓰는 분류 이름(바꾼 글이 무엇인지). 이름 분류는 "~명", 패턴 분류는 그 글의 종류.
+ * 확인 화면 이름(MASK_CATEGORY_LABELS: 담당자, 사내 URL)과 같은 말을 쓴다. 고객사는 설계 예시대로 "고객사명".
+ */
+export const PET_CATEGORY_NOUNS: Record<MaskCategory, string> = {
+  client: '고객사명',
+  project: '프로젝트명',
+  person: '담당자명',
+  system: '시스템명',
+  ip: 'IP',
+  path: '경로',
+  email: '이메일',
+  phone: '전화번호',
+  url: '사내 URL'
+}
+
+/** 말풍선에 넣는 AI 이름 최대 글자 수. 넘으면 줄임표로 잘라 끝 문장(어디에 붙여넣을지)이 4줄 안에 남게 한다 */
+export const AI_NAME_MAX = 16
+
+/** 설계 문서 §14-2 원문(바꾸려면 사용자 확인) */
+const WARN = '가명 처리가 꺼져 있어요. 이름이 그대로 들어갔어요.'
+const RESTORED = '원래 이름으로 되돌렸어요.'
+const COPIED = '복사했어요.'
+/** 끝 문장 "{AI} 창에 붙여넣어 주세요."의 뒷부분(말풍선은 AI 이름과 "창에"를 한 줄에 둔다) */
+export const PASTE_INTO = '창에 붙여넣어 주세요.'
+/** 복사만(열 AI 없음): "{AI} 창에 붙여넣어 주세요."와 같은 모양 */
+const PASTE_ANYWHERE = '원하는 곳에 붙여넣어 주세요.'
+/** 목록에 보이는 분류 수. 나머지는 " 외 {건수 합}건" */
+const LISTED = 2
+
+const count = (n: number): string => `${n.toLocaleString('ko-KR')}건`
+
+/** 분류별 건수를 합쳐(0건 제외) 많은 순(같으면 분류 순서)으로 두 개까지 "고객사명 1건·IP 2건", 나머지는 " 외 N건" */
+function maskedList(masked: { category: MaskCategory; count: number }[]): string | null {
+  const totals = new Map<MaskCategory, number>()
+  for (const m of masked) {
+    if (!(m.count > 0) || !Number.isFinite(m.count)) continue
+    totals.set(m.category, (totals.get(m.category) ?? 0) + Math.round(m.count))
+  }
+  const order = (c: MaskCategory): number => ALL_CATEGORIES.indexOf(c)
+  const sorted = [...totals].sort(([a, x], [b, y]) => y - x || order(a) - order(b))
+  if (sorted.length === 0) return null
+  const head = sorted
+    .slice(0, LISTED)
+    .map(([c, n]) => `${PET_CATEGORY_NOUNS[c]} ${count(n)}`)
+    .join('·')
+  const rest = sorted.slice(LISTED).reduce((sum, [, n]) => sum + n, 0)
+  return rest > 0 ? `${head} 외 ${count(rest)}` : head
+}
+
+/** 공백을 하나로 줄이고 너무 길면 자른다. 비면 null(복사만과 같다) */
+function aiName(target: string | null): string | null {
+  const name = (target ?? '').replace(/\s+/g, ' ').trim()
+  if (!name) return null
+  const chars = [...name]
+  return chars.length > AI_NAME_MAX ? `${chars.slice(0, AI_NAME_MAX - 1).join('')}…` : name
+}
+
+/**
+ * 앱 일 → 말풍선 문구(존댓말, 짧게, 설계 §14-2·§20). 건수·분류·AI 이름은 실제 값이다.
+ * 보여 줄 것이 없으면(되돌린 것 없음) null. 문구는 화면에만 쓰고 로그에는 남기지 않는다.
+ */
+export function petBubbleText(e: AppEvent): string | null {
+  switch (e.type) {
+    case 'prompt-copied': {
+      if (e.masking === 'off') return WARN
+      const list = maskedList(e.masked)
+      const name = aiName(e.target)
+      const paste = name ? `${name} ${PASTE_INTO}` : PASTE_ANYWHERE
+      // 목록은 늘 "N건"으로 끝나므로 조사는 "은"
+      return [COPIED, list ? `${list}은 가명으로 바꿨어요.` : null, paste]
+        .filter((s) => s !== null)
+        .join(' ')
+    }
+    case 'unmasked':
+      return e.restored > 0 ? RESTORED : null
+    case 'capture-failed':
+      return `${CAPTURE_NOTES[e.reason]}.`
+  }
+}

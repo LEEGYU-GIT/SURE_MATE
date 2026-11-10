@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PetPose } from '../../../shared/pet/pet-view'
 import { CLIMB_OFFSET, PET_BASELINE } from '../../../shared/pet/pet-world'
-import { CONTROL_BAND, FACE_CENTER, FACE_SHAPES, MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, PROP_SHAPES, STROKE } from './mallang-shapes'
+import { CONTROL_BAND, FACE_CENTER, FACE_SHAPES, MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, MALLANG_PROPS, mallangPropPlace, PROP_SHAPES, STROKE } from './mallang-shapes'
 
 const POSES: PetPose[] = ['stand', 'walk', 'climb', 'sit', 'sleep', 'held', 'air']
 const numbers = (d: string): number[] => (d.match(/-?\d*\.?\d+/g) ?? []).map(Number)
@@ -149,5 +149,56 @@ describe('말랑 메이트 그림(시안 원본, 64 격자)', () => {
     expect(Math.min(...ys) - half).toBeGreaterThanOrEqual(CONTROL_BAND.top)
     expect(Math.max(...ys) + half).toBeLessThanOrEqual(CONTROL_BAND.bottom)
     expect((Math.min(...xs) + Math.max(...xs)) / 2).toBe(32)
+  })
+})
+
+describe('(Task 6 이월) 반응 소품(편지·느낌표)은 자세마다 머리 가까이에 둔다', () => {
+  type Place = { dx: number; dy: number }
+  const env = PROP_SHAPES.envelope
+  const alert = PROP_SHAPES.alert
+  /** 소품과 몸 외곽선 사이의 가장 가까운 거리(격자, 선 굵기 제외 전) */
+  const toRect = (p: { x: number; y: number }, at: Place): number => {
+    const x0 = env.x + at.dx
+    const y0 = env.y + at.dy
+    const dx = Math.max(x0 - p.x, 0, p.x - (x0 + env.width))
+    const dy = Math.max(y0 - p.y, 0, p.y - (y0 + env.height))
+    return Math.hypot(dx, dy)
+  }
+  const toCircle = (p: { x: number; y: number }, at: Place): number => Math.hypot(p.x - (alert.cx + at.dx), p.y - (alert.cy + at.dy)) - alert.r
+  const body = (pose: PetPose, mirror: boolean): { x: number; y: number }[] =>
+    outlinePoints(MALLANG_BODY[pose]).map((p) => (mirror ? { x: 64 - p.x, y: p.y } : p))
+  /** 몸 외곽선 절반 + 소품 외곽선 절반: 이보다 가까우면 선이 닿는다 */
+  const TOUCH = STROKE.outline / 2 + STROKE.prop / 2
+  const CASES: [PetPose, boolean][] = [...POSES.map((p): [PetPose, boolean] => [p, false]), ['climb', true]]
+
+  it('서기·걷기·공중은 시안 자리 그대로(이동 없음)', () => {
+    for (const pose of ['stand', 'walk', 'air'] as const) {
+      expect(MALLANG_PROPS[pose], pose).toEqual({ dx: 0, dy: 0 })
+      expect(mallangPropPlace(pose, true), pose).toEqual({ dx: 0, dy: 0 })
+    }
+  })
+
+  it('어느 자세에서도 몸 외곽선과 닿지 않고, 머리에서 10칸 안에 떠 있다(앉기·졸기의 퍼진 머리 위 12~16칸에 뜨지 않게)', () => {
+    for (const [pose, mirror] of CASES) {
+      const at = mallangPropPlace(pose, mirror)
+      const pts = body(pose, mirror)
+      const rectGap = Math.min(...pts.map((p) => toRect(p, at)))
+      const circleGap = Math.min(...pts.map((p) => toCircle(p, at)))
+      const label = `${pose}${mirror ? '(뒤집힘)' : ''}`
+      expect(rectGap, `${label} 편지`).toBeGreaterThan(TOUCH)
+      expect(circleGap, `${label} 느낌표`).toBeGreaterThan(TOUCH)
+      expect(Math.min(rectGap, circleGap), label).toBeLessThanOrEqual(10)
+    }
+  })
+
+  it('오르기: 소품은 바 면 반대쪽(오른쪽 벽이면 x 44 왼쪽, 뒤집혀 왼쪽 벽이면 x 20 오른쪽)', () => {
+    const right = mallangPropPlace('climb', false)
+    expect(env.x + env.width + right.dx).toBeLessThan(44)
+    expect(alert.cx + alert.r + right.dx).toBeLessThan(44)
+    const left = mallangPropPlace('climb', true)
+    expect(env.x + left.dx).toBeGreaterThan(20)
+    expect(alert.cx - alert.r + left.dx).toBeGreaterThan(20)
+    // 뒤집힌 자리는 소품 묶음(가운데 x 50)을 x 32 기준으로 옮긴 것이다(글자 모양은 뒤집지 않음)
+    expect(env.x + env.width / 2 + left.dx).toBe(64 - (env.x + env.width / 2 + right.dx))
   })
 })
