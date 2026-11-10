@@ -62,7 +62,9 @@ const api: SureMateApi = {
   petPress: (down) => ipcRenderer.send(IPC.petPress, down),
   petContextMenu: () => ipcRenderer.send(IPC.petContextMenu),
   petBubbleClick: () => ipcRenderer.send(IPC.petBubbleClick),
-  petBubbleRect: (r) => ipcRenderer.send(IPC.petBubbleRect, r)
+  petBubbleRect: (r) => ipcRenderer.send(IPC.petBubbleRect, r),
+  petMenu: (a) => ipcRenderer.send(IPC.petMenu, a),
+  petKey: (k, down) => ipcRenderer.send(IPC.petKey, k, down)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

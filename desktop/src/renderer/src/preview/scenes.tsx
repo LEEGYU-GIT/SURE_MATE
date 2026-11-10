@@ -11,7 +11,8 @@ import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/g
 import type { AppEvent } from '../../../shared/app-events'
 import { CAPTURE_NOTES } from '../../../shared/labels'
 import type { MaskCategory } from '../../../shared/masking/types'
-import { bubbleSlot, hopRoom, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
+import { PET_CONTROL_GUIDE, petMenuRows } from '../../../shared/pet/pet-copy'
+import { bubbleHop, bubbleSlot, menuSlot, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
 import { reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
@@ -386,6 +387,16 @@ interface PetSceneOptions {
   react?: { event: AppEvent; sunglasses: boolean }
   /** 개발용: 펫 창의 모든 움직임을 이 시각(ms)에 멈춰 그린다(폴짝 꼭대기에서 말풍선과 소품 간격 확인) */
   freezeAt?: number
+  /** 오른쪽 클릭 메뉴(Task 8): 상태 기계와 같은 계산(menuSlot·petMenuRows). 졸기 자세면 두 번째 행이 깨우기 */
+  menu?: boolean
+  /** 조종 모드(Task 8): 머리 위 조종 표시. guide면 조종을 시작한 순간(웃는 얼굴·폴짝·키 안내 말풍선) */
+  control?: { guide: boolean }
+}
+
+/** 창 안 말풍선 자리(상태 기계의 bubbleView와 같은 계산: 조종 중이면 조종 표시 위로 비킨다) */
+function bubbleAt(text: string, box: Rect, win: Rect, size: PetSize, controlling = false): PetView['bubble'] {
+  const s = bubbleSlot({ box, window: win, bounds: MONITOR.bounds, hop: bubbleHop(size, controlling) })
+  return { seq: 1, text, side: s.side, slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } }
 }
 
 /** 상태 기계(react)와 같이 반응의 표정·소품·cue로 모습을 덮어쓰고 말풍선 자리를 계산한다 */
@@ -394,8 +405,21 @@ function reactionView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): 
   if (!o.react || !r) return { look: petLook(o.look), bubble: null }
   const look = petLook({ ...o.look, face: r.face, props: [...(o.react.sunglasses ? (['sunglasses'] as const) : []), ...r.props], cue: r.cue, cueSeq: r.cue ? 1 : 0 })
   if (!r.bubble) return { look, bubble: null }
-  const s = bubbleSlot({ box, window: win, bounds: MONITOR.bounds, hop: hopRoom(size) })
-  return { look, bubble: { seq: 1, text: r.bubble, side: s.side, slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } } }
+  return { look, bubble: bubbleAt(r.bubble, box, win, size) }
+}
+
+/** 상태 기계(beginControl)와 같이: 조종 표시를 얹고, 시작한 순간이면 웃는 얼굴·폴짝·키 안내 말풍선 */
+function controlView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): Pick<PetView, 'look' | 'bubble'> {
+  const base = petLook(o.look)
+  const props = [...base.props, 'control' as const]
+  if (!o.control?.guide) return { look: { ...base, props }, bubble: null }
+  return { look: { ...base, props, face: 'happy', cue: 'hop', cueSeq: 1 }, bubble: bubbleAt(PET_CONTROL_GUIDE, box, win, size, true) }
+}
+
+/** 창 안 메뉴(상태 기계의 menuView와 같은 계산) */
+function menuAt(box: Rect, win: Rect, sleeping: boolean): PetView['menu'] {
+  const s = menuSlot({ rows: 4, box, window: win, bounds: MONITOR.bounds })
+  return { rows: petMenuRows({ sleeping }), side: s.side, rect: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } }
 }
 
 /** 바 하나와 펫 창 하나. 펫 창(320×240, 투명)은 <Pet />이 가짜 getPetView()로 받은 상태를 그린다 */
@@ -407,9 +431,9 @@ function petScene(id: string, title: string, o: PetSceneOptions): Scene {
   const view: PetView = {
     size,
     box: { x: box.x - win.x, y: box.y - win.y },
-    ...reactionView(o, box, win, size),
-    menu: null,
-    controlling: false,
+    ...(o.control ? controlView(o, box, win, size) : reactionView(o, box, win, size)),
+    menu: o.menu ? menuAt(box, win, o.look.pose === 'sleep') : null,
+    controlling: o.control !== undefined,
     reduceMotion: o.reduceMotion ?? false
   }
   return {
@@ -665,6 +689,74 @@ const REACTION_SCENES: Scene[] = [
   })
 ]
 
+// ── 말랑 메이트 오른쪽 클릭 메뉴와 조종 모드(Task 8): 상태 기계와 같은 계산(menuSlot·petMenuRows·bubbleSlot) ──────────
+
+const MENU_SCENES: Scene[] = [
+  petScene('pet-menu', '말랑 메이트 메뉴: 바닥에서 오른쪽 클릭(펫 위 4행, M5 펼침 메뉴와 같은 가족)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    menu: true
+  }),
+  petScene('pet-menu-sleeping', '말랑 메이트 메뉴: 졸고 있을 때(두 번째 행 깨우기), 흰 문서 창 앞(그림자·테두리 대비)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 170 },
+    look: { pose: 'sleep', face: 'asleep', props: ['zzz'] },
+    backdrop: <AppWindow side="left" under />,
+    menu: true
+  }),
+  petScene('pet-menu-side', '말랑 메이트 메뉴: 바 꼭대기가 화면 위쪽(위에 자리가 없어 펫 옆, 창 안)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content', props: ['sunglasses'] },
+    menu: true
+  }),
+  petScene('pet-control', '말랑 메이트 조종: 시작한 순간(머리 위 조종 표시·웃는 얼굴·키 안내 말풍선)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    control: { guide: true }
+  }),
+  petScene('pet-control-walk', '개발용: 조종 중 걷기(조종 표시만, 선글라스)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 260 },
+    look: { pose: 'walk', props: ['sunglasses'] },
+    control: { guide: false }
+  }),
+  petScene('pet-control-sit', '개발용: 조종 중 바 꼭대기에 앉음(조종 표시가 납작한 머리 위에)', {
+    bar: CAPSULE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content' },
+    control: { guide: false }
+  }),
+  petScene('pet-control-climb', '개발용: 조종 중 왼쪽 띠 옆면에 붙음(조종 표시가 위를 보는 머리 위에, 좌우 뒤집힘)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'side', t: 0.5 },
+    look: { pose: 'climb', face: 'up', facing: 'left' },
+    control: { guide: false }
+  }),
+  petScene('pet-control-apex', '개발용: 조종 시작 폴짝 꼭대기(216ms)에서 멈춤(조종 표시가 말풍선 꼬리에 닿지 않는지)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    control: { guide: true },
+    freezeAt: 216
+  }),
+  petScene('pet-menu-side-left', '개발용: 왼쪽 띠 꼭대기의 메뉴(펫 오른쪽)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content', facing: 'left' },
+    menu: true
+  }),
+  petScene('pet-menu-edge', '개발용: 화면 왼쪽 끝 바닥의 메뉴(창이 화면 끝에 멈춤 → 메뉴가 창 여백 8에 붙음, 그림자 잘림 확인)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 40 },
+    look: {},
+    backdrop: <AppWindow side="left" under />,
+    menu: true
+  })
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -711,5 +803,6 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
   ...CARD_SCENES,
   ...PET_SCENES,
-  ...REACTION_SCENES
+  ...REACTION_SCENES,
+  ...MENU_SCENES
 ]

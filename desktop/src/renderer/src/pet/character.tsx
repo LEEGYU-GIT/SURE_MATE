@@ -1,5 +1,5 @@
 import type { PetPose } from '../../../shared/pet/pet-view'
-import { MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, mallangPropPlace, STROKE, type FacePlace, type PropPlace } from './mallang-shapes'
+import { MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, mallangControlPlace, mallangPropPlace, STROKE, type FacePlace, type PropPlace } from './mallang-shapes'
 
 /**
  * 그림 교체 자리(§14-3 캐릭터 꾸미기). 캐릭터는 몸 레이어와 자세별 얼굴 자리만 정한다.
@@ -14,6 +14,8 @@ export interface PetCharacter {
   face(pose: PetPose): FacePlace
   /** 반응 소품(편지·느낌표) 자리: 서 있는 몸 기준 이동. mirror는 왼쪽을 보는지(소품 모양은 뒤집지 않는다) */
   props(pose: PetPose, mirror: boolean): PropPlace
+  /** 조종 표시(머리 위 삼각 표지) 자리: 서 있는 몸 기준 이동. 자세마다 몸 꼭대기 위 같은 간격에 둔다 */
+  control(pose: PetPose, mirror: boolean): PropPlace
 }
 
 /**
@@ -37,5 +39,6 @@ export const MALLANG: PetCharacter = {
   id: 'mallang',
   Body: MallangBody,
   face: (pose) => MALLANG_FACE[pose],
-  props: mallangPropPlace
+  props: mallangPropPlace,
+  control: mallangControlPlace
 }

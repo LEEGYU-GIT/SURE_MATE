@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PET_CONTROL_GUIDE } from '../../../shared/pet/pet-copy'
 import { PET_WINDOW } from '../../../shared/pet/pet-view'
 import {
   BUBBLE_BOX,
@@ -189,6 +190,12 @@ describe('글자 다루기', () => {
     const long = '아주아주긴사내에이아이도우…'
     expect(keepTogether(`${long} 창에 붙여넣어 주세요.`)).toBe(`${long} 창에 붙여넣어 주세요.`)
     expect(keepTogether('원하는 곳에 붙여넣어 주세요.')).toBe('원하는 곳에 붙여넣어 주세요.')
+  })
+
+  it('keepTogether: 조종 안내는 키와 하는 일을 한 덩어리로 붙인다(줄은 "·" 뒤에서만 바뀐다)', () => {
+    expect(keepTogether(PET_CONTROL_GUIDE)).toBe(
+      `키보드로 조종해 보세요. ←→${NB}걷기 ${WJ}· Space${NB}뛰기 ${WJ}· ↑↓${NB}바${NB}오르내리기 ${WJ}· Esc${NB}끝`
+    )
   })
 
   it('keepTogether: 건수·AI 이름이 없는 글은 그대로', () => {

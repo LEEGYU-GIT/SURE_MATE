@@ -81,6 +81,8 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     petPress: () => {},
     petContextMenu: () => {},
     petBubbleClick: () => {},
-    petBubbleRect: () => {}
+    petBubbleRect: () => {},
+    petMenu: () => {},
+    petKey: () => {}
   }
 }

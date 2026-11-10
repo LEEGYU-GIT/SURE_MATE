@@ -1,17 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { AppEvent } from '../../shared/app-events'
 import { PET_TIMING } from '../../shared/pet/pet-behavior'
-import { bubbleSlot, hitShape, hopRoom, petBox } from '../../shared/pet/pet-frame'
+import { PET_CONTROL_GUIDE } from '../../shared/pet/pet-copy'
+import {
+  bubbleHop,
+  bubbleSlot,
+  hitShape,
+  hopRoom,
+  menuSlot,
+  petBox
+} from '../../shared/pet/pet-frame'
+import { jumpVelocity } from '../../shared/pet/pet-physics'
 import { DEFAULT_PET_SETTINGS, type PetSettings } from '../../shared/pet/pet-settings'
-import type { PetView } from '../../shared/pet/pet-view'
+import { SLOT, type PetView } from '../../shared/pet/pet-view'
 import { petWorld, type PetBar, type PetWorld } from '../../shared/pet/pet-world'
 import type { MaskingMode, MonitorInfo, Rect } from '../../shared/types'
 import { globalTimers } from '../bar/test-timers'
+import { FLYOUT_TIMING } from '../flyout/flyout-controller'
 import {
+  CONTROL,
   createPetController,
   GESTURE,
   PET_LOOP,
   REDUCED_CLICK_FACE_MS,
+  STEP_UP_MS,
   type PetController,
   type PetMode
 } from './pet-controller'
@@ -45,6 +57,8 @@ type Env = {
   idle: number
   random: number
   clock: (() => number) | null
+  /** 조종을 시작할 때 앞에 있던 창(HWND 10진 문자열). Win32가 없으면 null */
+  foreground: string | null
 }
 
 type Harness = {
@@ -56,11 +70,17 @@ type Harness = {
     hide: Mock<() => void>
     send: Mock<(v: PetView) => void>
     setIgnoreMouse: Mock<(ignore: boolean) => void>
+    setFocusable: Mock<(f: boolean) => void>
+    focus: Mock<() => void>
   }
   cursor: Mock<() => { x: number; y: number }>
   idleSeconds: Mock<() => number>
   world: Mock<(size: number) => PetWorld | null>
   openPalette: Mock<() => void>
+  foreground: Mock<() => string | null>
+  restoreFocus: Mock<(hwnd: string) => boolean>
+  setVisible: Mock<(v: boolean) => Promise<void>>
+  openSettings: Mock<() => void>
   log: Mock<(event: string, data: Record<string, unknown>) => void>
   /** setBounds를 부른 시각들 */
   boundsAt: number[]
@@ -72,6 +92,8 @@ function make(
     settings?: Partial<PetSettings>
     masking?: MaskingMode
     random?: number
+    /** 런타임의 설정 저장(기본: 바로 성공) */
+    setVisible?: (v: boolean) => Promise<void>
   } = {}
 ): Harness {
   const env: Env = {
@@ -85,7 +107,8 @@ function make(
     buttons: null,
     idle: 0,
     random: o.random ?? 0.5,
-    clock: null
+    clock: null,
+    foreground: '1001'
   }
   const boundsAt: number[] = []
   const window = {
@@ -93,12 +116,18 @@ function make(
     showInactive: vi.fn<() => void>(),
     hide: vi.fn<() => void>(),
     send: vi.fn<(v: PetView) => void>(),
-    setIgnoreMouse: vi.fn<(ignore: boolean) => void>()
+    setIgnoreMouse: vi.fn<(ignore: boolean) => void>(),
+    setFocusable: vi.fn<(f: boolean) => void>(),
+    focus: vi.fn<() => void>()
   }
   const cursor = vi.fn(() => ({ ...env.cursor }))
   const idleSeconds = vi.fn(() => env.idle)
   const world = vi.fn((size: number) => (env.display ? petWorld(env.monitor, env.bar, size) : null))
   const openPalette = vi.fn<() => void>()
+  const foreground = vi.fn(() => env.foreground)
+  const restoreFocus = vi.fn<(hwnd: string) => boolean>(() => true)
+  const setVisible = vi.fn<(v: boolean) => Promise<void>>(o.setVisible ?? (() => Promise.resolve()))
+  const openSettings = vi.fn<() => void>()
   const log = vi.fn<(event: string, data: Record<string, unknown>) => void>()
   const c = createPetController({
     window,
@@ -110,12 +139,30 @@ function make(
     mouseButtonDown: () => env.buttons,
     idleSeconds,
     openPalette,
+    foreground,
+    restoreFocus,
+    setVisible,
+    openSettings,
     timers: globalTimers(),
     now: () => (env.clock ? env.clock() : Date.now()),
     random: () => env.random,
     log
   })
-  return { c, env, window, cursor, idleSeconds, world, openPalette, log, boundsAt }
+  return {
+    c,
+    env,
+    window,
+    cursor,
+    idleSeconds,
+    world,
+    openPalette,
+    foreground,
+    restoreFocus,
+    setVisible,
+    openSettings,
+    log,
+    boundsAt
+  }
 }
 type T = Harness
 
@@ -2134,5 +2181,979 @@ describe('(Task 6 이월) 움직임 줄이기의 클릭 표시', () => {
     click(t)
     pickUp(t)
     expect(look(t)).toMatchObject({ pose: 'held', face: 'surprised' })
+  })
+})
+
+// ── 오른쪽 클릭 메뉴와 조종 모드(Task 8, 설계 §14-2, Review Focus 1) ──────────────
+
+/** 펫·메뉴에서 먼 곳(바닥 가운데 펫의 창 + 120 밖) */
+const AWAY = { x: 300, y: 300 }
+
+const menu = (t: T): PetView['menu'] => t.c.view()!.menu
+const menus = (t: T): Record<string, unknown>[] =>
+  t.log.mock.calls.filter(([e]) => e === 'pet.menu').map(([, d]) => d)
+const controls = (t: T): Record<string, unknown>[] =>
+  t.log.mock.calls.filter(([e]) => e === 'pet.control').map(([, d]) => d)
+
+/** 메뉴 n번째 행 가운데(화면 DIP) */
+function menuRow(t: T, n: number): { x: number; y: number } {
+  const m = menu(t)!
+  const w = t.c.status().window!
+  return {
+    x: w.x + m.rect.x + m.rect.width / 2,
+    y: w.y + m.rect.y + SLOT.menuPad + SLOT.menuRow * n + SLOT.menuRow / 2
+  }
+}
+
+/** 몸 위에서 오른쪽 클릭해 메뉴를 연다 */
+function openMenu(t: T): void {
+  t.env.cursor = bodyPoint(t)
+  t.c.contextMenu()
+  expect(menu(t)).not.toBeNull()
+}
+
+describe('오른쪽 클릭 메뉴(설계 §14-2, 닫기는 M5 펼침 메뉴와 같은 규칙)', () => {
+  it('contextMenu: 4행 메뉴를 펫 위에 열고 걷던 펫을 멈춘다. 동작 고리 없이 조회·졸기 타이머 2개, 창은 그대로, 다시 누르면 닫힌다', () => {
+    const t = make()
+    t.c.start()
+    vi.advanceTimersByTime(5000)
+    expect(mode(t)).toBe('walk')
+    t.env.cursor = bodyPoint(t)
+    t.window.send.mockClear()
+    t.window.setBounds.mockClear()
+    t.c.contextMenu()
+    expect(mode(t)).toBe('idle')
+    const m = menu(t)!
+    expect(m.rows.map((r) => r.action)).toEqual(['control', 'sleep', 'hide', 'settings'])
+    const win = t.c.status().window!
+    const want = menuSlot({ rows: 4, box: petBox(foot(t), 56), window: win, bounds: MAIN.bounds })
+    expect(m.side).toBe('above')
+    expect(m.rect).toEqual({
+      x: want.rect.x - win.x,
+      y: want.rect.y - win.y,
+      width: 176,
+      height: 136
+    })
+    // 같은 호출 안에서 보낸다
+    expect(t.window.send).toHaveBeenCalledTimes(1)
+    expect(t.window.send.mock.lastCall![0].menu).toEqual(m)
+    expect(vi.getTimerCount()).toBe(2) // 조회·졸기(동작 고리·쉼 없음)
+    const at = foot(t)
+    t.env.cursor = menuRow(t, 0)
+    vi.advanceTimersByTime(3000)
+    expect(foot(t)).toEqual(at)
+    expect(t.window.setBounds).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(2)
+    t.c.contextMenu()
+    expect(menu(t)).toBeNull()
+    expect(t.window.send.mock.lastCall![0].menu).toBeNull()
+    expect(menus(t)).toEqual([]) // 열고 닫기는 기록하지 않는다
+  })
+
+  it('열린 동안 버튼이 눌리고 커서가 펫·메뉴 밖이면 50ms 안에 닫힌다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.env.buttons = true // 오른쪽 버튼을 아직 누르고 있다(펫 위)
+    vi.advanceTimersByTime(200)
+    expect(menu(t)).not.toBeNull()
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(FLYOUT_TIMING.dismissPollMs)
+    expect(menu(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('버튼 조회가 null이어도 커서가 1.5초 동안 펫·메뉴 밖이면 닫힌다. 그 전에 메뉴로 돌아오면 다시 센다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.env.buttons = null
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(1000)
+    expect(menu(t)).not.toBeNull()
+    t.env.cursor = menuRow(t, 2)
+    vi.advanceTimersByTime(100)
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(FLYOUT_TIMING.menuAwayMs - 100)
+    expect(menu(t)).not.toBeNull()
+    vi.advanceTimersByTime(150)
+    expect(menu(t)).toBeNull()
+  })
+
+  it('커서가 메뉴 위에 있으면 버튼을 눌러도 열려 있고(클릭을 받음), 계획을 미룬다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.env.cursor = menuRow(t, 1)
+    t.env.buttons = true
+    vi.advanceTimersByTime(10_000)
+    expect(menu(t)).not.toBeNull()
+    expect(mode(t)).toBe('idle')
+    expect(lastIgnore(t)).toBe(false)
+  })
+
+  it('(Review Focus 1) 행을 골라 닫히거나 바깥 클릭으로 닫힌 뒤 커서가 몸 밖이면 마지막 setIgnoreMouse는 true', () => {
+    const t = make()
+    t.c.start()
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitFarMs)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.contextMenu()
+    t.env.cursor = menuRow(t, 3)
+    vi.advanceTimersByTime(200)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.menuAction('settings')
+    expect(menu(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true) // 같은 호출 안에서(다음 조회를 기다리지 않음)
+    vi.advanceTimersByTime(500)
+    expect(lastIgnore(t)).toBe(true)
+
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitFarMs)
+    t.c.contextMenu()
+    t.env.cursor = menuRow(t, 0)
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(t)).toBe(false)
+    t.env.cursor = AWAY
+    t.env.buttons = true
+    vi.advanceTimersByTime(FLYOUT_TIMING.dismissPollMs)
+    expect(menu(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('열린 동안 계획을 미루고, 닫으면 가만히의 남은 시간을 이어 간다', () => {
+    const t = make()
+    t.c.start()
+    vi.advanceTimersByTime(1000) // 첫 가만히 3초 중 1초
+    openMenu(t)
+    t.env.cursor = menuRow(t, 0)
+    vi.advanceTimersByTime(20_000)
+    expect(mode(t)).toBe('idle')
+    t.c.contextMenu()
+    expect(menu(t)).toBeNull()
+    vi.advanceTimersByTime(1999)
+    expect(mode(t)).toBe('idle')
+    vi.advanceTimersByTime(2)
+    expect(mode(t)).toBe('walk')
+  })
+
+  it('열린 동안 졸 때가 되면 미뤘다가 닫은 뒤 다시 확인한다', () => {
+    const t = make({ bar: null, random: 0, settings: { sleepAfterMin: 1 } })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(59_000)
+    expect(mode(t)).toBe('idle')
+    openMenu(t)
+    t.env.cursor = menuRow(t, 0)
+    vi.advanceTimersByTime(2000) // 60초의 졸기 확인은 메뉴가 열린 동안
+    expect(mode(t)).toBe('idle')
+    expect(t.idleSeconds).toHaveBeenCalledTimes(1)
+    t.c.contextMenu()
+    expect(mode(t)).toBe('sleep')
+    expect(states(t)).toEqual(['sleep'])
+  })
+
+  it('열린 동안 커서 조회는 50ms 이하 간격(닫기 확인을 겸하고 새 타이머는 없다)', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(100)
+    t.cursor.mockClear()
+    vi.advanceTimersByTime(1000)
+    expect(t.cursor.mock.calls.length).toBeGreaterThanOrEqual(19)
+    expect(vi.getTimerCount()).toBe(2)
+  })
+
+  it('들린·날던·오르던 펫, 숨긴 펫, 조종 중에는 열지 않는다', () => {
+    const held = make()
+    held.c.start()
+    pickUp(held)
+    held.c.contextMenu()
+    expect(menu(held)).toBeNull()
+    held.c.press(false)
+    expect(mode(held)).toBe('air')
+    held.c.contextMenu()
+    expect(menu(held)).toBeNull()
+
+    const climbing = make()
+    climbing.c.start()
+    untilMode(climbing, 'climb')
+    climbing.c.contextMenu()
+    expect(menu(climbing)).toBeNull()
+
+    const hidden = make()
+    hidden.c.start()
+    hidden.c.setFullscreen(true)
+    hidden.c.contextMenu()
+    hidden.c.setFullscreen(false)
+    expect(menu(hidden)).toBeNull()
+
+    const driving = make()
+    driving.c.start()
+    driving.c.startControl()
+    driving.c.contextMenu()
+    expect(menu(driving)).toBeNull()
+  })
+
+  it('열린 동안 펫을 누르면 메뉴를 닫고 클릭(폴짝)으로 처리한다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    click(t)
+    expect(menu(t)).toBeNull()
+    expect(look(t)).toMatchObject({ cue: 'hop', cueSeq: 1 })
+    expect(t.log).toHaveBeenCalledWith('pet.click', { kind: 'hop' })
+  })
+
+  it('열린 동안 온 반응은 메뉴가 닫힌 뒤 마지막 하나만 보인다(메뉴와 말풍선이 겹치지 않음)', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.react(COPIED)
+    t.c.react(WARN)
+    expect(bubble(t)).toBeNull()
+    expect(menu(t)).not.toBeNull()
+    expect(reacts(t)).toEqual([])
+    t.c.menuAction('settings')
+    expect(menu(t)).toBeNull()
+    expect(bubble(t)).toMatchObject({ seq: 1, text: WARN_TEXT })
+    expect(reacts(t)).toEqual([{ kind: 'warn', bubble: true }])
+  })
+
+  it('메뉴를 열면 보이던 말풍선은 닫힌다(앉아 있던 쉼은 반응·메뉴 동안 멈췄다 이어 간다)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    const sitAt = Date.now()
+    vi.advanceTimersByTime(10_000)
+    t.c.react(COPIED)
+    vi.advanceTimersByTime(1000)
+    openMenu(t)
+    expect(bubble(t)).toBeNull()
+    t.env.cursor = menuRow(t, 0)
+    vi.advanceTimersByTime(5000)
+    t.c.contextMenu()
+    // 쉼 60초 중 10초 + 반응 1초(멈춤) + 메뉴 5초(멈춤): 남은 50초 뒤 뛰어내린다(sitAt은 최대 한 프레임 늦게 잰 값)
+    vi.advanceTimersByTime(sitAt + 10_000 + 1000 + 5000 + 50_000 - Date.now() - 100)
+    expect(mode(t)).toBe('sit')
+    vi.advanceTimersByTime(200)
+    expect(mode(t)).toBe('air')
+  })
+
+  it('잠든 펫: 두 번째 행은 깨우기, 메뉴 위의 커서로는 깨지 않는다. 깨우기 → 바닥이면 가만히', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000 - 300)
+    t.env.cursor = { x: 960, y: 1033 } // 잠들 때 이미 몸 위(한 번 나가야 깬다)
+    vi.advanceTimersByTime(300)
+    expect(mode(t)).toBe('sleep')
+    t.c.contextMenu()
+    expect(menu(t)!.rows[1]).toEqual({ action: 'wake', title: '깨우기' })
+    t.env.cursor = AWAY // 몸 밖으로 한 번 나간다(다음에 몸 위로 오면 깬다)
+    vi.advanceTimersByTime(100)
+    t.env.cursor = menuRow(t, 1) // 메뉴는 몸이 아니다
+    vi.advanceTimersByTime(300)
+    expect(mode(t)).toBe('sleep')
+    expect(lastIgnore(t)).toBe(false)
+    expect(vi.getTimerCount()).toBe(1) // 조회만
+    t.c.menuAction('wake')
+    expect(mode(t)).toBe('idle')
+    expect(menu(t)).toBeNull()
+    expect(states(t)).toEqual(['sleep', 'wake'])
+    expect(menus(t)).toEqual([{ action: 'wake' }])
+  })
+
+  it('잠든 펫의 메뉴가 열린 채 커서가 몸으로 돌아오면 깨고 두 번째 행이 재우기로 바뀐다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000 - 300)
+    t.env.cursor = { x: 960, y: 1033 }
+    vi.advanceTimersByTime(300)
+    t.c.contextMenu()
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(100)
+    t.env.cursor = { x: 960, y: 1033 }
+    vi.advanceTimersByTime(100)
+    expect(mode(t)).toBe('idle')
+    expect(menu(t)!.rows[1].action).toBe('sleep')
+    expect(t.window.send.mock.lastCall![0].menu!.rows[1].action).toBe('sleep')
+  })
+
+  it('잠든 펫의 메뉴가 열린 동안 온 반응은 메뉴가 닫히면 깨워서 보인다(졸 때 반응과 같음)', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000 - 300)
+    t.env.cursor = { x: 960, y: 1033 }
+    vi.advanceTimersByTime(300)
+    t.c.contextMenu()
+    t.c.react(COPIED)
+    expect(mode(t)).toBe('sleep')
+    expect(bubble(t)).toBeNull()
+    t.c.contextMenu()
+    expect(menu(t)).toBeNull()
+    expect(mode(t)).toBe('idle')
+    expect(states(t)).toEqual(['sleep', 'wake'])
+    expect(bubble(t)).toMatchObject({ text: COPIED_TEXT })
+  })
+
+  it('꼭대기에서 졸던 펫을 메뉴로 깨우면 다시 앉는다', () => {
+    const t = make({ settings: { sleepAfterMin: 1 } })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(60_000)
+    expect(mode(t)).toBe('sleep')
+    expect(foot(t)).toEqual({ x: 1892, y: 292 })
+    t.c.contextMenu()
+    t.c.menuAction('wake')
+    expect(mode(t)).toBe('sit')
+  })
+
+  it("동작 '재우기': 그 자리에서 졸고, 커서가 몸 위에 그대로면 깨지 않으며 나갔다 들어오면 깬다", () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.menuAction('sleep')
+    expect(mode(t)).toBe('sleep')
+    expect(menu(t)).toBeNull()
+    expect(look(t)).toMatchObject({ pose: 'sleep', face: 'asleep' })
+    expect(states(t)).toEqual(['sleep'])
+    expect(menus(t)).toEqual([{ action: 'sleep' }])
+    vi.advanceTimersByTime(3000)
+    expect(mode(t)).toBe('sleep') // 커서가 몸 위에 그대로
+    expect(vi.getTimerCount()).toBe(1) // 조회만
+    t.env.cursor = AWAY
+    vi.advanceTimersByTime(PET_LOOP.hitSleepMs)
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitSleepMs)
+    expect(mode(t)).toBe('idle')
+    expect(states(t)).toEqual(['sleep', 'wake'])
+  })
+
+  it("동작 '재우기'를 메뉴 행에서 누르면(커서는 몸 밖) 다음에 몸 위로 올 때 깬다", () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.env.cursor = menuRow(t, 1)
+    vi.advanceTimersByTime(100)
+    t.c.menuAction('sleep')
+    expect(mode(t)).toBe('sleep')
+    expect(lastIgnore(t)).toBe(true) // 메뉴가 사라진 자리는 통과
+    vi.advanceTimersByTime(1000)
+    expect(mode(t)).toBe('sleep')
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitSleepMs)
+    expect(mode(t)).toBe('idle')
+  })
+
+  it("동작 '숨기기': setVisible(false)를 부르고 바로 숨긴다(클릭 통과·타이머 0). 저장 전 세계 변화로 다시 나타나지 않는다", async () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.menuAction('hide')
+    expect(t.setVisible.mock.calls).toEqual([[false]])
+    expect(t.window.hide).toHaveBeenCalledTimes(1)
+    expect(t.c.status()).toMatchObject({ shown: false, window: null })
+    expect(lastIgnore(t)).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(t.log).toHaveBeenCalledWith('pet.visibility', { visible: false, reason: 'setting' })
+    expect(menus(t)).toEqual([{ action: 'hide' }])
+    t.c.worldChanged()
+    expect(t.window.showInactive).toHaveBeenCalledTimes(1)
+    // 런타임이 저장한 뒤 refresh
+    t.env.settings = { ...t.env.settings, visible: false }
+    t.c.refresh()
+    await Promise.resolve()
+    t.c.worldChanged()
+    expect(t.c.status().shown).toBe(false)
+    // 나중에 바의 펫 단추로 다시 부른다
+    t.env.settings = { ...t.env.settings, visible: true }
+    t.c.refresh()
+    expect(t.window.showInactive).toHaveBeenCalledTimes(2)
+  })
+
+  it("'숨기기' 저장이 실패하면 다시 나타난다(설정은 그대로 보이기)", async () => {
+    const t = make({ setVisible: () => Promise.reject(new Error('저장 실패')) })
+    t.c.start()
+    openMenu(t)
+    t.c.menuAction('hide')
+    expect(t.c.status().shown).toBe(false)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(t.c.status().shown).toBe(true)
+    expect(t.window.showInactive).toHaveBeenCalledTimes(2)
+  })
+
+  it("동작 '펫 설정': openSettings를 부르고 메뉴를 닫는다(펫은 하던 대로)", () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.menuAction('settings')
+    expect(t.openSettings).toHaveBeenCalledTimes(1)
+    expect(menu(t)).toBeNull()
+    expect(menus(t)).toEqual([{ action: 'settings' }])
+    vi.advanceTimersByTime(PET_TIMING.firstIdleMs)
+    expect(mode(t)).toBe('walk')
+  })
+
+  it('메뉴가 닫힌 뒤 온 동작(늦은 클릭)은 무시한다', () => {
+    const t = make()
+    t.c.start()
+    for (const a of ['control', 'sleep', 'wake', 'hide', 'settings'] as const) t.c.menuAction(a)
+    expect(t.setVisible).not.toHaveBeenCalled()
+    expect(t.openSettings).not.toHaveBeenCalled()
+    expect(t.c.controlling()).toBe(false)
+    expect(mode(t)).toBe('idle')
+    expect(menus(t)).toEqual([])
+  })
+
+  it('열린 채 앉아 있던 바가 옮겨지면 메뉴가 따라가고, 바가 없어지면 떨어지며 메뉴를 닫는다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    openMenu(t)
+    const before = menu(t)!
+    t.env.bar = { rect: { x: 1864, y: 400, width: 56, height: 456 }, edge: 'right' }
+    t.c.worldChanged()
+    expect(mode(t)).toBe('sit')
+    expect(menu(t)).toEqual(before) // 창이 펫과 함께 옮겨지므로 창 좌표는 그대로
+    t.env.bar = null
+    t.c.worldChanged()
+    expect(mode(t)).toBe('air')
+    expect(menu(t)).toBeNull()
+    untilMode(t, 'idle', 3000)
+  })
+
+  it('꼭대기가 화면 위쪽이면 메뉴는 펫 옆(창 안)', () => {
+    const t = make({ bar: { rect: { x: 1864, y: 120, width: 56, height: 456 }, edge: 'right' } })
+    t.c.start()
+    dropFrom(t, { x: 1892, y: 110 })
+    untilMode(t, 'sit', 1000)
+    t.c.contextMenu()
+    expect(t.c.status().window).toEqual({ x: 1600, y: 0, width: 320, height: 240 })
+    expect(menu(t)).toMatchObject({
+      side: 'left',
+      rect: { x: 80, y: 29.25, width: 176, height: 136 }
+    })
+  })
+})
+
+describe('조종 모드(설계 §14-2 "펫 창이 키보드를 받는다")', () => {
+  it('메뉴의 조종하기: 앞 창을 기억하고 setFocusable(true) 다음 focus(), controlling·소품 control, 메뉴 닫힘, 기록 start', () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = '4242'
+    openMenu(t)
+    t.c.menuAction('control')
+    expect(t.foreground).toHaveBeenCalledTimes(1)
+    expect(t.window.setFocusable.mock.calls).toEqual([[true]])
+    expect(t.window.focus).toHaveBeenCalledTimes(1)
+    const order = (f: { mock: { invocationCallOrder: number[] } }): number =>
+      f.mock.invocationCallOrder[0]
+    expect(order(t.foreground)).toBeLessThan(order(t.window.setFocusable))
+    expect(order(t.window.setFocusable)).toBeLessThan(order(t.window.focus))
+    expect(t.c.controlling()).toBe(true)
+    const v = t.c.view()!
+    expect(v).toMatchObject({ controlling: true, menu: null })
+    expect(v.look.props).toContain('control')
+    expect(t.window.send.mock.lastCall![0]).toMatchObject({ controlling: true, menu: null })
+    expect(controls(t)).toEqual([{ phase: 'start' }])
+    expect(menus(t)).toEqual([{ action: 'control' }])
+  })
+
+  it('조종 중 말풍선은 머리 위 조종 표시 위로 비킨다(bubbleHop), 끝나면 원래 높이', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    const win = t.c.status().window!
+    const box = petBox(foot(t), 56)
+    const want = bubbleSlot({ box, window: win, bounds: MAIN.bounds, hop: bubbleHop(56, true) })
+    expect(bubble(t)!.slot).toEqual({
+      x: want.rect.x - win.x,
+      y: want.rect.y - win.y,
+      width: 200,
+      height: 96
+    })
+    expect(bubble(t)!.slot.y).toBe(184.25 - 30 - 8 - 96)
+    t.c.key('end', true)
+    t.c.react(NOTE)
+    expect(bubble(t)!.slot.y).toBe(184.25 - 12 - 8 - 96)
+  })
+
+  it('시작하면 폴짝하며 키 안내 말풍선을 4초 보이고, 계획·졸기는 멈춘다(가만히 타이머는 조회 하나)', () => {
+    const t = make({ settings: { sleepAfterMin: 1 } })
+    t.c.start()
+    t.env.idle = 1000
+    t.c.startControl()
+    expect(look(t)).toMatchObject({ face: 'happy', cue: 'hop', cueSeq: 1 })
+    expect(bubble(t)).toMatchObject({ seq: 1, text: PET_CONTROL_GUIDE })
+    expect(reacts(t)).toEqual([]) // 앱 반응이 아니다
+    expect(vi.getTimerCount()).toBe(2) // 안내 말풍선·조회
+    vi.advanceTimersByTime(4000)
+    expect(bubble(t)).toBeNull()
+    expect(look(t).face).toBe('normal')
+    expect(vi.getTimerCount()).toBe(1) // 조회만(쉼·졸기 없음)
+    vi.advanceTimersByTime(120_000)
+    expect(mode(t)).toBe('idle')
+    expect(foot(t)).toEqual({ x: 960, y: 1040 })
+    expect(t.idleSeconds).not.toHaveBeenCalled()
+  })
+
+  it('말풍선 끔이면 안내 말풍선 없이 웃는 얼굴·폴짝만 1.5초, 움직임 줄이기면 폴짝 없이 웃는 얼굴만', () => {
+    const quiet = make({ settings: { bubbles: false } })
+    quiet.c.start()
+    quiet.c.startControl()
+    expect(bubble(quiet)).toBeNull()
+    expect(look(quiet)).toMatchObject({ face: 'happy', cue: 'hop' })
+    vi.advanceTimersByTime(1500)
+    expect(look(quiet).face).toBe('normal')
+
+    const still = make({ settings: { reduceMotion: true } })
+    still.c.start()
+    still.c.startControl()
+    expect(look(still)).toMatchObject({ face: 'happy', cue: null, cueSeq: 0 })
+    expect(bubble(still)?.text).toBe(PET_CONTROL_GUIDE)
+  })
+
+  it("key('right', true) 1초 → 발 x + 60 ± 2·오른쪽을 봄, 떼면 멈춘다(걷는 동안만 동작 고리)", () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    expect(vi.getTimerCount()).toBe(1) // 조회
+    const x0 = foot(t).x
+    t.c.key('right', true)
+    expect(mode(t)).toBe('walk')
+    expect(vi.getTimerCount()).toBe(1) // 동작 고리
+    vi.advanceTimersByTime(1000)
+    const dx = foot(t).x - x0
+    expect(dx).toBeGreaterThanOrEqual(58)
+    expect(dx).toBeLessThanOrEqual(62)
+    expect(look(t)).toMatchObject({ pose: 'walk', facing: 'right' })
+    expect(foot(t).y).toBe(1040)
+    t.c.key('right', false)
+    expect(mode(t)).toBe('idle')
+    const x1 = foot(t).x
+    vi.advanceTimersByTime(1000)
+    expect(foot(t).x).toBe(x1)
+    expect(vi.getTimerCount()).toBe(1) // 조회
+    t.c.key('left', true)
+    vi.advanceTimersByTime(500)
+    expect(look(t).facing).toBe('left')
+    expect(foot(t).x).toBeLessThan(x1 - 25)
+  })
+
+  it('←와 →를 함께 누르면 나중에 누른 쪽으로, 그 키를 떼면 남은 쪽으로 걷는다', () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    t.c.startControl()
+    t.c.key('right', true)
+    t.c.key('left', true)
+    vi.advanceTimersByTime(300)
+    expect(look(t).facing).toBe('left')
+    const x = foot(t).x
+    t.c.key('left', false)
+    vi.advanceTimersByTime(300)
+    expect(look(t).facing).toBe('right')
+    expect(foot(t).x).toBeGreaterThan(x)
+    t.c.key('right', false)
+    expect(mode(t)).toBe('idle')
+  })
+
+  it("key('jump', true): 땅에서 jumpVelocity(크기)로 뛰어(56 → vy −473) 바닥에 선다. 걷던 vx를 유지하고 공중에서는 다시 뛰지 않는다", () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('jump', true)
+    expect(mode(t)).toBe('air')
+    const v = t.c.status().velocity
+    expect(v.vy).toBeCloseTo(jumpVelocity(56), 6)
+    expect(Math.abs(v.vy + 473)).toBeLessThanOrEqual(1)
+    expect(v.vx).toBe(0)
+    t.c.key('jump', false)
+    t.c.key('jump', true) // 공중: 무시
+    expect(t.c.status().velocity).toEqual(v)
+    untilMode(t, 'idle', 3000)
+    expect(foot(t)).toEqual({ x: 960, y: 1040 })
+
+    t.c.key('right', true)
+    vi.advanceTimersByTime(200)
+    t.c.key('jump', true)
+    expect(mode(t)).toBe('air')
+    expect(t.c.status().velocity.vx).toBe(60)
+  })
+
+  it('바 옆 24 DIP 안에서 ↑: 뛰어올라 옆면에 붙고, 누르는 동안 올라 꼭대기에 앉는다. 떼면 붙은 채 멈춘다. 24 DIP 밖이면 오르지 않는다', () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    dropFrom(t, { x: 1820, y: 1000 })
+    untilMode(t, 'idle', 3000)
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('up', true)
+    expect(mode(t)).toBe('idle') // 옆면(1853.5)에서 33.5 DIP: 24 밖
+    expect(CONTROL.nearBar).toBe(24)
+    t.c.key('right', true) // ↑를 누른 채 다가가면 24 안에서 오르기 시작
+    untilMode(t, 'leap', 2000)
+    expect(foot(t).x).toBe(1853.5)
+    t.c.key('right', false)
+    untilMode(t, 'climb', 2000)
+    expect(foot(t)).toEqual({ x: 1853.5, y: 748 })
+    vi.advanceTimersByTime(1000)
+    const y1 = foot(t).y
+    expect(748 - y1).toBeGreaterThanOrEqual(40)
+    t.c.key('up', false)
+    vi.advanceTimersByTime(1000)
+    expect(foot(t).y).toBe(y1) // 붙은 채 멈춤
+    expect(mode(t)).toBe('climb')
+    expect(vi.getTimerCount()).toBe(1) // 조회(동작 고리 없음)
+    t.c.key('up', true)
+    untilMode(t, 'sit', 15_000)
+    expect(foot(t)).toEqual({ x: 1892, y: 292 })
+    expect(states(t).slice(-2)).toEqual(['climb', 'sit'])
+  })
+
+  it('꼭대기에서 ↓: 옆면 위쪽으로 돌아가(300ms) 내려가고, 옆면 아래 끝을 지나면 바와 겹치지 않는 자리에서 떨어져 바닥에 선다', () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    untilMode(t, 'sit')
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('down', true)
+    expect(mode(t)).toBe('climb')
+    expect(look(t)).toMatchObject({ pose: 'climb', facing: 'right' })
+    vi.advanceTimersByTime(STEP_UP_MS + 2 * PET_LOOP.frameMs)
+    expect(foot(t).x).toBe(1853.5)
+    const y = foot(t).y
+    vi.advanceTimersByTime(1000)
+    expect(foot(t).y - y).toBeGreaterThanOrEqual(40)
+    untilMode(t, 'air', 15_000)
+    expect(foot(t).y).toBeGreaterThan(748)
+    expect(foot(t).x).toBe(1836) // 바 안쪽 면(1864) − 몸 반(28)
+    until(() => mode(t) !== 'air', 3000)
+    expect(mode(t)).toBe('idle')
+    expect(foot(t)).toEqual({ x: 1836, y: 1040 })
+  })
+
+  it('꼭대기에서 →로 바 끝(+크기/4)을 넘으면 바와 겹치지 않는 자리에서 걷던 속도로 떨어지고, 누르고 있으면 바닥에서 이어 걷는다', () => {
+    const t = make({ bar: LEFT_BAR, settings: { bubbles: false } })
+    t.c.start()
+    untilMode(t, 'sit')
+    expect(foot(t)).toEqual({ x: 28, y: 292 })
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('right', true)
+    expect(mode(t)).toBe('walk')
+    vi.advanceTimersByTime(500)
+    expect(foot(t).y).toBe(292) // 꼭대기 위를 걷는다
+    expect(foot(t).x).toBeGreaterThan(50)
+    expect(foot(t).x).toBeLessThanOrEqual(56 + 14)
+    until(() => mode(t) === 'air', 1000)
+    expect(foot(t)).toEqual({ x: 84, y: 292 }) // 바 오른쪽 면(56) + 몸 반(28)
+    expect(t.c.status().velocity).toEqual({ vx: 60, vy: 0 })
+    until(() => mode(t) !== 'air', 3000)
+    expect(mode(t)).toBe('walk')
+    expect(foot(t).y).toBe(1040)
+    t.c.key('right', false)
+    expect(mode(t)).toBe('idle')
+  })
+
+  it('꼭대기에서 뛰면 다시 꼭대기에 앉는다', () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    untilMode(t, 'sit')
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('jump', true)
+    expect(mode(t)).toBe('air')
+    untilMode(t, 'sit', 2000)
+    expect(foot(t)).toEqual({ x: 1892, y: 292 })
+  })
+
+  it('(Task 5 이월) 꼭대기를 걷는 펫은 refresh()·worldChanged()로 바닥에 떨어지지 않고, 바를 옮기면 따라간다', () => {
+    const t = make({ bar: LEFT_BAR, settings: { bubbles: false } })
+    t.c.start()
+    untilMode(t, 'sit')
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    t.c.key('right', true)
+    vi.advanceTimersByTime(300)
+    expect(mode(t)).toBe('walk')
+    const x = foot(t).x
+    expect(foot(t).y).toBe(292)
+    t.c.refresh()
+    expect(foot(t)).toEqual({ x, y: 292 })
+    t.c.worldChanged()
+    expect(foot(t)).toEqual({ x, y: 292 })
+    expect(mode(t)).toBe('walk')
+    t.env.bar = { rect: { x: 0, y: 400, width: 56, height: 456 }, edge: 'left' }
+    t.c.worldChanged()
+    expect(foot(t)).toEqual({ x, y: 400 })
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    expect(foot(t).y).toBe(400)
+    expect(mode(t)).toBe('walk')
+  })
+
+  it("key('end', true) → setFocusable(false) 다음 기억한 창으로 restoreFocus 한 번, controlling false, 새 계획, 기록 end esc", () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = '4242'
+    t.c.startControl()
+    vi.advanceTimersByTime(4000)
+    t.c.key('end', true)
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(t.restoreFocus.mock.calls).toEqual([['4242']])
+    expect(t.window.setFocusable.mock.invocationCallOrder[1]).toBeLessThan(
+      t.restoreFocus.mock.invocationCallOrder[0]
+    )
+    expect(t.c.controlling()).toBe(false)
+    expect(t.c.view()).toMatchObject({ controlling: false })
+    expect(look(t).props).not.toContain('control')
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'esc' }])
+    expect(mode(t)).toBe('walk') // 새 계획(처음 계획은 바 오르기)
+    t.c.key('end', true)
+    t.c.endControl('esc')
+    expect(t.restoreFocus).toHaveBeenCalledTimes(1)
+    expect(controls(t)).toHaveLength(2)
+  })
+
+  it("endControl('blur')는 포커스를 되돌리지 않는다(다른 창을 눌렀다)", () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    t.c.endControl('blur')
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+    expect(t.c.controlling()).toBe(false)
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'blur' }])
+  })
+
+  it('foreground()가 null이면(Win32 없음) 끝낼 때 restoreFocus를 부르지 않는다', () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = null
+    t.c.startControl()
+    t.c.key('end', true)
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('시작 전·끝낸 뒤의 key는 무시한다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.c.key('right', true)
+    t.c.key('jump', true)
+    t.c.key('end', true)
+    vi.advanceTimersByTime(1000)
+    expect(mode(t)).toBe('idle')
+    expect(foot(t)).toEqual({ x: 960, y: 1040 })
+    expect(t.window.setFocusable).not.toHaveBeenCalled()
+    t.c.startControl()
+    t.c.key('end', true)
+    t.c.key('right', true)
+    t.c.key('jump', true)
+    expect(mode(t)).toBe('idle')
+    vi.advanceTimersByTime(1000)
+    expect(foot(t)).toEqual({ x: 960, y: 1040 })
+  })
+
+  it('(Review Focus 1) 끝낸 뒤 커서가 몸 밖이면 마지막 setIgnoreMouse는 true(메뉴로 시작해도)', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    vi.advanceTimersByTime(4000)
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitFarMs)
+    expect(lastIgnore(t)).toBe(false)
+    t.env.cursor = AWAY
+    t.c.key('end', true)
+    expect(lastIgnore(t)).toBe(true)
+
+    const m = make()
+    m.c.start()
+    openMenu(m)
+    m.env.cursor = menuRow(m, 0)
+    vi.advanceTimersByTime(100)
+    expect(lastIgnore(m)).toBe(false)
+    m.c.menuAction('control')
+    expect(lastIgnore(m)).toBe(true)
+    m.c.key('end', true)
+    expect(lastIgnore(m)).toBe(true)
+  })
+
+  it('toggleControl: 켜고 끈다(끌 때 reason toggle, 포커스 복귀)', () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = '77'
+    t.c.toggleControl()
+    expect(t.c.controlling()).toBe(true)
+    t.c.toggleControl()
+    expect(t.c.controlling()).toBe(false)
+    expect(t.restoreFocus.mock.calls).toEqual([['77']])
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'toggle' }])
+  })
+
+  it('조종 중 숨김(전체 화면): 조종을 끝내고 포커스는 되돌리지 않는다. 다시 보여도 조종 중이 아니다', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    t.c.key('right', true)
+    vi.advanceTimersByTime(300)
+    t.c.setFullscreen(true)
+    expect(t.c.controlling()).toBe(false)
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'hide' }])
+    expect(vi.getTimerCount()).toBe(0)
+    t.c.key('right', true)
+    t.c.setFullscreen(false)
+    expect(t.c.view()).toMatchObject({ controlling: false })
+    expect(look(t).props).not.toContain('control')
+    expect(mode(t)).toBe('idle')
+  })
+
+  it('숨긴 동안·이미 조종 중이면 startControl을 무시한다', () => {
+    const t = make()
+    t.c.start()
+    t.c.setFullscreen(true)
+    t.c.startControl()
+    expect(t.foreground).not.toHaveBeenCalled()
+    expect(t.window.setFocusable).not.toHaveBeenCalled()
+    t.c.setFullscreen(false)
+    t.c.startControl()
+    t.c.startControl()
+    expect(t.window.setFocusable.mock.calls).toEqual([[true]])
+    expect(t.window.focus).toHaveBeenCalledTimes(1)
+    expect(controls(t)).toEqual([{ phase: 'start' }])
+  })
+
+  it('조종 중에도 들어 던질 수 있고, 내려앉으면 계획 없이 가만히 기다린다', () => {
+    const t = make({ settings: { bubbles: false } })
+    t.c.start()
+    t.c.startControl()
+    vi.advanceTimersByTime(2000)
+    dropFrom(t, { x: 600, y: 900 })
+    untilMode(t, 'idle', 3000)
+    expect(t.c.controlling()).toBe(true)
+    vi.advanceTimersByTime(30_000)
+    expect(mode(t)).toBe('idle')
+    expect(foot(t)).toEqual({ x: 600, y: 1040 })
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('조종 중 앱 반응은 표정·말풍선만 바꾸고 걷기를 멈추지 않는다', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    vi.advanceTimersByTime(4000)
+    t.c.key('right', true)
+    vi.advanceTimersByTime(300)
+    t.c.react(COPIED)
+    expect(mode(t)).toBe('walk')
+    expect(bubble(t)).toMatchObject({ text: COPIED_TEXT })
+    expect(look(t)).toMatchObject({ pose: 'walk', face: 'happy' })
+    expect(look(t).props).toEqual(['sunglasses', 'envelope', 'control'])
+    const x = foot(t).x
+    vi.advanceTimersByTime(500)
+    expect(foot(t).x).toBeGreaterThan(x + 25)
+    vi.advanceTimersByTime(3600)
+    expect(bubble(t)).toBeNull()
+    expect(mode(t)).toBe('walk')
+    expect(reacts(t)).toEqual([{ kind: 'celebrate', bubble: true }])
+  })
+
+  it('잠든 펫에서 조종을 시작하면 깨어나 조종한다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000)
+    expect(mode(t)).toBe('sleep')
+    t.c.startControl()
+    expect(mode(t)).toBe('idle')
+    expect(states(t)).toEqual(['sleep', 'wake'])
+    expect(t.c.controlling()).toBe(true)
+    t.c.key('left', true)
+    vi.advanceTimersByTime(500)
+    expect(mode(t)).toBe('walk')
+    expect(foot(t).x).toBeLessThan(960 - 25)
+  })
+
+  it('끝낼 때: 꼭대기면 새 쉼(타이머 쉼·졸기·조회), 옆면에 붙어 있으면 이어 올라 앉는다', () => {
+    const top = make({ settings: { bubbles: false } })
+    top.c.start()
+    untilMode(top, 'sit')
+    top.c.startControl()
+    vi.advanceTimersByTime(2000)
+    expect(vi.getTimerCount()).toBe(1)
+    top.c.key('end', true)
+    expect(mode(top)).toBe('sit')
+    expect(vi.getTimerCount()).toBe(3) // 새 쉼·졸기·조회
+    vi.advanceTimersByTime(60_000 - 100) // random 0.5 → 쉼 60초
+    expect(mode(top)).toBe('sit')
+    vi.advanceTimersByTime(200)
+    expect(mode(top)).toBe('air')
+
+    const side = make({ settings: { bubbles: false } })
+    side.c.start()
+    dropFrom(side, { x: 1840, y: 1000 })
+    untilMode(side, 'idle', 3000)
+    side.c.startControl()
+    side.c.key('up', true)
+    untilMode(side, 'climb', 2000)
+    vi.advanceTimersByTime(1000)
+    side.c.key('up', false)
+    const y = foot(side).y
+    side.c.key('end', true)
+    vi.advanceTimersByTime(1000)
+    expect(foot(side).y).toBeLessThan(y - 40) // 혼자 이어 오른다
+    untilMode(side, 'sit', 15_000)
+  })
+
+  it('끝낼 때 키 안내 말풍선은 닫고, 앱 반응 말풍선은 그대로 둔다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.c.startControl()
+    expect(bubble(t)?.text).toBe(PET_CONTROL_GUIDE)
+    t.c.key('end', true)
+    expect(bubble(t)).toBeNull()
+    t.c.startControl()
+    t.c.react(NOTE)
+    t.c.key('end', true)
+    expect(bubble(t)).toMatchObject({ text: '터미널에서는 가져오지 않아요.' })
+  })
+
+  it('조종 중 타이머: 가만히·앉기·옆면에 붙음은 조회 하나, 걷기·오르기는 동작 고리 하나(키 안내 말풍선 동안 하나 더)', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    expect(vi.getTimerCount()).toBe(2) // 안내 말풍선·조회
+    t.c.key('right', true)
+    expect(vi.getTimerCount()).toBe(2) // 안내 말풍선·동작 고리
+    vi.advanceTimersByTime(4000)
+    expect(vi.getTimerCount()).toBe(1) // 동작 고리
+    t.c.key('right', false)
+    expect(vi.getTimerCount()).toBe(1) // 조회
+  })
+
+  it('dispose: 조종 중이면 setFocusable(false), 포커스는 되돌리지 않고 타이머 0, 이후 호출 무시', () => {
+    const t = make()
+    t.c.start()
+    t.c.startControl()
+    t.c.dispose()
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(t.c.controlling()).toBe(false)
+    t.c.key('right', true)
+    t.c.startControl()
+    t.c.contextMenu()
+    t.c.menuAction('hide')
+    expect(t.window.setFocusable).toHaveBeenCalledTimes(2)
+    expect(t.setVisible).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

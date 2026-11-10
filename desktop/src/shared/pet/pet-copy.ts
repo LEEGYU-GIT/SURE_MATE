@@ -1,6 +1,7 @@
 import type { AppEvent } from '../app-events'
 import { CAPTURE_NOTES } from '../labels'
 import { ALL_CATEGORIES, type MaskCategory } from '../masking/types'
+import type { PetMenuRow } from './pet-view'
 
 /**
  * 말풍선에 쓰는 분류 이름(바꾼 글이 무엇인지). 이름 분류는 "~명", 패턴 분류는 그 글의 종류.
@@ -81,4 +82,37 @@ export function petBubbleText(e: AppEvent): string | null {
     case 'capture-failed':
       return `${CAPTURE_NOTES[e.reason]}.`
   }
+}
+
+/**
+ * 조종 키와 하는 일(설계 §14-2 "←→ 걷기, Space 뛰기, 바 옆에서 ↑ 오르기·↓ 내려오기, Esc 끝").
+ * 메뉴 설명·조종 시작 말풍선·팔레트 부제가 같은 말을 쓴다. 키 이름은 키보드에 적힌 그대로.
+ */
+export const PET_CONTROL_KEY_ITEMS: readonly (readonly [key: string, action: string])[] = [
+  ['←→', '걷기'],
+  ['Space', '뛰기'],
+  ['↑↓', '바 오르내리기'],
+  ['Esc', '끝']
+]
+
+/** 한 줄 키 안내: "←→ 걷기 · Space 뛰기 · ↑↓ 바 오르내리기 · Esc 끝" */
+export const PET_CONTROL_KEYS = PET_CONTROL_KEY_ITEMS.map(([k, v]) => `${k} ${v}`).join(' · ')
+
+/** 조종을 시작할 때 말풍선: 할 일 한 문장(말풍선이 굵게 쓴다) + 키 안내. 메뉴 행은 한 줄이라 안내를 여기서 보인다 */
+export const PET_CONTROL_GUIDE = `키보드로 조종해 보세요. ${PET_CONTROL_KEYS}`
+
+/** 숨긴 펫을 다시 부르는 곳(메뉴 "숨기기"의 설명, 팔레트 숨김 알림과 같은 말) */
+export const PET_RECALL_HINT = '바의 펫 단추나 트레이에서 다시 불러요'
+
+/**
+ * 오른쪽 클릭 메뉴 4행(설계 §14-2 "조종하기, 재우기, 숨기기, 펫 설정"). 졸고 있으면 두 번째 행이 깨우기다.
+ * 행은 한 줄(높이 32)이라 설명은 화면 읽기 프로그램에만 준다. 부를 때마다 새 배열.
+ */
+export function petMenuRows(o: { sleeping: boolean }): PetMenuRow[] {
+  return [
+    { action: 'control', title: '조종하기', detail: PET_CONTROL_KEYS },
+    o.sleeping ? { action: 'wake', title: '깨우기' } : { action: 'sleep', title: '재우기' },
+    { action: 'hide', title: '숨기기', detail: PET_RECALL_HINT },
+    { action: 'settings', title: '펫 설정' }
+  ]
 }

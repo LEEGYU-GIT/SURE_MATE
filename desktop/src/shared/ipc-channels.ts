@@ -2,7 +2,7 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskItem } from './masking/types'
-import type { PetView } from './pet/pet-view'
+import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
 import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
@@ -103,7 +103,11 @@ export const IPC = {
   /** 펫 창 → main(send): 말풍선을 눌렀다(닫기) */
   petBubbleClick: 'pet:bubble-click',
   /** 펫 창 → main(send): 잰 말풍선 사각형(창 좌표, DIP). 말풍선이 사라지면 null */
-  petBubbleRect: 'pet:bubble-rect'
+  petBubbleRect: 'pet:bubble-rect',
+  /** 펫 창 → main(send): 오른쪽 클릭 메뉴 행을 골랐다(PetMenuAction) */
+  petMenu: 'pet:menu',
+  /** 펫 창 → main(send): 조종 모드 키 누름·뗌(PetKey, down) */
+  petKey: 'pet:key'
 } as const
 
 /**
@@ -181,4 +185,8 @@ export interface SureMateApi {
   petBubbleClick(): void
   /** 그린 말풍선 사각형(창 좌표, DIP)을 클릭 판정에 알린다. 사라지면 null */
   petBubbleRect(r: Rect | null): void
+  /** 오른쪽 클릭 메뉴 행을 골랐다. main이 메뉴를 닫고 처리한다 */
+  petMenu(a: PetMenuAction): void
+  /** 조종 모드 키 누름(true)·뗌(false). 조종 중이 아니면 main이 무시한다 */
+  petKey(k: PetKey, down: boolean): void
 }

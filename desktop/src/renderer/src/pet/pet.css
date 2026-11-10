@@ -122,6 +122,28 @@
   animation: pet-bubble-in var(--dur-open) var(--ease-out) both;
 }
 
+/* ── 오른쪽 클릭 메뉴(설계 §14-2): M5 펼침 메뉴와 같이 들어올 때만 펫 쪽에서 4 DIP·투명도 200ms --ease-out ── */
+
+.pet-menu {
+  animation: pet-menu-in var(--dur-open) var(--ease-out) both;
+}
+
+/* 펫이 있는 쪽에서 나온다: 위 메뉴는 아래(펫)에서, 왼쪽 메뉴는 오른쪽(펫)에서, 오른쪽 메뉴는 왼쪽(펫)에서 */
+.pet-menu[data-side='above'] {
+  --pet-menu-dx: 0px;
+  --pet-menu-dy: 4px;
+}
+
+.pet-menu[data-side='left'] {
+  --pet-menu-dx: 4px;
+  --pet-menu-dy: 0px;
+}
+
+.pet-menu[data-side='right'] {
+  --pet-menu-dx: -4px;
+  --pet-menu-dy: 0px;
+}
+
 /* 움직임 줄이기(설정 pet.reduceMotion 또는 Windows 애니메이션 효과 끔): 모든 움직임·전환을 끈다 */
 [data-reduce-motion],
 [data-reduce-motion] * {
@@ -232,6 +254,17 @@
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes pet-menu-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--pet-menu-dx), var(--pet-menu-dy));
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
