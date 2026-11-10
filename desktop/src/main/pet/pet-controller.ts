@@ -128,13 +128,6 @@ export function floorMiddle(w: PetWorld, size: number): Point {
   return { x: clamp((w.minX + w.maxX) / 2, s.lo, s.hi), y: w.floorY }
 }
 
-/** 발이 이 세계(바가 있는 모니터 안, 천장과 바닥 사이)에 있는지 */
-function onWorld(p: Point, w: PetWorld): boolean {
-  const b = w.bounds
-  const e = 0.5
-  return p.x >= b.x - e && p.x <= b.x + b.width + e && p.y >= w.topY - e && p.y <= w.floorY + e
-}
-
 /**
  * 말랑 메이트 상태 기계(설계 §14-2). 창·세계·설정·커서·시계·난수를 주입받는 순수 모듈이다.
  * 움직이는 동안(walk·leap·climb·air·held, 꼭대기로 올라서는 300ms, 누르고 있는 동안)만 34ms 동작 고리를 돌리고,
@@ -188,7 +181,9 @@ export function createPetController(d: PetControllerDeps): PetController {
   let lastFrame: number | null = null
   let pollTimer: unknown = null
   let restTimer: unknown = null
-  let restDue = 0
+  /** 지금 쉼을 시작한 시각과 길이(ms). 숨길 때 남은 시간을 잰다 */
+  let restAt = 0
+  let restWait = 0
   /** 숨길 때 남은 쉼(ms). 다시 표시하면 이어 간다 */
   let restLeft: number | null = null
   let sleepTimer: unknown = null
@@ -310,7 +305,9 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   function pollDelay(): number {
-    if (mode === 'sleep') return PET_LOOP.hitSleepMs
+    // 졸 때는 느리게 조회한다. 다만 클릭을 받고 있으면(커서가 몸 위) 깨어 있을 때 주기로 조회해
+    // 커서가 나간 뒤 0.1초 안에 클릭 통과로 되돌린다(Review Focus 1)
+    if (mode === 'sleep' && ignoring !== false) return PET_LOOP.hitSleepMs
     const c = lastCursor
     const r = placed
     if (!c || !r) return PET_LOOP.hitFarMs
@@ -373,7 +370,8 @@ export function createPetController(d: PetControllerDeps): PetController {
   function rest(ms: number): void {
     clearRest()
     const wait = Number.isFinite(ms) ? Math.max(0, ms) : 0
-    restDue = now() + wait
+    restAt = now()
+    restWait = wait
     restTimer = T.setTimeout(() => {
       restTimer = null
       if (!shown || disposed) return
@@ -464,8 +462,11 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   function toFloorMiddle(): void {
+    const asleep = mode === 'sleep'
     foot = floorMiddle(world!, size())
     enterIdle(pickMs(PET_TIMING.idleMs, d.random()))
+    // 자던 펫을 다른 모니터 바닥 가운데로 옮기면 깬다(깸으로 기록)
+    if (asleep) logState('wake')
   }
 
   function clampFloorX(x: number): number {
@@ -486,11 +487,13 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   function plan(): void {
     const w = world!
+    const since = lastBarAt === null ? null : now() - lastBarAt
     const p = choosePlan({
       activity: cfg.activity,
       world: w,
       footX: foot.x,
-      sinceBarMs: lastBarAt === null ? null : now() - lastBarAt,
+      // 시계가 뒤로 갔으면(음수·NaN) 바 방문 보장이 된 것으로 본다(한 시간씩 바에 가지 않는 일이 없게)
+      sinceBarMs: since === null ? null : since >= 0 ? since : PET_TIMING.barEveryMs,
       random: d.random
     })
     if (p.kind === 'idle') enterIdle(p.ms)
@@ -587,10 +590,14 @@ export function createPetController(d: PetControllerDeps): PetController {
     stepUp = null
     vx = vy = 0
     samples = []
+    // 클릭 → 집어 던지기 → 500ms 안의 클릭은 더블클릭이 아니라 새 클릭이다
+    lastClickAt = null
   }
 
   function click(t: number): void {
-    if (lastClickAt !== null && t - lastClickAt < GESTURE.doubleMs) {
+    // 시계가 뒤로 갔으면(음수·NaN) 더블클릭 시간이 지난 것으로 본다(팔레트가 저절로 열리지 않게)
+    const gap = lastClickAt === null ? NaN : t - lastClickAt
+    if (gap >= 0 && gap < GESTURE.doubleMs) {
       lastClickAt = null
       d.log('pet.click', { kind: 'double' })
       d.openPalette()
@@ -618,8 +625,10 @@ export function createPetController(d: PetControllerDeps): PetController {
       enterAir(v, 'surprised')
       return
     }
-    if (t - p.at < GESTURE.clickMaxMs && Math.hypot(c.x - p.x, c.y - p.y) <= GESTURE.dragThreshold)
-      click(t)
+    // 누른 시간이 음수·NaN(시계가 뒤로 감)이면 클릭 시간이 지난 것으로 본다
+    const held = t - p.at
+    const still = Math.hypot(c.x - p.x, c.y - p.y) <= GESTURE.dragThreshold
+    if (held >= 0 && held < GESTURE.clickMaxMs && still) click(t)
   }
 
   /** 프레임마다: 놓침 확인(들린 동안·누른 동안), 끌기 시작. 놓았으면 'released' */
@@ -771,6 +780,8 @@ export function createPetController(d: PetControllerDeps): PetController {
   function followTop(prev: PetWorld | null, w: PetWorld): void {
     const l = w.ledge
     if (!l) {
+      // 꼭대기에서 자던 펫은 떨어지며 깬다(깸으로 기록)
+      if (mode === 'sleep') logState('wake')
       leaveTop()
       enterAir({ vx: 0, vy: 0 }, 'surprised')
       return
@@ -823,17 +834,23 @@ export function createPetController(d: PetControllerDeps): PetController {
   function applyWorld(w: PetWorld): void {
     const prev = world
     world = w
-    if (mode === 'sit' || (mode === 'sleep' && sleepOn === 'top')) followTop(prev, w)
+    const otherDisplay = prev === null || prev.displayId !== w.displayId
+    if (onTop()) followTop(prev, w)
     else if (mode === 'climb') followSide(prev, w)
     else if (mode === 'leap') retargetLeap(w)
     else if (mode === 'walk' && walk?.bar)
       walk = w.side ? { to: w.side.x, bar: true } : { to: walk.to, bar: false }
+    // 들린 펫은 다음 프레임에 새 모니터 안으로 자른다. 공중의 펫은 같은 모니터면 stepAir가 새 벽·바닥으로 맞춘다
     if (mode === 'held') return
-    if (!onWorld(foot, w)) {
+    const onFloor = mode === 'idle' || mode === 'walk' || (mode === 'sleep' && sleepOn === 'floor')
+    if (otherDisplay && (onFloor || mode === 'air')) {
+      // 바가 다른 모니터로 가면 그 모니터 바닥 가운데에 선다(다른 모니터로 걸어가지 않는다)
       toFloorMiddle()
       return
     }
-    if (mode === 'idle' || mode === 'walk' || (mode === 'sleep' && sleepOn === 'floor')) {
+    if (onFloor) {
+      // 같은 모니터의 바닥 변화(작업 표시줄 위치·크기, 해상도): x는 새 범위 안으로 자르고 새 바닥에 선다.
+      // 상태는 그대로다(자던 펫은 계속 자고, 걷던 펫은 잘린 목적지로 간다)
       foot = { x: clampFloorX(foot.x), y: w.floorY }
       if (walk && !walk.bar) walk = { to: clampFloorX(walk.to), bar: false }
     }
@@ -879,8 +896,9 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
     let left: number | null = null
     if (restTimer !== null) {
-      const l = restDue - now()
-      left = Number.isFinite(l) ? Math.max(0, l) : null
+      // 시계가 뒤로 갔으면(음수·NaN) 쉼이 끝난 것으로 본다(다시 표시한 뒤 한 시간씩 앉아 있지 않게)
+      const elapsed = now() - restAt
+      left = elapsed >= 0 ? Math.max(0, restWait - elapsed) : 0
     }
     clearRest()
     restLeft = left
@@ -974,12 +992,23 @@ export function createPetController(d: PetControllerDeps): PetController {
     }),
     view: () => (shown && world ? currentView() : null),
     dispose() {
+      if (disposed) return
       disposed = true
+      // 몸짓을 멈추고(들린 펫은 놓는다) 타이머를 지운다
       pressed = null
+      samples = []
+      if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
       stopLoop()
       stopPoll()
       clearRest()
       clearSleepTimer()
+      // 클릭을 막는 창을 남기지 않는다(숨긴 펫은 숨길 때 이미 통과로 돌렸다)
+      if (shown) {
+        ignoring = true
+        d.window.setIgnoreMouse(true)
+      }
+      shown = false
+      placed = null
     }
   }
 }

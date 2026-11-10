@@ -323,11 +323,15 @@ describe('혼자 놀기', () => {
     expect(foot(t)).toEqual({ x: 1853.5, y: 1040 })
     expect(look(t)).toMatchObject({ pose: 'air', face: 'up', facing: 'right' })
     expect(t.c.status().velocity.vy).toBeCloseTo(-1080.74, 1)
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    expect(mode(t)).toBe('leap')
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2) // 동작 고리·졸기
 
     untilMode(t, 'climb', 2000)
     expect(foot(t)).toEqual({ x: 1853.5, y: 748 })
     expect(look(t)).toMatchObject({ pose: 'climb', face: 'up', facing: 'right' })
     expect(stateLog(t, 'climb').box).toEqual(petBox({ x: 1853.5, y: 748 }, 56))
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2)
     const y0 = foot(t).y
     vi.advanceTimersByTime(1000)
     expect(y0 - foot(t).y).toBeGreaterThanOrEqual(43)
@@ -335,7 +339,11 @@ describe('혼자 놀기', () => {
 
     until(() => foot(t).y === 292, 12_000)
     expect(mode(t)).toBe('climb')
-    const topAt = Date.now()
+    vi.advanceTimersByTime(PET_LOOP.frameMs) // 꼭대기로 올라서는 중
+    expect(mode(t)).toBe('climb')
+    expect(foot(t).x).toBeGreaterThan(1853.5)
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2)
+    const topAt = Date.now() - PET_LOOP.frameMs
     untilMode(t, 'sit', 1000)
     expect(Date.now() - topAt).toBeGreaterThanOrEqual(300)
     expect(Date.now() - topAt).toBeLessThanOrEqual(300 + 2 * PET_LOOP.frameMs)
@@ -395,6 +403,9 @@ describe('혼자 놀기', () => {
     const jumpedAt = Date.now()
     expect(t.c.status().velocity).toEqual({ vx: -240, vy: -520 })
     expect(look(t).facing).toBe('left')
+    vi.advanceTimersByTime(300)
+    expect(mode(t)).toBe('air')
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2) // 동작 고리·졸기(쉼 없음)
     untilMode(t, 'idle', 5000)
     expect(foot(t).y).toBe(1040)
     expect(states(t)).toContain('land')
@@ -630,14 +641,75 @@ describe('(Review Focus 3) 모니터·작업 표시줄 변화', () => {
     expect(t.c.view()!.box).toEqual({ x: 132, y: 184.25 })
   })
 
-  it('날아가는 중 바닥이 위로 올라오면 바닥 가운데에 선다', () => {
+  it('같은 모니터에서 작업 표시줄이 40 DIP 높아지면 그 x 그대로 새 바닥에 서고 상태를 이어 간다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    dropFrom(t, { x: 1080, y: 1000 })
+    untilMode(t, 'idle', 3000)
+    expect(foot(t)).toEqual({ x: 1080, y: 1040 })
+    t.env.monitor = { ...MAIN, workArea: { x: 0, y: 0, width: 1920, height: 1000 } }
+    t.c.worldChanged()
+    expect(foot(t)).toEqual({ x: 1080, y: 1000 })
+    expect(mode(t)).toBe('idle')
+  })
+
+  it('같은 모니터의 바닥 변화에 자던 펫은 계속 잔다(깨지 않는다)', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000)
+    expect(mode(t)).toBe('sleep')
+    t.env.monitor = { ...MAIN, workArea: { x: 0, y: 0, width: 1920, height: 1000 } }
+    t.c.worldChanged()
+    expect(mode(t)).toBe('sleep')
+    expect(foot(t)).toEqual({ x: 960, y: 1000 })
+    expect(states(t)).toEqual(['sleep'])
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('같은 모니터의 해상도가 줄면 걷던 펫은 x와 목적지를 새 범위로 잘라 이어 걷는다', () => {
+    const t = make()
+    t.c.start()
+    vi.advanceTimersByTime(5000) // 바로 가는 중(x 약 1080)
+    expect(mode(t)).toBe('walk')
+    const x = foot(t).x
+    t.env.monitor = {
+      ...MAIN,
+      bounds: { x: 0, y: 0, width: 1280, height: 720 },
+      workArea: { x: 0, y: 0, width: 1280, height: 680 }
+    }
+    t.env.bar = null
+    t.c.worldChanged()
+    expect(mode(t)).toBe('walk')
+    expect(foot(t)).toEqual({ x, y: 680 })
+    untilMode(t, 'idle', 10_000)
+    expect(foot(t)).toEqual({ x: 1252, y: 680 }) // 옛 목적지 1853.5를 새 maxX로 자름
+  })
+
+  it('같은 모니터에서 날아가는 중 바닥이 위로 올라오면 그 x에서 새 바닥에 내려선다', () => {
     const t = make({ bar: null })
     t.c.start()
     dropFrom(t, { x: 400, y: 1000 })
     t.env.monitor = { ...MAIN, workArea: { x: 0, y: 0, width: 1920, height: 900 } }
     t.c.worldChanged()
+    expect(mode(t)).toBe('air')
+    untilMode(t, 'idle', 1000)
+    expect(foot(t)).toEqual({ x: 400, y: 900 })
+  })
+
+  it('다른 모니터로 바뀌면 날던 펫도 그 모니터 바닥 가운데에 선다', () => {
+    const t = make({ bar: null })
+    t.c.start()
+    dropFrom(t, { x: 400, y: 500 })
+    t.env.monitor = {
+      ...MAIN,
+      id: '2',
+      bounds: { x: 0, y: 0, width: 1280, height: 720 },
+      workArea: { x: 0, y: 0, width: 1280, height: 680 }
+    }
+    t.c.worldChanged()
     expect(mode(t)).toBe('idle')
-    expect(foot(t)).toEqual({ x: 960, y: 900 })
+    expect(foot(t)).toEqual({ x: 640, y: 680 })
   })
 })
 
@@ -692,6 +764,24 @@ describe('클릭', () => {
     click(t)
     expect(t.openPalette).not.toHaveBeenCalled()
     expect(look(t).cueSeq).toBe(2)
+    expect(t.log.mock.calls.filter(([e]) => e === 'pet.click')).toEqual([
+      ['pet.click', { kind: 'hop' }],
+      ['pet.click', { kind: 'hop' }]
+    ])
+  })
+
+  it('클릭 → 집어 던지기 → 500ms 안의 클릭은 더블클릭이 아니라 폴짝이다', () => {
+    const t = make()
+    t.c.start()
+    click(t)
+    expect(look(t).cueSeq).toBe(1)
+    pickUp(t)
+    t.c.press(false)
+    expect(mode(t)).toBe('air')
+    click(t) // 첫 클릭을 뗀 뒤 약 134ms
+    expect(t.openPalette).not.toHaveBeenCalled()
+    // 바닥 높이에서 놓아 한 번 내려앉고(land) 이어 폴짝: 1 hop + 1 land + 1 hop
+    expect(look(t)).toMatchObject({ cue: 'hop', cueSeq: 3 })
     expect(t.log.mock.calls.filter(([e]) => e === 'pet.click')).toEqual([
       ['pet.click', { kind: 'hop' }],
       ['pet.click', { kind: 'hop' }]
@@ -764,6 +854,43 @@ describe('잡아 던지기', () => {
     expect(lastIgnore(t)).toBe(false)
     expect(t.window.setIgnoreMouse.mock.calls).toEqual([[true], [false]])
     expect(vi.getTimerCount()).toBe(2) // 동작 고리·졸기(계획 없음)
+  })
+
+  it('들린 동안 세계가 바뀌어도 클릭 통과를 끈 채로 들고 있다', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    const calls = t.window.setIgnoreMouse.mock.calls.length
+    t.env.bar = { rect: { x: 1864, y: 400, width: 56, height: 456 }, edge: 'right' }
+    t.c.worldChanged()
+    t.env.monitor = { ...MAIN, workArea: { x: 0, y: 0, width: 1920, height: 1000 } }
+    t.c.worldChanged()
+    vi.advanceTimersByTime(200)
+    expect(mode(t)).toBe('held')
+    expect(lastIgnore(t)).toBe(false)
+    expect(t.window.setIgnoreMouse.mock.calls.length).toBe(calls)
+    expect(foot(t).y).toBeLessThanOrEqual(1000) // 새 바닥 위로 자른다
+  })
+
+  it('날고 있는 펫을 잡을 수 있고, 날고 있는 펫을 클릭하면 폴짝 cue만 내고 계속 난다', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    untilMode(t, 'air', 61_000) // 뛰어내리기
+    vi.advanceTimersByTime(100)
+    click(t)
+    expect(mode(t)).toBe('air')
+    expect(look(t)).toMatchObject({ cue: 'hop', cueSeq: 1 })
+    vi.advanceTimersByTime(100)
+    expect(mode(t)).toBe('air')
+    pickUp(t) // 공중에서 잡는다
+    expect(states(t).at(-1)).toBe('held')
+    t.env.cursor = { x: 900, y: 700 }
+    vi.advanceTimersByTime(200)
+    t.c.press(false)
+    expect(mode(t)).toBe('air')
+    untilMode(t, 'idle', 3000)
+    expect(foot(t)).toEqual({ x: 900, y: 1040 })
   })
 
   it('누르고 있는 동안 펫이 걸어서 커서에서 벗어나도 클릭 통과를 끈 채로 둔다', () => {
@@ -968,6 +1095,63 @@ describe('졸기', () => {
     t.env.cursor = { x: 960, y: 1033 }
     vi.advanceTimersByTime(PET_LOOP.hitSleepMs)
     expect(mode(t)).toBe('idle')
+  })
+
+  it('(Review Focus 1) 자는 펫 위의 커서로 클릭을 받는 동안은 깨어 있을 때 주기로 조회해 0.1초 안에 통과로 되돌린다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000 - 300)
+    t.env.cursor = { x: 960, y: 1033 } // 서 있는 몸과 자는 몸 모두의 위
+    vi.advanceTimersByTime(300)
+    expect(mode(t)).toBe('sleep')
+    expect(lastIgnore(t)).toBe(false)
+    vi.advanceTimersByTime(200)
+    t.cursor.mockClear()
+    vi.advanceTimersByTime(1000)
+    expect(t.cursor.mock.calls.length).toBeGreaterThanOrEqual(25) // 34ms(가까움)
+    t.env.cursor = { x: 300, y: 300 }
+    vi.advanceTimersByTime(PET_LOOP.hitFarMs)
+    expect(lastIgnore(t)).toBe(true)
+    expect(mode(t)).toBe('sleep')
+    vi.advanceTimersByTime(300)
+    t.cursor.mockClear()
+    vi.advanceTimersByTime(1000)
+    expect(t.cursor.mock.calls.length).toBeLessThanOrEqual(4) // 통과 중이면 다시 250ms
+  })
+
+  it('꼭대기에서 자다가 바가 없어지면 깸으로 기록하고 떨어진다', () => {
+    const t = make({ settings: { sleepAfterMin: 1 } })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(60_000)
+    expect(mode(t)).toBe('sleep')
+    t.env.bar = null
+    t.c.worldChanged()
+    expect(mode(t)).toBe('air')
+    expect(states(t).slice(-2)).toEqual(['sleep', 'wake'])
+    expect(stateLog(t, 'wake').box).toEqual(SIT_BOX)
+    untilMode(t, 'idle', 3000)
+    expect(states(t).slice(-3)).toEqual(['sleep', 'wake', 'land'])
+  })
+
+  it('바닥에서 자다가 다른 모니터 바닥 가운데로 옮겨지면 깸으로 기록한다', () => {
+    const t = make({ bar: null, random: 0 })
+    t.c.start()
+    t.env.idle = 1000
+    vi.advanceTimersByTime(180_000)
+    expect(mode(t)).toBe('sleep')
+    t.env.monitor = {
+      ...MAIN,
+      id: '2',
+      bounds: { x: 0, y: 0, width: 1280, height: 720 },
+      workArea: { x: 0, y: 0, width: 1280, height: 680 }
+    }
+    t.c.worldChanged()
+    expect(mode(t)).toBe('idle')
+    expect(foot(t)).toEqual({ x: 640, y: 680 })
+    expect(states(t)).toEqual(['sleep', 'wake'])
+    expect(stateLog(t, 'wake').box).toEqual(petBox({ x: 640, y: 680 }, 56))
   })
 
   it('꼭대기에서 졸면 깬 뒤 다시 앉는다', () => {
@@ -1178,6 +1362,20 @@ describe('Task 2에서 넘겨받은 주의', () => {
     expect(foot(t)).toEqual({ x: 400, y: 1040 }) // 바닥 가운데(960)로 재설정되지 않았다
   })
 
+  it('걷는 중 시계가 앞으로 뛰어도 한 프레임의 dt는 0.1초까지만 쓴다', () => {
+    const t = make()
+    t.c.start()
+    vi.advanceTimersByTime(5000)
+    expect(mode(t)).toBe('walk')
+    const x0 = foot(t).x
+    t.env.clock = () => Date.now() + 5000
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    const x1 = foot(t).x
+    expect(x1 - x0).toBeCloseTo(0.1 * 60, 6) // 5.034초가 아니라 0.1초만큼
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    expect(foot(t).x - x1).toBeCloseTo(0.034 * 60, 6) // 다음 프레임은 다시 34ms
+  })
+
   it('view()와 send는 창 안 좌표, status().window는 화면 사각형이다', () => {
     const t = make()
     t.c.start()
@@ -1202,5 +1400,78 @@ describe('dispose', () => {
     t.c.refresh()
     vi.advanceTimersByTime(5000)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('들고 있는 채 dispose하면 클릭 통과로 되돌리고 숨김으로 표시하며 몸짓을 멈춘다', () => {
+    const t = make()
+    t.c.start()
+    t.env.buttons = true
+    pickUp(t)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.dispose()
+    expect(lastIgnore(t)).toBe(true)
+    expect(t.c.status()).toMatchObject({ shown: false, window: null })
+    expect(t.c.status().mode).not.toBe('held')
+    expect(t.c.view()).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+    const calls = t.window.setIgnoreMouse.mock.calls.length
+    t.c.press(false)
+    t.c.press(true)
+    t.c.setFullscreen(true)
+    t.c.dispose()
+    vi.advanceTimersByTime(5000)
+    expect(t.window.setIgnoreMouse.mock.calls.length).toBe(calls)
+    expect(t.window.hide).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('시계가 뒤로 가도', () => {
+  const HOUR = 3_600_000
+
+  it('바 방문 보장은 된 것으로 본다(뛰어내린 직후라도 다음 계획이 바 오르기)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    t.env.random = 0
+    untilMode(t, 'air', 61_000)
+    untilMode(t, 'idle', 5000)
+    t.env.clock = () => Date.now() - HOUR
+    vi.advanceTimersByTime(5100) // 가만히 5초 뒤 계획
+    expect(mode(t)).toBe('walk')
+    untilMode(t, 'climb', 20_000)
+  })
+
+  it('더블클릭 시간은 지난 것으로 보고, 시계가 뒤로 간 누름은 클릭이 아니다', () => {
+    const t = make()
+    t.c.start()
+    click(t)
+    t.env.clock = () => Date.now() - HOUR
+    vi.advanceTimersByTime(100)
+    click(t)
+    expect(t.openPalette).not.toHaveBeenCalled()
+    expect(look(t).cueSeq).toBe(2)
+
+    t.env.clock = null
+    vi.advanceTimersByTime(600)
+    t.c.press(true)
+    t.env.clock = () => Date.now() - HOUR
+    vi.advanceTimersByTime(100)
+    t.c.press(false)
+    expect(look(t).cueSeq).toBe(2)
+    expect(t.openPalette).not.toHaveBeenCalled()
+  })
+
+  it('숨길 때 남은 쉼은 끝난 것으로 본다(다시 표시하면 바로 뛰어내린다)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'sit')
+    vi.advanceTimersByTime(10_000) // 쉼 60초 중 10초
+    t.env.clock = () => Date.now() - HOUR
+    t.c.setFullscreen(true)
+    t.c.setFullscreen(false)
+    expect(mode(t)).toBe('sit')
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    expect(mode(t)).toBe('air')
   })
 })
