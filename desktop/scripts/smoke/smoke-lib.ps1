@@ -1,43 +1,8 @@
 ﻿# shared helpers for smoke tests (dot-source this)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
-using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
+using System; using System.Runtime.InteropServices; using System.Text;
 public static class W {
-  public delegate bool EnumProc(IntPtr h, IntPtr p);
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
-  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-  // 맨 위(Z 순서 앞쪽)부터 훑어 처음 만나는 보이는 topmost 창. 크기가 0인 창은 건너뛴다
-  public static IntPtr TopTopmost() {
-    IntPtr found = IntPtr.Zero;
-    EnumWindows(delegate(IntPtr h, IntPtr p) {
-      if (!IsWindowVisible(h)) return true;
-      if ((GetWindowLong(h, -20) & 0x8) == 0) return true;
-      RECT r; GetWindowRect(h, out r);
-      if (r.Right - r.Left <= 0 || r.Bottom - r.Top <= 0) return true;
-      found = h; return false;
-    }, IntPtr.Zero);
-    return found;
-  }
-  // 보이는 topmost 창 전부: { 프로세스 id, 왼쪽, 위, 오른쪽, 아래 }(물리 픽셀)
-  public static List<int[]> TopmostRects() {
-    List<int[]> list = new List<int[]>();
-    EnumWindows(delegate(IntPtr h, IntPtr p) {
-      if (!IsWindowVisible(h)) return true;
-      if ((GetWindowLong(h, -20) & 0x8) == 0) return true;
-      RECT r; GetWindowRect(h, out r);
-      if (r.Right - r.Left <= 0 || r.Bottom - r.Top <= 0) return true;
-      uint pid; GetWindowThreadProcessId(h, out pid);
-      list.Add(new int[] { (int)pid, r.Left, r.Top, r.Right, r.Bottom });
-      return true;
-    }, IntPtr.Zero);
-    return list;
-  }
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint mapType);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -46,9 +11,34 @@ public static class W {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   public static string Title(IntPtr h){ var sb=new StringBuilder(256); GetWindowText(h,sb,256); return sb.ToString(); }
   public static uint Pid(IntPtr h){ uint p; GetWindowThreadProcessId(h, out p); return p; }
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  // 화면 사각형(물리 픽셀)과 겹치는 창 가운데 z 순서 맨 위의 topmost 창. 숨김·DWM 가림(cloaked)·클릭 통과(WS_EX_TRANSPARENT) 창은 건너뛴다
+  public static IntPtr TopmostOver(int x, int y, int w, int h) {
+    for (IntPtr c = GetTopWindow(IntPtr.Zero); c != IntPtr.Zero; c = GetWindow(c, 2)) {
+      if (!IsWindowVisible(c)) continue;
+      int ex = GetWindowLong(c, -20);
+      if ((ex & 0x8) == 0) continue;
+      if ((ex & 0x20) != 0) continue;
+      int cloaked; if (DwmGetWindowAttribute(c, 14, out cloaked, 4) == 0 && cloaked != 0) continue;
+      RECT r; if (!GetWindowRect(c, out r)) continue;
+      if (r.Right <= r.Left || r.Bottom <= r.Top) continue;
+      if (r.Right <= x || r.Left >= x + w || r.Bottom <= y || r.Top >= y + h) continue;
+      return c;
+    }
+    return IntPtr.Zero;
+  }
 }
 "@
-# 마우스 좌표와 화면 캡처를 물리 픽셀로 맞춘다(배율 125%·150%에서 DIP×배율 계산이 맞도록)
+# 좌표는 물리 픽셀로 다룬다(앱 로그의 DIP × 배율). 창·캡처·커서가 같은 좌표계를 쓰도록 DPI 인식으로 둔다
 [void][W]::SetProcessDPIAware()
 $VK = @{ 'ctrl' = 0x11; 'alt' = 0x12; 'shift' = 0x10; 'space' = 0x20; ' ' = 0x20; '`' = 0xC0; 'f9' = 0x78; 'esc' = 0x1B; 'enter' = 0x0D; 'backspace' = 0x08; 'tab' = 0x09; '/' = 0xBF; '.' = 0xBE; '-' = 0xBD; ',' = 0xBC }
 function Key([byte]$vk, [switch]$Up) { $scan = [byte][W]::MapVirtualKey($vk, 0); [W]::keybd_event($vk, $scan, $(if ($Up) { 2 } else { 0 }), [UIntPtr]::Zero) }
@@ -70,6 +60,115 @@ function NewTestForm {
   return $f
 }
 function IsApp { $p = (Fg).Process; return ($p -eq 'electron' -or $p -eq 'Sure-Mate') }
+
+# ---- M5 바·펼침 창(t18) ----
+# 로그 한 줄씩 JSON으로. Mark 뒤의 줄만 본다(LogMark → 동작 → LogsAfter/WaitLog)
+function LogMark { if (Test-Path $logFile) { @(Get-Content $logFile -Encoding UTF8).Count } else { 0 } }
+function LogsAfter([int]$mark, [string]$eventName) {
+  @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $mark | Where-Object { $_ -match "`"event`":`"$([regex]::Escape($eventName))`"" } | ForEach-Object { $_ | ConvertFrom-Json })
+}
+# 조건에 맞는 줄이 생길 때까지 기다린다(없으면 $null). 기다리는 동안 시험 창 메시지를 처리한다
+function WaitLog([int]$mark, [string]$eventName, [scriptblock]$where, [int]$timeoutMs) {
+  $end = (Get-Date).AddMilliseconds($timeoutMs)
+  do {
+    $hit = @(LogsAfter $mark $eventName | Where-Object $where)
+    if ($hit.Count -gt 0) { return $hit[-1] }
+    Pump 40
+  } while ((Get-Date) -lt $end)
+  return $null
+}
+# 이번 앱 실행(마지막 app.ready 뒤)의 줄. 앱이 시험 스크립트보다 먼저 남긴 바 배치를 읽을 때 쓴다
+function SinceAppReady([string]$eventName) {
+  $lines = @(Get-Content $logFile -Encoding UTF8)
+  $ready = -1
+  for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i] -match '"event":"app.ready"') { $ready = $i; break } }
+  @($lines | Select-Object -Skip ($ready + 1) | Where-Object { $_ -match "`"event`":`"$([regex]::Escape($eventName))`"" } | ForEach-Object { $_ | ConvertFrom-Json })
+}
+function LastBarPlace { SinceAppReady 'bar.place' | Select-Object -Last 1 }
+
+# 바 항목의 바 안쪽 세로 위치(DIP). BAR_METRICS(띠: 위 여백 8·칸 40 / 캡슐: 12·36, 간격 4, 구분선 12)와 항목 순서
+# (로고, 가명 처리 | 고정 프롬프트 | 워크스페이스, 용어 사전 | 펫, 설정)를 따른다. 구분선은 sep1·sep2·sep3
+function BarLayout([int]$itemCount, [string]$shape = 'edge') {
+  $cell = if ($shape -eq 'capsule') { 36 } else { 40 }
+  $y = if ($shape -eq 'capsule') { 12 } else { 8 }
+  $prompts = if ($itemCount -le 8) { 0 } else { $itemCount - 9 }
+  $order = @('logo', 'masking')
+  if ($prompts -gt 0) { $order += @('|') + @(1..$prompts | ForEach-Object { "prompt$_" }) }
+  $order += @('|', 'workspace', 'glossary', '|', 'pet', 'settings')
+  $out = @{}; $sep = 0
+  foreach ($id in $order) {
+    $h = if ($id -eq '|') { 12 } else { $cell }
+    $name = if ($id -eq '|') { $sep++; "sep$sep" } else { $id }
+    $out[$name] = [pscustomobject]@{ top = $y; center = $y + $h / 2 }
+    $y += $h + 4
+  }
+  # 이 계산이 앱 로그의 바 높이와 같은지 확인하는 값: 위아래 여백 + 칸 높이 합 + 간격(마지막 간격 제외)
+  $out['_height'] = $y - 4 + $(if ($shape -eq 'capsule') { 12 } else { 8 })
+  return $out
+}
+# 바 항목(또는 구분선) 가운데의 물리 픽셀
+function BarPointPx($place, [string]$item) {
+  $l = BarLayout $place.items $place.shape
+  $s = [double]$place.scale; $b = $place.bounds
+  [pscustomobject]@{ x = [int][Math]::Round(($b.x + $b.width / 2) * $s); y = [int][Math]::Round(($b.y + $l[$item].center) * $s) }
+}
+# 메뉴 펼침 창의 카드 사각형(DIP). 오른쪽 바면 창 오른쪽 끝이 카드 끝이고(바 쪽 그림자 여백 0), 위 그림자 여백은 16
+function MenuCard($bounds, [int]$width = 272) {
+  [pscustomobject]@{ x = $bounds.x + $bounds.width - $width; y = $bounds.y + 16; width = $width }
+}
+function MoveTo([int]$x, [int]$y) { [void][W]::SetCursorPos($x, $y); [W]::mouse_event(0x0001, 0, 0, 0, [UIntPtr]::Zero) }
+function HoverAt([int]$x, [int]$y) { MoveTo $x $y }
+# 올린 시간을 정확히 재야 할 때: 목표에서 250픽셀 먼 곳으로 옮겨 가라앉힌 뒤(시간 재지 않음) 한 번에 들어가고, 들어간 시각을 돌려준다.
+# 들어가는 이동은 HoverAt과 같은 MoveTo다(마우스 이동 메시지가 확실히 가야 올림이 잡힌다)
+function HoverEnter([int]$x, [int]$y) {
+  MoveTo ($x - 250) $y; Pump 300
+  $t = Get-Date
+  MoveTo $x $y
+  return $t
+}
+function ElapsedMs($t) { return [int]((Get-Date) - $t).TotalMilliseconds }
+# 같은 자리를 0.7초 안에 다시 누르면 앱은 운영 체제의 두 번 클릭으로 보고 두 번째를 무시한다(바 단추, 최종 검토 I2).
+# 시험이 그 두 번째를 잃지 않도록 같은 자리 연속 클릭 사이를 0.7초 이상 띄운다
+$script:lastClick = [pscustomobject]@{ x = -9999; y = -9999; at = (Get-Date).AddHours(-1) }
+# 사람처럼: 옮기고 잠깐 쉬었다 누르고 0.09초 뒤 뗀다
+function ClickAt([int]$x, [int]$y, [switch]$Right) {
+  $gap = 700 - [int]((Get-Date) - $script:lastClick.at).TotalMilliseconds
+  if ($gap -gt 0 -and [Math]::Abs($x - $script:lastClick.x) -le 8 -and [Math]::Abs($y - $script:lastClick.y) -le 8) { Pump $gap }
+  MoveTo $x $y; Pump 120
+  $down = if ($Right) { 0x0008 } else { 0x0002 }
+  $up = if ($Right) { 0x0010 } else { 0x0004 }
+  [W]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); Pump 90
+  [W]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero)
+  $script:lastClick = [pscustomobject]@{ x = $x; y = $y; at = (Get-Date) }
+}
+# 누른 채 세로로 dy 픽셀 끌기(여러 번 나눠 움직인다)
+function DragBy([int]$x, [int]$y, [int]$dy, [int]$steps = 15) {
+  MoveTo $x $y; Pump 120
+  [W]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); Pump 150
+  for ($i = 1; $i -le $steps; $i++) { MoveTo $x ($y + [int][Math]::Round($dy * $i / $steps)); Pump 30 }
+  Pump 150
+  [W]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+}
+# 화면 사각형(DIP)을 배율로 바꿔 %TEMP%\sure-mate-smoke\<이름>.png로 저장
+function ShotRect([string]$name, $rect, [double]$scale) {
+  Add-Type -AssemblyName System.Drawing
+  $dir = Join-Path $env:TEMP 'sure-mate-smoke'; New-Item -ItemType Directory -Force $dir | Out-Null
+  $x = [int][Math]::Round($rect.x * $scale); $y = [int][Math]::Round($rect.y * $scale)
+  $w = [int][Math]::Round($rect.width * $scale); $h = [int][Math]::Round($rect.height * $scale)
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size $w, $h))
+  $path = Join-Path $dir "$name.png"; $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
+  "$name = $path ($w x $h)"
+}
+# 바 사각형과 겹치는 맨 위 topmost 창이 Sure-Mate인지(다른 topmost 창이 바를 덮지 않았는지). 이름은 참고용
+function TopmostOverBar($place) {
+  $s = [double]$place.scale; $b = $place.bounds
+  $h = [W]::TopmostOver([int]($b.x * $s), [int]($b.y * $s), [int]($b.width * $s), [int]($b.height * $s))
+  if ($h -eq [IntPtr]::Zero) { return '' }
+  (Get-Process -Id ([W]::Pid($h)) -ErrorAction SilentlyContinue).ProcessName
+}
+function TopmostIsApp($place) { $n = TopmostOverBar $place; return ($n -eq 'electron' -or $n -eq 'Sure-Mate') }
 # 마지막 palette.show 로그의 위치(DIP×배율)로 팔레트 화면을 %TEMP%\sure-mate-smoke\<이름>.png로 저장
 function Shot([string]$name) {
   Add-Type -AssemblyName System.Drawing
@@ -82,94 +181,4 @@ function Shot([string]$name) {
   $g.CopyFromScreen([int]($b.x * $s), [int]($b.y * $s), 0, 0, (New-Object System.Drawing.Size $w, $h))
   $path = Join-Path $dir "$name.png"; $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
   "$name = $path ($w x $h)"
-}
-
-# ---- M5 바·펼침 창 도우미 (좌표 인자는 물리 픽셀, 사각형은 DIP) ----
-# 이번 실행(마지막 app.ready 이후)의 로그. $startLines 이전에 찍힌 시작 시점 bar.place도 읽는다
-$sessionStart = 0
-if (Test-Path $logFile) {
-  $allLines = @(Get-Content $logFile -Encoding UTF8)
-  for ($i = $allLines.Count - 1; $i -ge 0; $i--) { if ($allLines[$i] -match '"event":"app.ready"') { $sessionStart = $i; break } }
-}
-function SessionLines { @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $sessionStart) }
-function SessionLogs([string]$eventName) { @(SessionLines | Where-Object { $_ -match "`"event`":`"$eventName`"" }) }
-function LastBarPlace { $l = SessionLogs 'bar.place' | Select-Object -Last 1; if ($l) { return ($l | ConvertFrom-Json) }; return $null }
-function LogCount([string]$eventName) { @(NewLogs $eventName).Count }
-# $after번째 이후 새 로그 중 $Match(필드=값)가 모두 맞는 첫 줄을 $ms 안에 기다린다. 없으면 $null
-function WaitLog([string]$eventName, [int]$after, [int]$ms, [hashtable]$Match = @{}) {
-  $end = (Get-Date).AddMilliseconds($ms)
-  do {
-    $lines = @(NewLogs $eventName)
-    for ($i = $after; $i -lt $lines.Count; $i++) {
-      $o = $lines[$i] | ConvertFrom-Json; $ok = $true
-      foreach ($k in $Match.Keys) { if ("$($o.$k)" -ne "$($Match[$k])") { $ok = $false } }
-      if ($ok) { return $o }
-    }
-    Pump 50
-  } while ((Get-Date) -lt $end)
-  return $null
-}
-function Px([double]$dip, [double]$scale) { [int][math]::Round($dip * $scale) }
-function MoveInto([double]$x, [double]$y) { [void][W]::SetCursorPos([int]($x - 3), [int]$y); Pump 40; [void][W]::SetCursorPos([int]$x, [int]$y); Pump 120 }
-function HoverAt([double]$x, [double]$y) { MoveInto $x $y }
-# 정확한 올림 시간용: 목표에서 먼 곳으로 옮겨 가라앉힌 뒤(시간 재지 않음) 한 번에 들어가고, 들어간 시각을 돌려준다
-function HoverEnter([double]$x, [double]$y) {
-  [void][W]::SetCursorPos([int]($x - 250), [int]$y); Pump 300
-  $t = Get-Date
-  [void][W]::SetCursorPos([int]$x, [int]$y)
-  return $t
-}
-function ElapsedMs($t) { return [int]((Get-Date) - $t).TotalMilliseconds }
-function ClickAt([double]$x, [double]$y, [switch]$Right) {
-  MoveInto $x $y
-  $down = if ($Right) { 8 } else { 2 }
-  $up = if ($Right) { 16 } else { 4 }
-  [W]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); Pump 70
-  [W]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Pump 100
-}
-# 누른 채 세로로 $dy 픽셀 끈다(8픽셀씩 16ms 간격)
-function DragBy([double]$x, [double]$y, [double]$dy) {
-  MoveInto $x $y
-  [W]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Pump 150
-  $steps = [math]::Max(1, [int][math]::Ceiling([math]::Abs($dy) / 8))
-  for ($i = 1; $i -le $steps; $i++) { [void][W]::SetCursorPos([int]$x, [int]($y + $dy * $i / $steps)); Pump 16 }
-  Pump 150
-  [W]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Pump 100
-}
-function UnionRect($a, $b) {
-  $x = [math]::Min($a.x, $b.x); $y = [math]::Min($a.y, $b.y)
-  $r = [math]::Max($a.x + $a.width, $b.x + $b.width); $bt = [math]::Max($a.y + $a.height, $b.y + $b.height)
-  [pscustomobject]@{ x = $x; y = $y; width = $r - $x; height = $bt - $y }
-}
-# DIP 사각형을 배율만큼 키워 %TEMP%\sure-mate-smoke\<이름>.png로 저장
-function ShotRect([string]$name, $rectDip, [double]$scale) {
-  Add-Type -AssemblyName System.Drawing
-  $dir = Join-Path $env:TEMP 'sure-mate-smoke'; New-Item -ItemType Directory -Force $dir | Out-Null
-  $x = [int][math]::Floor($rectDip.x * $scale); $y = [int][math]::Floor($rectDip.y * $scale)
-  $w = [int][math]::Ceiling($rectDip.width * $scale); $h = [int][math]::Ceiling($rectDip.height * $scale)
-  $bmp = New-Object System.Drawing.Bitmap $w, $h
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size $w, $h))
-  $path = Join-Path $dir "$name.png"; $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
-  "$name = $path ($w x $h)"
-}
-function IsAppProcessName([string]$n) { return ($n -eq 'electron' -or $n -eq 'Sure-Mate') }
-# 맨 위 topmost 창의 정보(창 제목·프로세스 이름)
-function TopmostInfo {
-  $h = [W]::TopTopmost()
-  if ($h -eq [IntPtr]::Zero) { return $null }
-  $p = [W]::Pid($h)
-  [pscustomobject]@{ Title = [W]::Title($h); Process = (Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName }
-}
-function TopmostIsApp { $t = TopmostInfo; if ($null -eq $t) { return $false }; return (IsAppProcessName $t.Process) }
-# Sure-Mate의 topmost 창 중 높이가 $heightPx(±3)이고 오른쪽 끝이 $rightPx(±3)인 창의 물리 픽셀 사각형. 없으면 $null
-function BarWindowRect([double]$heightPx, [double]$rightPx) {
-  foreach ($t in [W]::TopmostRects()) {
-    $n = (Get-Process -Id $t[0] -ErrorAction SilentlyContinue).ProcessName
-    if (-not (IsAppProcessName $n)) { continue }
-    if ([math]::Abs(($t[4] - $t[2]) - $heightPx) -le 3 -and [math]::Abs($t[3] - $rightPx) -le 3) {
-      return [pscustomobject]@{ Left = $t[1]; Top = $t[2]; Right = $t[3]; Bottom = $t[4]; Width = $t[3] - $t[1] }
-    }
-  }
-  return $null
 }

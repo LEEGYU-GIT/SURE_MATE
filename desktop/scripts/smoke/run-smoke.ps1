@@ -1,5 +1,6 @@
-﻿# dev 앱을 띄우고 시험 스크립트를 돌린 뒤 모두 정리한다. 사용: .\run-smoke.ps1 -Script t11-smoke.ps1 [-TimeoutSec 60] [-ScriptArgs '-AutoHide']
+﻿# dev 앱을 띄우고 시험 스크립트를 돌린 뒤 모두 정리한다. 사용: .\run-smoke.ps1 -Script t11-smoke.ps1
 # 결과와 dev 로그는 %TEMP%\sure-mate-smoke, 앱 로그는 %APPDATA%\Sure-Mate\logs 에 남는다.
+# -TimeoutSec: 시험 스크립트 제한 시간(기본 60초). -ScriptArgs: 시험 스크립트에 덧붙일 인자(예: '-AutoHide')
 param([string]$Script = 't5-smoke.ps1', [int]$TimeoutSec = 60, [string]$ScriptArgs = '')
 $W = $PSScriptRoot
 $desktop = (Resolve-Path "$PSScriptRoot\..\..").Path
