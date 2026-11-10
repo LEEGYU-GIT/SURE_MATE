@@ -13,6 +13,11 @@ import type { MaskingMode, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
+import { SettingsApp } from '../settings/SettingsApp'
+import type { SettingsTabId } from '../settings/tabs'
+import { allAiTargets } from '../../../shared/ai-targets'
+import { DEFAULT_SETTINGS } from '../../../shared/settings/settings'
+import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -383,5 +388,39 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
-  ...CARD_SCENES
+  ...CARD_SCENES,
+  settingsScene('settings-general', '설정: 일반', 'general'),
+  settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
+  settingsScene('settings-bar', '설정: 바', 'bar')
 ]
+
+/** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
+function settingsSnapshot(): SettingsSnapshot {
+  const settings = structuredClone(DEFAULT_SETTINGS)
+  settings.ai.custom = [{ id: 'custom-llm', name: '사내 LLM', url: 'https://llm.example.com' }]
+  return {
+    settings,
+    aiTargets: allAiTargets(settings.ai.custom),
+    hotkeys: { palette: { acc: 'Ctrl+Alt+Space', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } },
+    displays: [
+      { id: '1', label: '내장 모니터 · 1536×864', primary: true },
+      { id: '2', label: '외부 모니터 · 2560×1440', primary: false }
+    ],
+    prompts: TEMPLATES.map((t) => ({ id: t.id, name: t.name })),
+    packaged: false
+  }
+}
+
+/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
+function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
+  return {
+    id,
+    title,
+    fixtures: { settings: settingsSnapshot() },
+    render: () => (
+      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
+        <SettingsApp initialTab={tab} />
+      </div>
+    )
+  }
+}
