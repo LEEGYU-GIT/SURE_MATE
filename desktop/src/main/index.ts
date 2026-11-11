@@ -38,6 +38,8 @@ import { captureSelection, readClipboardText, writeClipboardText } from './nativ
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
+import { electronPetEnv } from './pet/pet-env'
+import { createPetRuntime, type PetRuntime } from './pet/pet-runtime'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
 import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
@@ -91,6 +93,8 @@ let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** Sure-Mate 바와 펼침 창. 시작하지 못했거나 앱을 끝낸 뒤에는 null(팔레트·트레이는 그대로 동작) */
 let barRuntime: BarRuntime | null = null
+/** 말랑 메이트(바 다음에 만든다). 시작하지 못했거나 앱을 끝낸 뒤에는 null(바·팔레트·트레이는 그대로 동작) */
+let petRuntime: PetRuntime | null = null
 /** 팔레트 위키와 위키 카드의 설명 복사(앱이 준비되면 만든다) */
 let glossaryRuntime: GlossaryRuntime | null = null
 /** 선택 텍스트 위키 카드(조회 단축키, 카드의 [클립보드 글로 찾기]) */
@@ -105,11 +109,12 @@ function togglePalette(): void {
   else showPalette({ mode: 'search' })
 }
 
-/** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그린다 */
+/** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그리고 말랑 메이트가 다시 판단한다(보이기·크기·가명 처리 선글라스 등) */
 function applySettings(next: Settings): void {
   settings = next
   shell?.refresh()
   barRuntime?.refresh()
+  petRuntime?.refresh()
   settingsService.changed()
 }
 
@@ -243,9 +248,21 @@ async function setBarShape(shape: BarShape): Promise<void> {
   shell?.refresh()
 }
 
-/** 말랑 메이트 보이기·숨기기: 차례가 왔을 때 바에 보이는 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
+/**
+ * 말랑 메이트 보이기·숨기기(바 펫 단추): 차례가 왔을 때 보이는 상태를 뒤집는다(빠르게 두 번 누르면 두 번 바뀐다).
+ * setPetVisible과 같은 저장 줄(설정 쓰기)을 지나고, 저장 뒤 applySettings가 펫을 다시 판단한다
+ */
 async function togglePet(): Promise<void> {
   await settingsWriter.togglePet()
+}
+
+/**
+ * 말랑 메이트 보이기 값을 저장한다(펫 메뉴 "숨기기", 팔레트·트레이). 설정 창·바 펫 단추와 같은 저장 줄(changeSettings → 설정 쓰기)만
+ * 지나고(두 번째 저장 경로를 만들지 않는다), 저장 뒤 applySettings → petRuntime.refresh()가 펫을 숨기거나 띄운다
+ */
+async function setPetVisible(visible: boolean): Promise<void> {
+  await changeSettings((cur) => ({ ...cur, pet: { ...cur.pet, visible } }))
+  log('pet.visible', { visible })
 }
 
 /**
@@ -281,8 +298,31 @@ function startBar(): void {
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
     lookupClipboard: () => (wikiCard ? wikiCard.lookupClipboard() : Promise.resolve()),
     notify,
-    log
+    log,
+    // 말랑 메이트(바 다음에 만들어지므로 그 전에는 아무것도 하지 않는다)
+    onFullscreen: (on) => petRuntime?.setFullscreen(on),
+    afterRaise: () => petRuntime?.raise(),
+    onBarChange: () => petRuntime?.worldChanged()
   })
+}
+
+/**
+ * 말랑 메이트(설계 §14-2). 바 다음에 띄운다: 바 런타임의 전체 화면 상태를 읽고 바 변화·맨 앞 순서에 이어진다.
+ * 바를 시작하지 못했으면 바 없는 세계에서 바닥만 다니고 전체 화면 앱에서 숨지 못한다. 여기서 실패해도 바·팔레트는 동작한다
+ */
+function startPet(): void {
+  const bar = barRuntime
+  petRuntime = createPetRuntime(
+    {
+      bar: bar ? { bar: bar.bar, fullscreen: () => bar.fullscreen() } : null,
+      getSettings: () => settings,
+      openPalette: () => showPalette({ mode: 'search' }),
+      openSettings: async () => openSettings('/settings'),
+      setPetVisible,
+      log
+    },
+    electronPetEnv()
+  )
 }
 
 /**
@@ -599,6 +639,8 @@ if (!app.requestSingleInstanceLock()) {
         aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
       }),
       overlay: () => barRuntime,
+      // 펫 채널은 펫 창이 보낸 것만 받는다(펫 런타임은 바 다음에 만든다)
+      pet: () => petRuntime,
       // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
       paletteContentsId,
       imeLoggerContentsId
@@ -720,6 +762,14 @@ if (!app.requestSingleInstanceLock()) {
       log('bar.startError', { error: errorText(e) })
     }
 
+    // 말랑 메이트는 바 다음에 띄운다(펫이 실패해도 바·팔레트·트레이는 동작한다)
+    try {
+      startPet()
+    } catch (e) {
+      petRuntime = null
+      log('pet.startError', { error: errorText(e) })
+    }
+
     // 첫 실행 안내(설계 문서 §6). 끝내지 않았으면 다음 실행에도 띄운다
     if (shouldShowOnboarding(settings)) openSettings('/onboarding')
   })
@@ -729,6 +779,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()
+    // 펫의 동작 고리·커서 조회·맨 앞 유지 타이머와 화면·앱 일 구독을 멈춘다(바보다 먼저: 펫이 바에 이어져 있다)
+    petRuntime?.dispose()
+    petRuntime = null
     // 맨 앞 유지·전체 화면 확인·펼침 창 타이머와 화면 이벤트 구독을 멈춘다
     barRuntime?.dispose()
     barRuntime = null

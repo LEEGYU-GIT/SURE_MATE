@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
 import { IPC } from '../shared/ipc-channels'
+import type { PetView } from '../shared/pet/pet-view'
 
 // ipcMain을 흉내 내 등록된 처리기를 직접 부른다(Electron 밖에서는 ipcMain이 없다)
 type Listener = (e: { sender: { id: number } }, ...args: unknown[]) => unknown
@@ -14,13 +15,15 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./log', () => ({ log: (event: string, data: Record<string, unknown> = {}) => void reg.logs.push({ event, data }) }))
 
-import { registerIpc, type IpcDeps, type OverlayIpc } from './ipc'
+import { registerIpc, type IpcDeps, type OverlayIpc, type PetIpc } from './ipc'
 
 const BAR = { sender: { id: 11 } }
 const FLYOUT = { sender: { id: 12 } }
 const PALETTE = { sender: { id: 1 } }
 const IME_LOGGER = { sender: { id: 21 } }
-/** 아직 없는 창(M6의 펫 창 등)도 같은 preload를 쓴다 */
+/** 말랑 메이트 창(M6) */
+const PET = { sender: { id: 31 } }
+/** 다른 창(설정 창 등)도 같은 preload를 쓴다 */
 const OTHER = { sender: { id: 99 } }
 
 const state: BarViewState = { shape: 'edge', edge: 'right', items: [], opacity: 1, collapsed: false, busyItem: null }
@@ -65,7 +68,26 @@ function paletteFake() {
   }
 }
 
+const VIEW = { size: 56, controlling: false } as unknown as PetView
+
+/** 펫 런타임 가운데 펫 IPC가 부르는 부분(펫 창 id 31) */
+type PetFake = { petContentsId: number } & { [K in Exclude<keyof PetIpc, 'petContentsId'>]: Mock<PetIpc[K]> }
+
+function petFake(): PetFake {
+  return {
+    petContentsId: 31,
+    petView: vi.fn<PetIpc['petView']>(() => VIEW),
+    petPress: vi.fn<PetIpc['petPress']>(),
+    petContextMenu: vi.fn<PetIpc['petContextMenu']>(),
+    petMenu: vi.fn<PetIpc['petMenu']>(),
+    petKey: vi.fn<PetIpc['petKey']>(),
+    petBubbleClick: vi.fn<PetIpc['petBubbleClick']>(),
+    petBubbleRect: vi.fn<PetIpc['petBubbleRect']>()
+  }
+}
+
 let overlay: ReturnType<typeof overlayFake> | null
+let pet: PetFake | null
 let palette: ReturnType<typeof paletteFake>
 let paletteId: number | null
 let imeLoggerId: number | null
@@ -75,10 +97,17 @@ beforeEach(() => {
   reg.handle.clear()
   reg.logs.length = 0
   overlay = overlayFake()
+  pet = petFake()
   palette = paletteFake()
   paletteId = 1
   imeLoggerId = 21
-  const deps = { ...palette, overlay: () => overlay, paletteContentsId: () => paletteId, imeLoggerContentsId: () => imeLoggerId } as unknown as IpcDeps
+  const deps = {
+    ...palette,
+    overlay: () => overlay,
+    pet: () => pet,
+    paletteContentsId: () => paletteId,
+    imeLoggerContentsId: () => imeLoggerId
+  } as unknown as IpcDeps
   registerIpc(deps)
 })
 
@@ -120,8 +149,8 @@ const paletteHandlers = () => [
 ]
 
 describe('팔레트 IPC는 팔레트 창이 보낸 것만 받는다(바·펼침 창, M6의 펫 창이 같은 preload를 쓴다)', () => {
-  it('바·펼침 창·기록기 창·다른 창이 보낸 팔레트 메시지는 처리하지 않고 빈 값을 준다', async () => {
-    for (const e of [BAR, FLYOUT, IME_LOGGER, OTHER]) {
+  it('바·펼침 창·펫 창·기록기 창·다른 창이 보낸 팔레트 메시지는 처리하지 않고 빈 값을 준다', async () => {
+    for (const e of [BAR, FLYOUT, PET, IME_LOGGER, OTHER]) {
       const results = await sendAllPalette(e)
       expect(results[0]).toBeUndefined()
       expect(results[1]).toEqual([])
@@ -242,6 +271,80 @@ describe('값을 검사한 뒤에만 넘긴다(renderer는 믿지 않는다)', (
     for (const fn of [o.barAction, o.barHover, o.barPointer, o.barContextMenu, o.barDrag, o.flyoutReady, o.flyoutPointer, o.flyoutAction]) {
       expect(fn).not.toHaveBeenCalled()
     }
+  })
+})
+
+const RECT = { x: 60.5, y: 8, width: 200, height: 54 }
+
+/** 펫 채널을 모두 맞는 값으로 한 번씩 보내고 get-view 결과를 준다 */
+async function sendAllPet(e: { sender: { id: number } }): Promise<unknown> {
+  send(IPC.petPress, e, true)
+  send(IPC.petContextMenu, e)
+  send(IPC.petMenu, e, 'hide')
+  send(IPC.petKey, e, 'left', true)
+  send(IPC.petBubbleClick, e)
+  send(IPC.petBubbleRect, e, RECT)
+  return invoke(IPC.petGetView, e)
+}
+
+const petHandlers = (p: PetFake): unknown[] => [p.petPress, p.petContextMenu, p.petMenu, p.petKey, p.petBubbleClick, p.petBubbleRect, p.petView]
+
+describe('펫 IPC는 펫 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)', () => {
+  it('팔레트·바·펼침 창·다른 창이 보낸 펫 메시지는 처리하지 않고, 화면 상태는 null', async () => {
+    for (const e of [PALETTE, BAR, FLYOUT, IME_LOGGER, OTHER]) expect(await sendAllPet(e)).toBeNull()
+    for (const fn of petHandlers(pet!)) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('펫 창이 보낸 맞는 값은 검사한 값으로 넘긴다', async () => {
+    const p = pet!
+    expect(await sendAllPet(PET)).toBe(VIEW)
+    send(IPC.petPress, PET, false)
+    send(IPC.petKey, PET, 'end', false)
+    send(IPC.petBubbleRect, PET, null)
+    send(IPC.petBubbleRect, PET, { ...RECT, extra: 'x' })
+    expect(p.petPress.mock.calls).toEqual([[true], [false]])
+    expect(p.petContextMenu).toHaveBeenCalledTimes(1)
+    expect(p.petMenu).toHaveBeenCalledWith('hide')
+    expect(p.petKey.mock.calls).toEqual([
+      ['left', true],
+      ['end', false]
+    ])
+    expect(p.petBubbleClick).toHaveBeenCalledTimes(1)
+    // 말풍선이 사라졌으면 null을 넘기고, 사각형은 네 값만 옮긴다
+    expect(p.petBubbleRect.mock.calls).toEqual([[RECT], [null], [RECT]])
+  })
+
+  it('틀린 값은 버린다(키는 키 이름과 누름·뗌을 모두 검사)', () => {
+    const p = pet!
+    for (const bad of ['true', 1, undefined, null]) send(IPC.petPress, PET, bad)
+    for (const bad of ['eval', '', 'constructor', 3, { action: 'hide' }]) send(IPC.petMenu, PET, bad)
+    send(IPC.petKey, PET, 'ArrowLeft', true)
+    send(IPC.petKey, PET, 'left', 'yes')
+    send(IPC.petKey, PET, 'left')
+    send(IPC.petKey, PET, undefined, true)
+    for (const bad of [{ ...RECT, x: Number.NaN }, { ...RECT, width: 0 }, { ...RECT, width: 5000 }, undefined, 'rect', [1, 2, 3, 4]]) send(IPC.petBubbleRect, PET, bad)
+    for (const fn of [p.petPress, p.petMenu, p.petKey, p.petBubbleRect]) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('펫을 시작하지 못했거나 앱을 끝낸 뒤(null)에는 아무것도 하지 않고 화면 상태는 null', async () => {
+    pet = null
+    expect(await sendAllPet(PET)).toBeNull()
+  })
+
+  it('처리 중 오류가 나도 던지지 않고 기록만 하며, 화면 상태는 null', async () => {
+    const p = pet!
+    p.petPress.mockImplementation(() => {
+      throw new Error('boom')
+    })
+    p.petView.mockImplementation(() => {
+      throw new Error('view')
+    })
+    expect(() => send(IPC.petPress, PET, true)).not.toThrow()
+    expect(await invoke(IPC.petGetView, PET)).toBeNull()
+    expect(reg.logs).toEqual([
+      { event: 'ipc.error', data: { channel: IPC.petPress, error: 'boom' } },
+      { event: 'ipc.error', data: { channel: IPC.petGetView, error: 'view' } }
+    ])
   })
 })
 

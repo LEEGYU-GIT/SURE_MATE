@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
+import { PET_WINDOW } from '../../shared/pet/pet-view'
 import type { Rect } from '../../shared/types'
 import { errorText } from '../error-text'
 import { log } from '../log'
@@ -8,7 +9,7 @@ import { nativeStatus } from '../native/win32'
 import { raiseTopmost } from '../native/windows'
 
 /** renderer 번들 안의 화면 경로(App.tsx가 # 경로로 고른다). ''는 팔레트 */
-export type RendererRoute = '' | '/bar' | '/flyout' | '/ime-logger' | '/settings' | '/onboarding'
+export type RendererRoute = '' | '/bar' | '/flyout' | '/pet' | '/ime-logger' | '/settings' | '/onboarding'
 
 /**
  * 바·펼침 창 공통 옵션(설계 §14-1·§9). 포커스를 받지 않고(WS_EX_NOACTIVATE) 작업 표시줄·Alt+Tab에 나오지 않는 투명 창이다.
@@ -36,6 +37,16 @@ export function overlayWindowOptions(preload: string): BrowserWindowConstructorO
     backgroundColor: '#00000000',
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, backgroundThrottling: false }
   }
+}
+
+/**
+ * 말랑 메이트 창 옵션(설계 §14-2·§5): 바·펼침 창 공통 옵션에 크기 320×240 DIP(말풍선·메뉴를 담는 자리, 계획 결정 3)와
+ * backgroundThrottling: true를 더한다. 숨긴 펫은 그리지 않는다(펼침 창과 달리 숨긴 동안 잴 것이 없다, CPU).
+ * 포커스는 조종 모드에서만 받는다(setFocusable). 만든 뒤 setAlwaysOnTop(true, 'screen-saver')로 수준을 올린다(createPetWindow).
+ */
+export function petWindowOptions(preload: string): BrowserWindowConstructorOptions {
+  const base = overlayWindowOptions(preload)
+  return { ...base, width: PET_WINDOW.width, height: PET_WINDOW.height, webPreferences: { ...base.webPreferences, backgroundThrottling: true } }
 }
 
 /**

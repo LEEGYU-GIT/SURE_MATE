@@ -8,7 +8,8 @@ vi.mock('electron', () => ({ BrowserWindow: class {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: env.is }))
 vi.mock('../log', () => ({ log: (event: string, data: Record<string, unknown> = {}) => void env.logs.push({ event, data }) }))
 
-import { hwndOf, loadRoute, overlayWindowOptions, raiseOverlay } from './overlay-window'
+import { PET_WINDOW } from '../../shared/pet/pet-view'
+import { hwndOf, loadRoute, overlayWindowOptions, petWindowOptions, raiseOverlay } from './overlay-window'
 
 afterEach(() => {
   env.is.dev = false
@@ -63,6 +64,44 @@ describe('overlayWindowOptions: 바·펼침 창 공통 옵션(설계 §14-1·§9
   })
 })
 
+describe('petWindowOptions: 말랑 메이트 창 옵션(설계 §14-2·§5)', () => {
+  it('보안 옵션, 포커스를 받지 않는 투명 창, 320×240, 숨긴 동안 그리지 않음', () => {
+    const o = petWindowOptions('p')
+    expect(o.webPreferences?.preload).toBe('p')
+    expect(o.webPreferences?.contextIsolation).toBe(true)
+    expect(o.webPreferences?.nodeIntegration).toBe(false)
+    expect(o.webPreferences?.sandbox).toBe(true)
+    expect(o.webPreferences?.spellcheck).toBe(false)
+    expect(o.focusable).toBe(false)
+    expect(o.transparent).toBe(true)
+    expect(o.frame).toBe(false)
+    expect(o.skipTaskbar).toBe(true)
+    expect(o.alwaysOnTop).toBe(true)
+    expect(o.type).toBe('toolbar')
+    expect(o.width).toBe(320)
+    expect(o.height).toBe(240)
+    expect({ width: o.width, height: o.height }).toEqual(PET_WINDOW)
+    expect(o.webPreferences?.backgroundThrottling).toBe(true)
+    expect(o.show).toBe(false)
+  })
+
+  it('바·펼침 창 공통 옵션에서 크기와 backgroundThrottling만 다르다', () => {
+    const { width, height, webPreferences, ...rest } = petWindowOptions('p')
+    const { webPreferences: base, ...baseRest } = overlayWindowOptions('p')
+    expect(rest).toEqual(baseRest)
+    expect({ width, height }).toEqual({ width: 320, height: 240 })
+    expect(webPreferences).toEqual({ ...base, backgroundThrottling: true })
+  })
+
+  it('부를 때마다 새 객체이고 공통 옵션을 바꾸지 않는다', () => {
+    const a = petWindowOptions('p')
+    const b = petWindowOptions('p')
+    expect(a).not.toBe(b)
+    expect(a.webPreferences).not.toBe(b.webPreferences)
+    expect(overlayWindowOptions('p').webPreferences?.backgroundThrottling).toBe(false)
+  })
+})
+
 describe('loadRoute: 같은 renderer 번들을 # 경로로 불러온다', () => {
   const html = join(__dirname, '../renderer/index.html')
   const fakeWindow = (fail = false) => ({
@@ -77,6 +116,16 @@ describe('loadRoute: 같은 renderer 번들을 # 경로로 불러온다', () => 
     loadRoute(w, '')
     expect(w.loadFile).toHaveBeenLastCalledWith(html)
     expect(w.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('펫 창은 #/pet(App.tsx의 펫 화면)', () => {
+    const w = fakeWindow()
+    loadRoute(w, '/pet')
+    expect(w.loadFile).toHaveBeenCalledWith(html, { hash: '/pet' })
+    env.is.dev = true
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173')
+    loadRoute(w, '/pet')
+    expect(w.loadURL).toHaveBeenCalledWith('http://localhost:5173#/pet')
   })
 
   it('설치본은 ELECTRON_RENDERER_URL이 있어도 주소를 불러오지 않는다(바깥 주소에 preload API가 열리지 않게)', () => {
