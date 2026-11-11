@@ -1,7 +1,13 @@
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from '../../../shared/flyout/flyout-content'
-import type { AppStatus, SureMateApi } from '../../../shared/ipc-channels'
+import { allAiTargets } from '../../../shared/ai-targets'
+import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-channels'
 import type { PetView } from '../../../shared/pet/pet-view'
+import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
+import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
+import type { MaskTerm } from '../../../shared/masking/dictionary'
+import type { GlossaryEntry } from '../../../shared/glossary/types'
+import type { Template } from '../../../shared/template/types'
 import type { PaletteItem } from '../../../shared/types'
 
 /**
@@ -25,6 +31,12 @@ export interface FakeFixtures {
   flyout: FakeFlyoutHost | null
   /** 펫 창 화면(`<Pet />`)이 getPetView로 받는 상태 */
   petView: PetView | null
+  /** 설정 창·온보딩이 받는 상태. 저장하면 진짜 검사·적용 규칙으로 이 값을 바꾼다 */
+  settings: SettingsSnapshot | null
+  hotkeyCandidates: HotkeyCandidate[]
+  dictionary: MaskTerm[]
+  templates: Template[]
+  glossary: GlossaryEntry[]
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -32,7 +44,12 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   items: [],
   barState: null,
   flyout: null,
-  petView: null
+  petView: null,
+  settings: null,
+  hotkeyCandidates: [],
+  dictionary: [],
+  templates: [],
+  glossary: []
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -81,6 +98,59 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     petPress: () => {},
     petContextMenu: () => {},
     petBubbleClick: () => {},
-    petBubbleRect: () => {}
+    petBubbleRect: () => {},
+    petMenu: () => {},
+    petKey: () => {},
+    settings: fakeSettingsApi(fx)
+  }
+}
+
+/** 설정 창 미리 보기: 저장은 진짜 검사(validateSettingsPatch)·적용 규칙으로 메모리의 스냅숏만 바꾼다 */
+function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
+  let snap = fx.settings
+  const listeners = new Set<(s: SettingsSnapshot) => void>()
+  return {
+    get: async () => snap,
+    update: async (patch) => {
+      if (!snap) return { ok: false, errors: ['미리 보기 설정 없음'] }
+      const v = validateSettingsPatch(patch, snap.settings)
+      if (!v.ok) return { ok: false, errors: v.errors }
+      const settings = applySettingsPatch(snap.settings, v.patch)
+      snap = { ...snap, settings, aiTargets: allAiTargets(settings.ai.custom) }
+      for (const cb of listeners) cb(snap)
+      return { ok: true, snapshot: snap }
+    },
+    onChanged: (cb) => {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    },
+    hotkeyCheck: async () => ({ level: 'ok' }),
+    hotkeyRecord: () => {},
+    hotkeySet: async (_id, acc) => ({ ok: true, acc }),
+    openFile: () => {},
+    openOnboarding: () => {},
+    onboardingCandidates: async () => fx.hotkeyCandidates,
+    finishOnboarding: async () => {},
+    onOnboardingProgress: () => () => {},
+    dictionary: async () => ({ terms: fx.dictionary, errors: [] }),
+    dictionarySave: async (terms) => ({ ok: true, count: terms.length }),
+    dictionaryImport: async () => ({ canceled: true }),
+    dictionaryExport: async () => ({ canceled: true }),
+    templates: async () => ({ templates: fx.templates, mine: fx.templates.filter((t) => t.scope === 'personal').map((t) => t.id), builtinIds: fx.templates.filter((t) => t.scope === 'builtin').map((t) => t.id), errors: [] }),
+    templateSave: async (draft) => ({ ok: true, id: draft.id ?? 'my-preview' }),
+    templateDelete: async () => ({ ok: true }),
+    templateImport: async () => ({ canceled: true }),
+    templateExport: async () => ({ canceled: true }),
+    references: async () => [
+      { kind: '회의록', length: 1240, usedBy: ['회의록 정리'] },
+      { kind: '시험 항목', length: null, usedBy: ['요구사항 → 테스트 케이스'] }
+    ],
+    referenceGet: async () => null,
+    referenceSave: async () => ({ ok: true }),
+    referenceDelete: async () => ({ ok: true }),
+    glossary: async () => ({ entries: fx.glossary, builtinIds: fx.glossary.filter((e) => e.source === 'builtin').map((e) => e.id) }),
+    glossarySave: async () => ({ ok: false, errors: ['미리 보기에서는 저장하지 않아요'] }),
+    glossaryDelete: async () => ({ ok: true }),
+    glossaryPack: async () => {}
   }
 }

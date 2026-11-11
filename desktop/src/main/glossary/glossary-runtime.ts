@@ -40,6 +40,11 @@ export interface GlossaryRuntime {
    * duplicate로 먼저 보여 준다(설계 문서 §9). allowDuplicate면 둘 다 둔다. 파일에 쓰지 못하면 던지지 않고 errors로 알린다.
    */
   save(draft: unknown, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
+  /**
+   * 내 용어·가져온 용어를 지운다(설정 창). 기본 용어를 고친 사본을 지우면 기본으로 돌아간다. 기본 용어는 지울 수 없고(builtin),
+   * 없는 id는 missing, 파일에 쓰지 못하면 던지지 않고 save-failed. 기록에는 id만.
+   */
+  remove(id: string): Promise<{ ok: true } | { ok: false; reason: 'builtin' | 'missing' | 'save-failed' }>
 }
 
 /** 팩 검사 오류에서 '1번째 항목: '과 끝의 '(id)'를 떼어 화면용으로 */
@@ -74,6 +79,18 @@ export function createGlossaryRuntime(d: GlossaryRuntimeDeps): GlossaryRuntime {
       await d.writeClipboard(entry.definition)
       d.log('wiki.card.copy', { id, length: entry.definition.length })
       return true
+    },
+    async remove(id) {
+      const user = await d.userEntries()
+      if (!user.some((e) => e.id === id)) return { ok: false, reason: (await find(id)) ? 'builtin' : 'missing' }
+      try {
+        await d.saveUserEntries(user.filter((e) => e.id !== id))
+      } catch (e) {
+        d.log('wiki.delete.failed', { id, error: errorCode(e) })
+        return { ok: false, reason: 'save-failed' }
+      }
+      d.log('wiki.delete', { id })
+      return { ok: true }
     },
     async save(draft, o) {
       const entries = await d.entries()

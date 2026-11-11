@@ -91,7 +91,7 @@ export interface PropPlace {
  * 반응 소품(편지·느낌표)의 자세별 자리: 서 있는 몸 기준(시안 자리) 이동(격자).
  * 앉기·졸기는 퍼진 머리에 맞춰 내리고(그대로 두면 머리 위 12~16칸에 뜬다), 오르기는 벽(바 면) 반대쪽 머리 위,
  * 들림은 늘어난 몸 옆으로. 몸 외곽선과 닿지 않으면서 머리에서 10칸 안에 둔다(mallang-shapes.test).
- * z와 조종 표시는 각자 자리가 있어 옮기지 않는다.
+ * z는 제자리에 두고, 조종 표시는 MALLANG_CONTROL을 따른다.
  */
 export const MALLANG_PROPS: Record<PetPose, PropPlace> = {
   stand: { dx: 0, dy: 0 },
@@ -116,8 +116,29 @@ export function mallangPropPlace(pose: PetPose, mirror: boolean): PropPlace {
   return p
 }
 
-/** 조종 표시가 들어가는 머리 위 띠(격자 y). 말풍선은 이 위로 비킨다(hopRoom) */
+/** 조종 표시가 들어가는 머리 위 띠(격자 y). 조종 중 말풍선은 이 위로 비킨다(bubbleHop) */
 export const CONTROL_BAND = { top: -14, bottom: -2 } as const
+
+/**
+ * 조종 표시의 자세별 자리(서 있는 몸 기준 이동, 격자). 몸 꼭대기(서기 16·앉기 30·졸기 33·오르기 8·들림 4)와
+ * 표시 아래 끝 사이를 서기와 같은 18칸으로 맞춘다(앉은 펫의 퍼진 머리 위 32칸에 뜨지 않게).
+ * 오르기는 위를 보는 얼굴 쪽(MALLANG_FACE.climb.dx)으로 옮긴다
+ */
+export const MALLANG_CONTROL: Record<PetPose, PropPlace> = {
+  stand: { dx: 0, dy: 0 },
+  walk: { dx: 0, dy: 0 },
+  air: { dx: 0, dy: 0 },
+  sit: { dx: 0, dy: 14 },
+  sleep: { dx: 0, dy: 17 },
+  climb: { dx: -7, dy: -8 },
+  held: { dx: 0, dy: -12 }
+}
+
+/** 조종 표시 자리. 몸은 왼쪽을 볼 때 x 32 기준으로 뒤집히고 표시 모양은 좌우 대칭이라 가로 이동만 뒤집는다 */
+export function mallangControlPlace(pose: PetPose, mirror: boolean): PropPlace {
+  const p = MALLANG_CONTROL[pose]
+  return mirror && p.dx !== 0 ? { dx: -p.dx, dy: p.dy } : p
+}
 
 /** 소품(펫 상자 좌표, 시안 위치). 조종 표시는 머리를 가리키는 작은 삼각 표지(게임의 "조종 중인 캐릭터" 표시) */
 export const PROP_SHAPES = {

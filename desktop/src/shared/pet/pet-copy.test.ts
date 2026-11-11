@@ -3,7 +3,15 @@ import type { AppEvent } from '../app-events'
 import { CAPTURE_NOTES } from '../labels'
 import { ALL_CATEGORIES, type MaskCategory } from '../masking/types'
 import type { CaptureSkipReason } from '../types'
-import { AI_NAME_MAX, PET_CATEGORY_NOUNS, petBubbleText } from './pet-copy'
+import {
+  AI_NAME_MAX,
+  PET_CATEGORY_NOUNS,
+  PET_CONTROL_GUIDE,
+  PET_CONTROL_KEY_ITEMS,
+  PET_CONTROL_KEYS,
+  petBubbleText,
+  petMenuRows
+} from './pet-copy'
 
 type Copied = Extract<AppEvent, { type: 'prompt-copied' }>
 const copied = (o: Partial<Copied> = {}): Copied => ({
@@ -142,5 +150,46 @@ describe('PET_CATEGORY_NOUNS', () => {
       phone: '전화번호',
       url: '사내 URL'
     })
+  })
+})
+
+describe('petMenuRows: 오른쪽 클릭 메뉴(설계 §14-2 "조종하기, 재우기, 숨기기, 펫 설정")', () => {
+  it('깨어 있으면 조종하기·재우기·숨기기·펫 설정 4행', () => {
+    expect(petMenuRows({ sleeping: false }).map((r) => [r.action, r.title])).toEqual([
+      ['control', '조종하기'],
+      ['sleep', '재우기'],
+      ['hide', '숨기기'],
+      ['settings', '펫 설정']
+    ])
+  })
+
+  it('졸고 있으면 4행이고 두 번째 행이 깨우기', () => {
+    const rows = petMenuRows({ sleeping: true })
+    expect(rows).toHaveLength(4)
+    expect(rows[1]).toEqual({ action: 'wake', title: '깨우기' })
+    expect(rows.map((r) => r.action)).toEqual(['control', 'wake', 'hide', 'settings'])
+  })
+
+  it('설명(한 줄 행이라 화면 읽기용): 조종하기는 조종 키, 숨기기는 다시 부르는 곳. 나머지는 없음', () => {
+    const [control, sleep, hide, settings] = petMenuRows({ sleeping: false })
+    expect(control.detail).toBe(PET_CONTROL_KEYS)
+    expect(hide.detail).toBe('바의 펫 단추나 트레이에서 다시 불러요')
+    expect(sleep.detail).toBeUndefined()
+    expect(settings.detail).toBeUndefined()
+  })
+
+  it('부를 때마다 새 배열(받는 쪽이 고쳐도 다음 메뉴에 남지 않음)', () => {
+    expect(petMenuRows({ sleeping: false })).not.toBe(petMenuRows({ sleeping: false }))
+  })
+})
+
+describe('조종 안내(메뉴 설명·조종 시작 말풍선·팔레트 부제가 같은 말)', () => {
+  it('키 안내: ←→ 걷기 · Space 뛰기 · ↑↓ 바 오르내리기 · Esc 끝(설계 §14-2의 조종 키 전부)', () => {
+    expect(PET_CONTROL_KEYS).toBe('←→ 걷기 · Space 뛰기 · ↑↓ 바 오르내리기 · Esc 끝')
+    expect(PET_CONTROL_KEYS).toBe(PET_CONTROL_KEY_ITEMS.map(([k, v]) => `${k} ${v}`).join(' · '))
+  })
+
+  it('조종을 시작할 때 말풍선: 할 일 한 문장(굵게) + 키 안내', () => {
+    expect(PET_CONTROL_GUIDE).toBe(`키보드로 조종해 보세요. ${PET_CONTROL_KEYS}`)
   })
 })

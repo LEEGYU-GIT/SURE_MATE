@@ -1,4 +1,4 @@
-import { PASTE_INTO, PET_CATEGORY_NOUNS } from '../../../shared/pet/pet-copy'
+import { PASTE_INTO, PET_CATEGORY_NOUNS, PET_CONTROL_KEY_ITEMS } from '../../../shared/pet/pet-copy'
 import { PET_WINDOW, type SlotSide } from '../../../shared/pet/pet-view'
 import type { Rect } from '../../../shared/types'
 import { FACE_CENTER, type FacePlace } from './mallang-shapes'
@@ -102,14 +102,18 @@ const GLUE_NAME_MAX = 10
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const AI_BEFORE_PASTE = new RegExp(`(^|\\s)(\\S{1,${GLUE_NAME_MAX}}) ${escapeRegExp(PASTE_INTO)}`)
 
+/** 조종 안내의 키와 하는 일("Space 뛰기", "↑↓ 바 오르내리기")은 한 덩어리 */
+const CONTROL_KEY_ITEMS = PET_CONTROL_KEY_ITEMS.map(([k, v]) => `${k} ${v}`)
+
 /**
  * 좁은 말풍선에서 뜻이 끊기지 않게 붙인다: 분류 이름과 건수("고객사명 2건"), "외"와 건수("외 3건"),
- * 띄어 쓴 분류 이름("사내 URL"), 짧은 AI 이름과 "창에", "·"와 그 앞 글자(줄 첫머리가 "·"로 시작하지 않게).
- * 줄은 나머지 띄어쓰기와 "·" 뒤에서만 바뀐다(word-break: keep-all).
+ * 띄어 쓴 분류 이름("사내 URL"), 짧은 AI 이름과 "창에", 조종 키와 하는 일("Space 뛰기"),
+ * "·"와 그 앞 글자(줄 첫머리가 "·"로 시작하지 않게). 줄은 나머지 띄어쓰기와 "·" 뒤에서만 바뀐다(word-break: keep-all).
  */
 export function keepTogether(text: string): string {
   let out = text
   for (const noun of SPACED_NOUNS) out = out.split(noun).join(noun.split(' ').join(NBSP))
+  for (const item of CONTROL_KEY_ITEMS) out = out.split(item).join(item.split(' ').join(NBSP))
   out = out.replace(/(\S) (\d[\d,]*건)/g, `$1${NBSP}$2`)
   out = out.split('·').join(`${WORD_JOINER}·`)
   return out.replace(AI_BEFORE_PASTE, `$1$2${NBSP}${PASTE_INTO}`)

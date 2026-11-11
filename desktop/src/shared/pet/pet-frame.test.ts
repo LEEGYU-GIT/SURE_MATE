@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bubbleSlot, hitShape, hopRoom, isOver, menuSize, petBox, petWindowRect, placeSlot } from './pet-frame'
+import { boundsOf, bubbleHop, bubbleSlot, hitShape, hopRoom, isOver, menuBridge, menuSize, menuSlot, petBox, petWindowRect, placeSlot } from './pet-frame'
 import { SLOT } from './pet-view'
 import type { Rect } from '../types'
 
@@ -121,6 +121,119 @@ describe('bubbleSlot: 말풍선 자리(200×96, placeSlot)를 창 안에 둔다'
       expect(inside(r.rect, window), String(size)).toBe(true)
       expect(overlaps(r.rect, box), String(size)).toBe(false)
     }
+  })
+})
+
+describe('bubbleHop: 말풍선이 비켜야 하는 높이', () => {
+  it('평소에는 폴짝 높이(hopRoom), 조종 중에는 머리 위 조종 표시(격자 −14)가 떠오르고(6) 폴짝하는(14) 만큼 더한다', () => {
+    expect(bubbleHop(56, false)).toBe(hopRoom(56))
+    expect(bubbleHop(56, true)).toBe(12 + 18) // 20 / 64 × 56 = 17.5 → 18
+    expect(bubbleHop(40, true)).toBe(9 + 13)
+    expect(bubbleHop(72, true)).toBe(16 + 23)
+  })
+
+  it('조종 중 말풍선 꼬리 끝(말풍선 아래 + 7)이 폴짝·떠오른 조종 표시 꼭대기(격자 −13.5 − 14 − 6)보다 위', () => {
+    for (const size of [40, 56, 72]) {
+      const k = size / 64
+      const tailTip = -(bubbleHop(size, true) + SLOT.gap) + 7
+      expect(tailTip, String(size)).toBeLessThan((-13.5 - 14 - 6) * k)
+    }
+  })
+})
+
+describe('menuSlot: 오른쪽 클릭 메뉴 자리(placeSlot(menuSize(4)), 창 안)', () => {
+  const inside = (r: Rect, w: Rect): boolean =>
+    r.x >= w.x + SLOT.margin && r.y >= w.y + SLOT.margin && r.x + r.width <= w.x + w.width - SLOT.margin && r.y + r.height <= w.y + w.height - SLOT.margin
+
+  it('바닥 펫은 위(메뉴 동안 폴짝하지 않으므로 펫 상자 위 8 DIP), placeSlot과 같은 자리', () => {
+    const box = petBox({ x: 960, y: 1040 }, 56)
+    const window = petWindowRect(box, MAIN)
+    const r = menuSlot({ rows: 4, box, window, bounds: MAIN })
+    expect(r).toEqual({ side: 'above', rect: { x: 872, y: 845.25, width: 176, height: 136 } })
+    expect(r).toEqual(placeSlot({ size: menuSize(4), box, window, bounds: MAIN, hop: 0 }))
+  })
+
+  it('꼭대기가 화면 위쪽이면 옆(여유가 큰 쪽)', () => {
+    const box: Rect = { x: 1864, y: 69.25, width: 56, height: 56 }
+    const window: Rect = { x: 1600, y: 0, width: 320, height: 240 }
+    const r = menuSlot({ rows: 4, box, window, bounds: MAIN })
+    expect(r).toEqual({ side: 'left', rect: { x: 1680, y: 29.25, width: 176, height: 136 } })
+    expect(inside(r.rect, window)).toBe(true)
+  })
+
+  it('(Task 4 이월) 옆자리가 창을 넘으면 창 안으로 자른다(메뉴는 줄일 수 없다)', () => {
+    const box: Rect = { x: 932, y: 20, width: 56, height: 56 }
+    const window: Rect = { x: 800, y: 0, width: 320, height: 240 }
+    const raw = placeSlot({ size: menuSize(4), box, window, bounds: MAIN, hop: 0 })
+    expect(raw.rect.x + raw.rect.width).toBeGreaterThan(window.x + window.width)
+    const r = menuSlot({ rows: 4, box, window, bounds: MAIN })
+    expect(r.side).toBe('right')
+    expect(r.rect).toEqual({ x: 920, y: 16, width: 176, height: 136 })
+    expect(inside(r.rect, window)).toBe(true)
+  })
+
+  it('그림자(--shadow-flyout: 아래로 8, 흐림 24)가 투명 창에서 잘리지 않게 창 가장자리에서 위 16·옆 24·아래 32 떨어진다(말풍선은 그림자가 없어 8)', () => {
+    expect(SLOT.menuMargin).toEqual({ top: 16, side: 24, bottom: 32 })
+    const M = SLOT.menuMargin
+    const window: Rect = { x: 1600, y: 0, width: 320, height: 240 }
+    // 꼭대기가 화면 위에서 조금 내려온 바: 옆자리 아래 끝이 창 아래 32에서 멈춘다
+    const low = menuSlot({ rows: 4, box: { x: 1864, y: 140, width: 56, height: 56 }, window, bounds: MAIN })
+    expect(low).toEqual({ side: 'left', rect: { x: 1680, y: 72, width: 176, height: 136 } })
+    expect(window.y + window.height - (low.rect.y + low.rect.height)).toBe(M.bottom)
+    // 위쪽 자리는 창 위 16까지(16 안이면 옆으로)
+    const above = menuSlot({ rows: 4, box: { x: 1864, y: 160, width: 56, height: 56 }, window, bounds: MAIN })
+    expect(above).toMatchObject({ side: 'above', rect: { y: M.top } })
+    const side = menuSlot({ rows: 4, box: { x: 1864, y: 159, width: 56, height: 56 }, window, bounds: MAIN })
+    expect(side.side).toBe('left')
+    // 옆은 24: 화면 왼쪽 끝 바닥 펫(창이 화면 끝에 멈춤)
+    const edgeBox = petBox({ x: 40, y: 1040 }, 56)
+    const edgeWin = petWindowRect(edgeBox, MAIN)
+    expect(menuSlot({ rows: 4, box: edgeBox, window: edgeWin, bounds: MAIN }).rect.x).toBe(edgeWin.x + M.side)
+    // 크기 40·56·72 바닥 펫은 모두 위쪽 자리
+    for (const size of [40, 56, 72]) {
+      const box = petBox({ x: 960, y: 1040 }, size)
+      const w = petWindowRect(box, MAIN)
+      const r = menuSlot({ rows: 4, box, window: w, bounds: MAIN })
+      expect(r.side, String(size)).toBe('above')
+      expect(r.rect.y - w.y, String(size)).toBeGreaterThanOrEqual(M.top)
+      expect(r.rect.x - w.x, String(size)).toBeGreaterThanOrEqual(M.side)
+    }
+  })
+})
+
+describe('menuBridge: 몸과 열린 메뉴 사이 틈을 잇는 사각형(몸에서 메뉴 행으로 가는 커서가 통과로 바뀌지 않게)', () => {
+  it('boundsOf: 사각형들을 감싸는 사각형, 비면 null', () => {
+    expect(
+      boundsOf([
+        { x: 10, y: 20, width: 30, height: 5 },
+        { x: 5, y: 22, width: 20, height: 30 }
+      ])
+    ).toEqual({ x: 5, y: 20, width: 35, height: 32 })
+    expect(boundsOf([])).toBeNull()
+  })
+
+  it('위 메뉴: 메뉴 아래 끝에서 몸 위 끝까지, 가로는 메뉴와 몸을 합친 범위(비스듬히 가는 길도 덮는다)', () => {
+    // 바닥 가운데 크기 56 펫(서기)과 그 메뉴
+    const box = petBox({ x: 960, y: 1040 }, 56)
+    const body = boundsOf(hitShape('stand', box, false))!
+    expect(body).toEqual({ x: 938.125, y: 1002.375, width: 43.75, height: 39.375 })
+    const { rect, side } = menuSlot({ rows: 4, box, window: petWindowRect(box, MAIN), bounds: MAIN })
+    expect(menuBridge({ menu: rect, side, body })).toEqual({ x: 872, y: 981.25, width: 176, height: 21.125 })
+  })
+
+  it('옆 메뉴: 메뉴 안쪽 끝에서 몸 옆 끝까지, 세로는 메뉴와 몸을 합친 범위', () => {
+    const menu: Rect = { x: 100, y: 20, width: 176, height: 136 }
+    const left = menuBridge({ menu, side: 'left', body: { x: 290, y: 60, width: 40, height: 30 } })
+    expect(left).toEqual({ x: 276, y: 20, width: 14, height: 136 })
+    const right = menuBridge({ menu, side: 'right', body: { x: 40, y: 140, width: 40, height: 30 } })
+    expect(right).toEqual({ x: 80, y: 20, width: 20, height: 150 })
+  })
+
+  it('맞닿거나 겹치면(메뉴를 창 안으로 자른 드문 자리) 틈이 없어 null', () => {
+    const menu: Rect = { x: 100, y: 20, width: 176, height: 136 }
+    expect(menuBridge({ menu, side: 'above', body: { x: 150, y: 156, width: 40, height: 30 } })).toBeNull()
+    expect(menuBridge({ menu, side: 'above', body: { x: 150, y: 100, width: 40, height: 30 } })).toBeNull()
+    expect(menuBridge({ menu, side: 'left', body: { x: 270, y: 60, width: 40, height: 30 } })).toBeNull()
   })
 })
 

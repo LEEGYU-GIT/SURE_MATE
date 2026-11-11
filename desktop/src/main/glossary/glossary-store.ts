@@ -1,8 +1,8 @@
-import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { keepBrokenCopy, RENAME_RETRY_MS, writeFileAtomic, type SaveIo } from '../files/atomic-write'
 import { GLOSSARY_FORMAT, parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
-import { RENAME_RETRY_MS, type SaveIo, writeJsonAtomic } from '../storage/atomic-json'
 
 /** `%APPDATA%\Sure-Mate\glossary.json`: 사용자가 추가·수정·가져온 용어(로컬 전용) */
 export const GLOSSARY_FILE = 'glossary.json'
@@ -54,20 +54,18 @@ export async function loadGlossary(userDir: string, builtin: unknown): Promise<L
   }
 }
 
+// 원자적 저장·다시 시도·깨진 파일 사본은 main/files/atomic-write.ts(설정 창의 사용자 파일 저장도 함께 쓴다)
 export { RENAME_RETRY_MS, type SaveIo }
 
-const stamp = (): string => new Date().toISOString().replace(/[:.]/g, '-')
-
 /**
- * 사용자 용어를 저장한다(`writeJsonAtomic`: 임시 파일 → 디스크 반영 → 이름 바꾸기).
+ * 사용자 용어를 저장한다(겹치지 않는 임시 파일에 쓰고 디스크에 내린 뒤 이름 바꾸기).
  * 지금 파일을 읽을 때 문제가 있었으면(깨졌거나, 일부 항목을 건너뛰었거나 줄였으면) 덮어쓰기 전에
  * `glossary.json.broken-<시각>`으로 사본을 남겨, 읽지 못한 사용자 용어를 잃지 않는다.
  */
 export async function saveUserEntries(userDir: string, entries: GlossaryEntry[], io?: SaveIo): Promise<void> {
-  await mkdir(userDir, { recursive: true })
   const path = join(userDir, GLOSSARY_FILE)
-  if ((await readUserFile(path)).errors.length > 0) await copyFile(path, `${path}.broken-${stamp()}`)
-  await writeJsonAtomic(path, { format: GLOSSARY_FORMAT, version: 1, savedAt: new Date().toISOString(), entries }, { io })
+  if ((await readUserFile(path)).errors.length > 0) await keepBrokenCopy(path)
+  await writeFileAtomic(path, JSON.stringify({ format: GLOSSARY_FORMAT, version: 1, savedAt: new Date().toISOString(), entries }, null, 2), io)
 }
 
 /**

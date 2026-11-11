@@ -11,7 +11,8 @@ import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/g
 import type { AppEvent } from '../../../shared/app-events'
 import { CAPTURE_NOTES } from '../../../shared/labels'
 import type { MaskCategory } from '../../../shared/masking/types'
-import { bubbleSlot, hopRoom, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
+import { PET_CONTROL_GUIDE, petMenuRows } from '../../../shared/pet/pet-copy'
+import { bubbleHop, bubbleSlot, menuSlot, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
 import { reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
@@ -22,6 +23,14 @@ import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
 import { Pet } from '../pet/Pet'
 import { PetSprite } from '../pet/PetSprite'
+import { Onboarding } from '../onboarding/Onboarding'
+import type { OnboardingState } from '../onboarding/onboarding-state'
+import { SettingsApp } from '../settings/SettingsApp'
+import type { SettingsTabId } from '../settings/tabs'
+import { allAiTargets } from '../../../shared/ai-targets'
+import { DEFAULT_SETTINGS } from '../../../shared/settings/settings'
+import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
+import type { Template } from '../../../shared/template/types'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -386,6 +395,16 @@ interface PetSceneOptions {
   react?: { event: AppEvent; sunglasses: boolean }
   /** 개발용: 펫 창의 모든 움직임을 이 시각(ms)에 멈춰 그린다(폴짝 꼭대기에서 말풍선과 소품 간격 확인) */
   freezeAt?: number
+  /** 오른쪽 클릭 메뉴(Task 8): 상태 기계와 같은 계산(menuSlot·petMenuRows). 졸기 자세면 두 번째 행이 깨우기 */
+  menu?: boolean
+  /** 조종 모드(Task 8): 머리 위 조종 표시. guide면 조종을 시작한 순간(웃는 얼굴·폴짝·키 안내 말풍선) */
+  control?: { guide: boolean }
+}
+
+/** 창 안 말풍선 자리(상태 기계의 bubbleView와 같은 계산: 조종 중이면 조종 표시 위로 비킨다) */
+function bubbleAt(text: string, box: Rect, win: Rect, size: PetSize, controlling = false): PetView['bubble'] {
+  const s = bubbleSlot({ box, window: win, bounds: MONITOR.bounds, hop: bubbleHop(size, controlling) })
+  return { seq: 1, text, side: s.side, slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } }
 }
 
 /** 상태 기계(react)와 같이 반응의 표정·소품·cue로 모습을 덮어쓰고 말풍선 자리를 계산한다 */
@@ -394,8 +413,21 @@ function reactionView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): 
   if (!o.react || !r) return { look: petLook(o.look), bubble: null }
   const look = petLook({ ...o.look, face: r.face, props: [...(o.react.sunglasses ? (['sunglasses'] as const) : []), ...r.props], cue: r.cue, cueSeq: r.cue ? 1 : 0 })
   if (!r.bubble) return { look, bubble: null }
-  const s = bubbleSlot({ box, window: win, bounds: MONITOR.bounds, hop: hopRoom(size) })
-  return { look, bubble: { seq: 1, text: r.bubble, side: s.side, slot: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } } }
+  return { look, bubble: bubbleAt(r.bubble, box, win, size) }
+}
+
+/** 상태 기계(beginControl)와 같이: 조종 표시를 얹고, 시작한 순간이면 웃는 얼굴·폴짝·키 안내 말풍선 */
+function controlView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): Pick<PetView, 'look' | 'bubble'> {
+  const base = petLook(o.look)
+  const props = [...base.props, 'control' as const]
+  if (!o.control?.guide) return { look: { ...base, props }, bubble: null }
+  return { look: { ...base, props, face: 'happy', cue: 'hop', cueSeq: 1 }, bubble: bubbleAt(PET_CONTROL_GUIDE, box, win, size, true) }
+}
+
+/** 창 안 메뉴(상태 기계의 menuView와 같은 계산) */
+function menuAt(box: Rect, win: Rect, sleeping: boolean): PetView['menu'] {
+  const s = menuSlot({ rows: 4, box, window: win, bounds: MONITOR.bounds })
+  return { rows: petMenuRows({ sleeping }), side: s.side, rect: { x: s.rect.x - win.x, y: s.rect.y - win.y, width: s.rect.width, height: s.rect.height } }
 }
 
 /** 바 하나와 펫 창 하나. 펫 창(320×240, 투명)은 <Pet />이 가짜 getPetView()로 받은 상태를 그린다 */
@@ -407,9 +439,9 @@ function petScene(id: string, title: string, o: PetSceneOptions): Scene {
   const view: PetView = {
     size,
     box: { x: box.x - win.x, y: box.y - win.y },
-    ...reactionView(o, box, win, size),
-    menu: null,
-    controlling: false,
+    ...(o.control ? controlView(o, box, win, size) : reactionView(o, box, win, size)),
+    menu: o.menu ? menuAt(box, win, o.look.pose === 'sleep') : null,
+    controlling: o.control !== undefined,
     reduceMotion: o.reduceMotion ?? false
   }
   return {
@@ -665,6 +697,84 @@ const REACTION_SCENES: Scene[] = [
   })
 ]
 
+// ── 말랑 메이트 오른쪽 클릭 메뉴와 조종 모드(Task 8): 상태 기계와 같은 계산(menuSlot·petMenuRows·bubbleSlot) ──────────
+
+const MENU_SCENES: Scene[] = [
+  petScene('pet-menu', '말랑 메이트 메뉴: 바닥에서 오른쪽 클릭(펫 위 4행, M5 펼침 메뉴와 같은 가족)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    menu: true
+  }),
+  petScene('pet-menu-sleeping', '말랑 메이트 메뉴: 졸고 있을 때(두 번째 행 깨우기), 흰 문서 창 앞(그림자·테두리 대비)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 170 },
+    look: { pose: 'sleep', face: 'asleep', props: ['zzz'] },
+    backdrop: <AppWindow side="left" under />,
+    menu: true
+  }),
+  petScene('pet-menu-side', '말랑 메이트 메뉴: 바 꼭대기가 화면 위쪽(위에 자리가 없어 펫 옆, 창 안)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content', props: ['sunglasses'] },
+    menu: true
+  }),
+  petScene('pet-control', '말랑 메이트 조종: 시작한 순간(머리 위 조종 표시·웃는 얼굴·키 안내 말풍선)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    control: { guide: true }
+  }),
+  petScene('pet-control-walk', '개발용: 조종 중 걷기(조종 표시만, 선글라스)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 260 },
+    look: { pose: 'walk', props: ['sunglasses'] },
+    control: { guide: false }
+  }),
+  petScene('pet-control-sit', '개발용: 조종 중 바 꼭대기에 앉음(조종 표시가 납작한 머리 위에)', {
+    bar: CAPSULE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content' },
+    control: { guide: false }
+  }),
+  petScene('pet-control-climb', '개발용: 조종 중 왼쪽 띠 옆면에 붙음(조종 표시가 위를 보는 머리 위에, 좌우 뒤집힘)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'side', t: 0.5 },
+    look: { pose: 'climb', face: 'up', facing: 'left' },
+    control: { guide: false }
+  }),
+  petScene('pet-control-apex', '개발용: 조종 시작 폴짝 꼭대기(216ms)에서 멈춤(조종 표시가 말풍선 꼬리에 닿지 않는지)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    control: { guide: true },
+    freezeAt: 216
+  }),
+  petScene('pet-menu-side-left', '개발용: 왼쪽 띠 꼭대기의 메뉴(펫 오른쪽)', {
+    bar: EDGE_LEFT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit', face: 'content', facing: 'left' },
+    menu: true
+  }),
+  petScene('pet-menu-edge', '개발용: 화면 왼쪽 끝 바닥의 메뉴(창이 화면 끝에 멈춤 → 메뉴가 창 여백 8에 붙음, 그림자 잘림 확인)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 40 },
+    look: {},
+    backdrop: <AppWindow side="left" under />,
+    menu: true
+  })
+]
+
+/** 설정 창 프롬프트 탭 미리 보기(기본 팩 일부 + 가상 내 템플릿) */
+const PREVIEW_TEMPLATES: Template[] = [
+  { id: 'meeting-notes', name: '회의록 정리', aliases: ['회의록'], kind: 'prompt', description: '회의 메모를 결정·할 일로 정리', body: '정리해 줘\n{{selection}}', scope: 'personal' },
+  { id: 'req-to-testcase', name: '요구사항 → 테스트 케이스', aliases: [], kind: 'prompt', description: '요구사항에서 시험 항목 뽑기', body: '{{selection}}', scope: 'builtin' },
+  { id: 'polish', name: '문장 다듬기', aliases: [], kind: 'prompt', body: '{{selection}}', scope: 'builtin' },
+  { id: 'my-weekly', name: '주간 보고 다듬기', aliases: ['주간'], kind: 'prompt', description: '가상자동차 과제 주간 보고', body: '{{selection}}', scope: 'personal' },
+  { id: 'defect-report', name: '결함 리포트', aliases: ['issue'], kind: 'snippet', description: '결함 리포트 양식', body: '[결함 제목]', scope: 'builtin' },
+  { id: 'team-greeting', name: '팀 인사말', aliases: [], kind: 'snippet', body: '안녕하세요', scope: 'imported' }
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -711,5 +821,76 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
   ...CARD_SCENES,
   ...PET_SCENES,
-  ...REACTION_SCENES
+  ...REACTION_SCENES,
+  ...MENU_SCENES,
+  settingsScene('settings-general', '설정: 일반', 'general'),
+  settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
+  settingsScene('settings-bar', '설정: 바', 'bar'),
+  settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking'),
+  settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts'),
+  settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
+  settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
+  onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
+  onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
 ]
+
+/** 첫 실행 안내 장면: 640×560 창 하나 */
+function onboardingScene(id: string, title: string, start: Partial<OnboardingState>): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: settingsSnapshot(),
+      hotkeyCandidates: [
+        { acc: 'Alt+Space', available: true, suggested: false },
+        { acc: 'Ctrl+Alt+Space', available: false, suggested: false },
+        { acc: 'Alt+`', available: true, suggested: true }
+      ]
+    },
+    render: () => (
+      <div style={{ width: 640, height: 560, overflow: 'hidden', position: 'relative' }}>
+        <Onboarding start={start} />
+      </div>
+    )
+  }
+}
+
+/** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
+function settingsSnapshot(): SettingsSnapshot {
+  const settings = structuredClone(DEFAULT_SETTINGS)
+  settings.ai.custom = [{ id: 'custom-llm', name: '사내 LLM', url: 'https://llm.example.com' }]
+  return {
+    settings,
+    aiTargets: allAiTargets(settings.ai.custom),
+    hotkeys: { palette: { acc: 'Ctrl+Alt+Space', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } },
+    displays: [
+      { id: '1', label: '내장 모니터 · 1536×864', primary: true },
+      { id: '2', label: '외부 모니터 · 2560×1440', primary: false }
+    ],
+    prompts: TEMPLATES.map((t) => ({ id: t.id, name: t.name })),
+    packaged: false
+  }
+}
+
+/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
+function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: settingsSnapshot(),
+      dictionary: [
+        { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
+        { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
+      ],
+      templates: PREVIEW_TEMPLATES,
+      glossary: PACK.slice(0, 12)
+    },
+    render: () => (
+      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
+        <SettingsApp initialTab={tab} />
+      </div>
+    )
+  }
+}

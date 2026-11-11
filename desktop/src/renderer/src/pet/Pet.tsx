@@ -3,6 +3,8 @@ import { PET_WINDOW, type PetView } from '../../../shared/pet/pet-view'
 import { faceTarget } from './bubble-box'
 import { MALLANG } from './character'
 import { PetBubble } from './PetBubble'
+import { PetMenu } from './PetMenu'
+import { createKeyTracker } from './pet-keys'
 import { createPressTracker } from './press'
 import { PetSprite } from './PetSprite'
 
@@ -14,9 +16,9 @@ function bubbleTarget(view: PetView | null): { x: number; y: number } {
 }
 
 /**
- * #/pet 창(투명, PET_WINDOW 크기). main이 보낸 펫 화면 상태대로 view.box 자리에 펫을 그리고, 반응 말풍선을 그 위에 띄운다.
- * 창은 펫 모양·말풍선 위에서만 마우스를 받는다(main이 커서를 조회해 클릭 통과를 끄고 켠다).
- * 누름·뗌은 main에 그대로 알리고 클릭·더블클릭·끌기 판단은 main이 한다.
+ * #/pet 창(투명, PET_WINDOW 크기). main이 보낸 펫 화면 상태대로 view.box 자리에 펫을 그리고, 반응 말풍선과
+ * 오른쪽 클릭 메뉴를 그 위에 띄운다. 창은 펫 모양·말풍선·메뉴 위에서만 마우스를 받는다(main이 커서를 조회해 클릭 통과를 끄고 켠다).
+ * 누름·뗌·키는 main에 그대로 알리고 클릭·더블클릭·끌기·조종 판단은 main이 한다.
  */
 export function Pet(): React.JSX.Element {
   const [view, setView] = useState<PetView | null>(null)
@@ -47,6 +49,29 @@ export function Pet(): React.JSX.Element {
     return () => window.removeEventListener('blur', onBlur)
   }, [press])
 
+  // 조종 중에만 키를 받는다(설계 §14-2). 물리 키(e.code)로 읽어 한/영 상태와 무관하고, 처리한 키는 기본 동작을 막는다.
+  // 자동 반복은 보내지 않고, 창이 포커스를 잃으면 누르고 있던 키를 뗀 것으로 알린다
+  const controlling = view?.controlling ?? false
+  useEffect(() => {
+    if (!controlling) return
+    const keys = createKeyTracker((k, down) => window.sureMate.petKey(k, down))
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (keys.down(e.code, e.repeat)) e.preventDefault()
+    }
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (keys.up(e.code)) e.preventDefault()
+    }
+    const onBlur = (): void => keys.blur()
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [controlling])
+
   return (
     <div className="relative overflow-hidden" style={{ width: PET_WINDOW.width, height: PET_WINDOW.height }}>
       {view ? (
@@ -71,6 +96,7 @@ export function Pet(): React.JSX.Element {
       ) : null}
       {/* 알림 영역은 늘 둔다(화면 읽기 프로그램이 새 말풍선을 읽게). 말풍선은 펫 앞에 그린다 */}
       <PetBubble bubble={view?.bubble ?? null} target={bubbleTarget(view)} reduceMotion={view?.reduceMotion ?? false} />
+      {view?.menu ? <PetMenu menu={view.menu} reduceMotion={view.reduceMotion} onAction={(a) => window.sureMate.petMenu(a)} /> : null}
     </div>
   )
 }

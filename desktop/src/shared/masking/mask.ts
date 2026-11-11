@@ -9,6 +9,8 @@ export interface MaskOptions {
   categories: Record<MaskCategory, boolean>
   /** 확인 화면에서 이번 실행만 끈 대상(Detection.key) */
   disabledKeys: string[]
+  /** 빼기 모드 표기를 바꾼 분류(설정). 없는 분류는 기본 표기. 되돌리기 토큰은 바꾸지 않는다(되돌리기가 토큰을 찾는다) */
+  removeLabels?: Partial<Record<MaskCategory, string>>
 }
 
 /** 원문 [start, end)를 length 글자로 바꾼 기록(원문 위치) */
@@ -41,6 +43,9 @@ const REMOVE_PATTERN_LABEL: Partial<Record<MaskCategory, string>> = {
   url: '[사내 URL]'
 }
 
+/** 빼기 모드 기본 표기(설정 화면의 자리 글). 이름 분류는 뒤에 A, B…가 붙는다 */
+export const defaultRemoveLabel = (c: MaskCategory): string => REMOVE_ENTITY_LABEL[c] ?? REMOVE_PATTERN_LABEL[c] ?? c
+
 /**
  * 찾은 대상을 모드대로 바꾼다. 되돌리기 모드는 대응표의 토큰(같은 이름은 같은 토큰), 빼기 모드는 읽기 쉬운 표기(대응표 안 씀).
  * ranges는 결과 글에서 바꾼 표시의 [시작, 끝) 자리다(확인 화면에서 칠한다).
@@ -61,13 +66,13 @@ export function maskText(
   const removeCounts = new Map<MaskCategory, number>()
 
   const removeLabel = (d: Detection): string => {
-    const fixed = REMOVE_PATTERN_LABEL[d.category]
+    const fixed = REMOVE_PATTERN_LABEL[d.category] ? (o.removeLabels?.[d.category] ?? REMOVE_PATTERN_LABEL[d.category]) : undefined
     if (fixed) return fixed
     const existing = removeLabels.get(d.key)
     if (existing) return existing
     const n = removeCounts.get(d.category) ?? 0
     removeCounts.set(d.category, n + 1)
-    const label = `${REMOVE_ENTITY_LABEL[d.category]}${letterSuffix(n)}`
+    const label = `${o.removeLabels?.[d.category] ?? REMOVE_ENTITY_LABEL[d.category]}${letterSuffix(n)}`
     removeLabels.set(d.key, label)
     return label
   }
@@ -112,9 +117,10 @@ export function mapRanges(ranges: [number, number][], edits: MaskEdit[], offset:
   return ranges.map(([s, e]): [number, number] => [map(s, true), map(e, false)])
 }
 
-/** 가린 것이 있을 때 프롬프트 맨 위에 붙이는 한 줄(설계 문서 §8) */
-export function maskPreamble(mode: 'restore' | 'remove'): string {
-  return mode === 'restore'
-    ? 'CLIENT_A, IP_1 같은 표시는 가린 이름입니다. 바꾸거나 풀어 쓰지 말고 그대로 써 주세요.'
-    : "'고객사A', '[IP 주소]' 같은 표시는 가린 정보입니다. 실제 이름을 추측하지 말고 표시 그대로 써 주세요."
+/** 가린 것이 있을 때 프롬프트 맨 위에 붙이는 한 줄(설계 문서 §8). 빼기 모드는 설정에서 바꾼 표기를 예로 든다 */
+export function maskPreamble(mode: 'restore' | 'remove', removeLabels: Partial<Record<MaskCategory, string>> = {}): string {
+  if (mode === 'restore') return 'CLIENT_A, IP_1 같은 표시는 가린 이름입니다. 바꾸거나 풀어 쓰지 말고 그대로 써 주세요.'
+  const client = `${removeLabels.client ?? REMOVE_ENTITY_LABEL.client}A`
+  const ip = removeLabels.ip ?? REMOVE_PATTERN_LABEL.ip
+  return `'${client}', '${ip}' 같은 표시는 가린 정보입니다. 실제 이름을 추측하지 말고 표시 그대로 써 주세요.`
 }

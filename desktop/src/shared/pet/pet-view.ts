@@ -16,6 +16,9 @@ export interface PetLook {
 
 export type PetMenuAction = 'control' | 'sleep' | 'wake' | 'hide' | 'settings'
 
+/** 조종 모드 키(설계 §14-2): ←→ 걷기, ↑↓ 바 옆면 오르내리기, Space 뛰기, Esc 끝 */
+export type PetKey = 'left' | 'right' | 'up' | 'down' | 'jump' | 'end'
+
 export interface PetMenuRow {
   action: PetMenuAction
   title: string
@@ -46,5 +49,10 @@ export const SLOT = {
   bubbleMaxHeight: 96,
   menuWidth: 176,
   menuRow: 32,
-  menuPad: 4
+  menuPad: 4,
+  /**
+   * 메뉴와 창 가장자리 사이. 그림자 --shadow-flyout(아래로 8, 흐림 24)이 투명 창에서 잘리지 않게:
+   * 위는 24 − 8, 옆은 24, 아래는 24 + 8. 말풍선은 그림자가 없어 margin을 쓴다
+   */
+  menuMargin: { top: 16, side: 24, bottom: 32 }
 } as const

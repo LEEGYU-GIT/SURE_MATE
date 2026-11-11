@@ -2,11 +2,14 @@ import { mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isWorkspacesFile, parseWorkspaces } from '../../shared/workspace/workspace-file'
 import { type Workspace, WORKSPACES_FORMAT } from '../../shared/workspace/types'
-import { keepBrokenCopy, readJsonFile, type SaveIo, writeJsonAtomic } from '../storage/atomic-json'
+import { keepBrokenCopy, readJsonFile, type SaveIo, writeJsonAtomic } from '../files/atomic-write'
 
 /** `%APPDATA%\Sure-Mate\workspaces.json`: 저장한 워크스페이스(로컬 전용) */
 export const WORKSPACES_FILE = 'workspaces.json'
 const RECOVERED = 'workspaces.json을 읽지 못해 백업에서 복구했어요'
+
+/** 깨진 파일 사본을 남긴다. 복사하지 못해도(null) 읽기·.bak 복구·저장은 이어 간다 */
+const keepCopy = (path: string): Promise<string | null> => keepBrokenCopy(path).catch(() => null)
 
 export interface LoadedWorkspaces {
   workspaces: Workspace[]
@@ -30,7 +33,7 @@ export async function loadWorkspaces(dir: string): Promise<LoadedWorkspaces> {
   const main = await readOne(path)
   if (main.state === 'missing') return { workspaces: [], errors: [], recovered: false }
   if (main.state === 'ok') return { workspaces: main.workspaces, errors: main.errors, recovered: false }
-  await keepBrokenCopy(path)
+  await keepCopy(path)
   const bak = await readOne(`${path}.bak`)
   if (bak.state === 'ok') return { workspaces: bak.workspaces, errors: [RECOVERED, ...bak.errors], recovered: true }
   return { workspaces: [], errors: [`${WORKSPACES_FILE}: 읽지 못함(${main.code})`], recovered: false }
@@ -45,7 +48,7 @@ export async function saveWorkspaces(dir: string, list: Workspace[], io?: SaveIo
   const path = join(dir, WORKSPACES_FILE)
   const cur = await readOne(path)
   const unhealthy = cur.state === 'bad' || (cur.state === 'ok' && cur.errors.length > 0)
-  if (unhealthy) await keepBrokenCopy(path)
+  if (unhealthy) await keepCopy(path)
   await writeJsonAtomic(path, { format: WORKSPACES_FORMAT, version: 1, savedAt: new Date().toISOString(), workspaces: list }, { io, backup: cur.state !== 'bad' })
 }
 

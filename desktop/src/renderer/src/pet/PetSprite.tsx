@@ -85,6 +85,9 @@ export function PetSprite({ look, size, reduceMotion, character = MALLANG }: Pet
   // 반응 소품(편지·느낌표)은 자세마다 머리 가까이로 옮긴다(앉기·졸기의 퍼진 머리, 오르기의 벽 반대쪽)
   const near = character.props(plan.pose, plan.mirror)
   const nearHead = near.dx !== 0 || near.dy !== 0 ? `translate(${near.dx} ${near.dy})` : undefined
+  // 조종 표시는 자세마다 몸 꼭대기 위 같은 간격에 둔다
+  const mark = character.control(plan.pose, plan.mirror)
+  const overHead = mark.dx !== 0 || mark.dy !== 0 ? `translate(${mark.dx} ${mark.dy})` : undefined
   return (
     <svg
       viewBox="0 0 64 64"
@@ -116,6 +119,10 @@ export function PetSprite({ look, size, reduceMotion, character = MALLANG }: Pet
           {floating.map((p) =>
             REACTION_PROPS.has(p) ? (
               <g key={p} transform={nearHead}>
+                <Prop prop={p} />
+              </g>
+            ) : p === 'control' ? (
+              <g key={p} transform={overHead}>
                 <Prop prop={p} />
               </g>
             ) : (
@@ -221,7 +228,7 @@ function Sunglasses({ on }: { on: boolean }): React.JSX.Element {
 
 type FloatingProp = Exclude<PetProp, 'sunglasses'>
 
-/** 앱 반응이 드는 소품: 자세별 자리(character.props)를 따른다. z·조종 표시는 각자 자리에 있다 */
+/** 앱 반응이 드는 소품: 자세별 자리(character.props)를 따른다. 조종 표시는 character.control, z는 제자리 */
 const REACTION_PROPS: ReadonlySet<FloatingProp> = new Set(['envelope', 'alert'])
 
 function Prop({ prop }: { prop: FloatingProp }): React.JSX.Element {

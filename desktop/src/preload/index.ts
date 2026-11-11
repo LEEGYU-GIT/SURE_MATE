@@ -1,8 +1,48 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
-import { IPC, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
 import type { PetView } from '../shared/pet/pet-view'
+import type { SettingsSnapshot } from '../shared/settings/settings-snapshot'
+
+const settings: SettingsApi = {
+  get: () => ipcRenderer.invoke(IPC.settingsGet),
+  update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
+  onChanged: (cb) => {
+    const listener = (_e: IpcRendererEvent, s: SettingsSnapshot): void => cb(s)
+    ipcRenderer.on(IPC.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.settingsChanged, listener)
+  },
+  hotkeyCheck: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeyCheck, id, acc),
+  hotkeyRecord: (on) => ipcRenderer.send(IPC.settingsHotkeyRecord, on),
+  hotkeySet: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeySet, id, acc),
+  openFile: (which) => ipcRenderer.send(IPC.settingsOpenFile, which),
+  openOnboarding: () => ipcRenderer.send(IPC.settingsOpenOnboarding),
+  onboardingCandidates: () => ipcRenderer.invoke(IPC.onboardingCandidates),
+  finishOnboarding: () => ipcRenderer.invoke(IPC.onboardingFinish),
+  onOnboardingProgress: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.onboardingProgress, listener)
+    return () => ipcRenderer.removeListener(IPC.onboardingProgress, listener)
+  },
+  dictionary: () => ipcRenderer.invoke(IPC.settingsDictionary),
+  dictionarySave: (terms) => ipcRenderer.invoke(IPC.settingsDictionarySave, terms),
+  dictionaryImport: () => ipcRenderer.invoke(IPC.settingsDictionaryImport),
+  dictionaryExport: () => ipcRenderer.invoke(IPC.settingsDictionaryExport),
+  templates: () => ipcRenderer.invoke(IPC.settingsTemplates),
+  templateSave: (draft) => ipcRenderer.invoke(IPC.settingsTemplateSave, draft),
+  templateDelete: (id) => ipcRenderer.invoke(IPC.settingsTemplateDelete, id),
+  templateImport: () => ipcRenderer.invoke(IPC.settingsTemplateImport),
+  templateExport: () => ipcRenderer.invoke(IPC.settingsTemplateExport),
+  references: () => ipcRenderer.invoke(IPC.settingsReferences),
+  referenceGet: (kind) => ipcRenderer.invoke(IPC.settingsReferenceGet, kind),
+  referenceSave: (kind, text) => ipcRenderer.invoke(IPC.settingsReferenceSave, kind, text),
+  referenceDelete: (kind) => ipcRenderer.invoke(IPC.settingsReferenceDelete, kind),
+  glossary: () => ipcRenderer.invoke(IPC.settingsGlossary),
+  glossarySave: (draft, o) => ipcRenderer.invoke(IPC.settingsGlossarySave, draft, o),
+  glossaryDelete: (id) => ipcRenderer.invoke(IPC.settingsGlossaryDelete, id),
+  glossaryPack: (which) => ipcRenderer.invoke(IPC.settingsGlossaryPack, which)
+}
 
 // sandbox: true라서 'electron' 말고는 require할 수 없다. 필요한 코드는 번들에 들어간다.
 const api: SureMateApi = {
@@ -62,7 +102,10 @@ const api: SureMateApi = {
   petPress: (down) => ipcRenderer.send(IPC.petPress, down),
   petContextMenu: () => ipcRenderer.send(IPC.petContextMenu),
   petBubbleClick: () => ipcRenderer.send(IPC.petBubbleClick),
-  petBubbleRect: (r) => ipcRenderer.send(IPC.petBubbleRect, r)
+  petBubbleRect: (r) => ipcRenderer.send(IPC.petBubbleRect, r),
+  petMenu: (a) => ipcRenderer.send(IPC.petMenu, a),
+  petKey: (k, down) => ipcRenderer.send(IPC.petKey, k, down),
+  settings
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

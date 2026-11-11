@@ -95,10 +95,10 @@ export function createMaskingService(d: { loadDictionary(): Promise<DictionarySt
       const text = input.normalize('NFC')
       const { found: ds, dict } = await detect(text)
       const s = d.settings()
-      const r = maskText(text, ds, { mode: o.mode, categories: s.categories, disabledKeys: o.disabledKeys }, o.dryRun ? table.fork() : table)
+      const r = maskText(text, ds, { mode: o.mode, categories: s.categories, disabledKeys: o.disabledKeys, removeLabels: s.removeLabels }, o.dryRun ? table.fork() : table)
       const replaced = new Map(r.applied.map((a) => [a.key, a.replacement]))
       const items = summarize(shown(ds, o.disabledKeys)).map((x): MaskItem => ({ ...x, replacement: replaced.get(x.key) ?? null, enabled: replaced.has(x.key) }))
-      const preamble = r.applied.length > 0 ? maskPreamble(o.mode) : null
+      const preamble = r.applied.length > 0 ? maskPreamble(o.mode, s.removeLabels) : null
       const offset = preamble ? preamble.length + 2 : 0
       return {
         text: preamble ? `${preamble}\n\n${r.text}` : r.text,

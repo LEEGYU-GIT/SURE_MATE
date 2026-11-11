@@ -22,7 +22,7 @@ export const MENU_TITLES = {
 } as const
 
 /** 모드를 고르면 생기는 일(한 줄). 끔은 주의 문구라 색만으로 알리지 않는다(§14-4) */
-const MASKING_DETAILS: Record<MaskingMode, string> = {
+export const MASKING_DETAILS: Record<MaskingMode, string> = {
   off: '원문 그대로 복사돼요',
   restore: '답은 원래 이름으로 되돌릴 수 있어요',
   remove: "답에도 '고객사A' 같은 표시가 남아요"

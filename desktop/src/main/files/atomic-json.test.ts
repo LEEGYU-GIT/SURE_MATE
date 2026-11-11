@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { keepBrokenCopy, readJsonFile, RENAME_RETRY_MS, writeJsonAtomic, type SaveIo } from './atomic-json'
+import { keepBrokenCopy, readJsonFile, RENAME_RETRY_MS, writeJsonAtomic, type SaveIo } from './atomic-write'
 
 let dir: string
 beforeEach(async () => {

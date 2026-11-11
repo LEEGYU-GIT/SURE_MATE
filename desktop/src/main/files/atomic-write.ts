@@ -34,17 +34,18 @@ async function renameWithRetry(from: string, to: string, io: SaveIo): Promise<vo
 }
 
 /**
- * JSON을 원자적으로 저장한다: 폴더 만들기 → 겹치지 않는 임시 파일에 쓰기 → 디스크에 내리기 →
- * (backup이면 기존 파일을 `.bak`으로 복사) → 이름 바꾸기(재시도). 실패하면 임시 파일을 지우고 오류를 다시 던진다.
+ * 원자적 저장(설계 문서 §16): 겹치지 않는 임시 파일에 쓰고 디스크에 내린 뒤 이름을 바꾼다.
+ * 이름 바꾸기가 잠깐 막히면(EPERM·EBUSY·EACCES) 50·100·200·400ms 뒤 다시 하고, 끝내 안 되면 임시 파일을 지우고 던진다.
+ * backup이면 이름을 바꾸기 직전에 지금 파일을 `<이름>.bak`으로 복사한다(파일이 없으면 건너뜀). 깨진 파일이 정상 .bak을
+ * 덮지 않게 하는 것은 부르는 쪽 몫이다(지금 파일을 읽어 보고 깨졌으면 backup을 끈다. workspace-store 참고).
  */
-export async function writeJsonAtomic(path: string, value: unknown, o: { io?: SaveIo; backup?: boolean } = {}): Promise<void> {
-  const io = o.io ?? defaultIo
+export async function writeFileAtomic(path: string, text: string, io: SaveIo = defaultIo, o: { backup?: boolean } = {}): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.${randomUUID()}.tmp`
   try {
     const file = await open(tmp, 'w')
     try {
-      await file.writeFile(JSON.stringify(value, null, 2), 'utf8')
+      await file.writeFile(text, 'utf8')
       await file.sync()
     } finally {
       await file.close()
@@ -61,6 +62,11 @@ export async function writeJsonAtomic(path: string, value: unknown, o: { io?: Sa
     await rm(tmp, { force: true }).catch(() => undefined)
     throw e
   }
+}
+
+/** JSON을 2칸 들여쓰기로 원자적으로 저장한다(writeFileAtomic과 같은 순서·다시 시도·backup) */
+export async function writeJsonAtomic(path: string, value: unknown, o: { io?: SaveIo; backup?: boolean } = {}): Promise<void> {
+  await writeFileAtomic(path, JSON.stringify(value, null, 2), o.io, { backup: o.backup })
 }
 
 export type JsonRead = { kind: 'missing' } | { kind: 'ok'; value: unknown } | { kind: 'broken'; code: string }
@@ -81,15 +87,21 @@ export async function readJsonFile(path: string): Promise<JsonRead> {
   }
 }
 
-const stamp = (d: Date): string => d.toISOString().replace(/[:.]/g, '-')
+/** 깨진 파일 사본 이름에 붙이는 시각(파일 이름에 쓸 수 없는 : . 은 - 로) */
+export const brokenStamp = (now: Date): string => now.toISOString().replace(/[:.]/g, '-')
 
-/** 덮어쓰기 전에 `<파일>.broken-<시각>` 사본을 남긴다. 파일이 없거나 복사에 실패하면 null */
+/**
+ * 읽을 때 문제가 있었던 사용자 파일을 덮어쓰기 전에 `<이름>.broken-<시각>` 사본을 남긴다(읽지 못한 항목을 잃지 않게).
+ * 원본은 그대로 두고 사본 경로를 돌려준다. 원본이 없으면 null.
+ * 그 밖의 이유로 복사하지 못하면 던진다(사본 없이 덮어쓰지 않게). 그래도 읽기·저장을 이어 가야 하는 곳은 부르는 쪽이 잡는다(workspace-store).
+ */
 export async function keepBrokenCopy(path: string, now: Date = new Date()): Promise<string | null> {
-  const to = `${path}.broken-${stamp(now)}`
+  const copy = `${path}.broken-${brokenStamp(now)}`
   try {
-    await copyFile(path, to)
-    return to
-  } catch {
-    return null
+    await copyFile(path, copy)
+    return copy
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw e
   }
 }

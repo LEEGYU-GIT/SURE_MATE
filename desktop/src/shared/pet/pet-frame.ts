@@ -7,6 +7,14 @@ export function hopRoom(size: number): number {
   return Math.round((14 / 64) * size)
 }
 
+/**
+ * 말풍선이 비켜야 하는 높이. 평소에는 폴짝 높이(hopRoom). 조종 중에는 머리 위 조종 표시(격자 −14~−2)가
+ * 떠오르고(6칸) 폴짝하므로(14칸) 20칸을 더한다: 그대로 두면 표시가 말풍선 꼬리에 닿는다(미리 보기 pet-control).
+ */
+export function bubbleHop(size: number, controlling: boolean): number {
+  return hopRoom(size) + (controlling ? Math.round((20 / 64) * size) : 0)
+}
+
 /** 발 위치(화면 DIP)로 64 격자 펫 상자를 만든다. */
 export function petBox(foot: { x: number; y: number }, size: number): Rect {
   return { x: foot.x - size / 2, y: foot.y - PET_BASELINE * size, width: size, height: size }
@@ -75,6 +83,59 @@ export function bubbleSlot(o: { box: Rect; window: Rect; bounds: Rect; hop: numb
 
 export function menuSize(rows: number): { width: number; height: number } {
   return { width: SLOT.menuWidth, height: rows * SLOT.menuRow + 2 * SLOT.menuPad }
+}
+
+/**
+ * 오른쪽 클릭 메뉴 자리(menuSize(rows), 화면 DIP). placeSlot과 같은 규칙(위쪽이 되면 펫 상자 위, 아니면 여유가 큰 옆)이되
+ * hop은 0이고(메뉴가 열린 동안 펫은 폴짝하지 않는다), 창 가장자리 여백은 그림자가 잘리지 않는 SLOT.menuMargin이다.
+ * 옆자리가 창 밖으로 나가면(양옆 모두 메뉴 + 여백이 안 될 때) 창 안으로 자른다: 메뉴는 말풍선처럼 줄일 수 없고,
+ * 투명 창 밖은 그려지지 않는다. 그런 드문 자리에서는 메뉴가 펫 상자에 겹칠 수 있다.
+ */
+export function menuSlot(o: { rows: number; box: Rect; window: Rect; bounds: Rect }): { rect: Rect; side: SlotSide } {
+  const { width: w, height: h } = menuSize(o.rows)
+  const { box, window: win, bounds } = o
+  const M = SLOT.menuMargin
+  const xLo = win.x + M.side
+  const xHi = win.x + win.width - M.side - w
+  const ay = box.y - SLOT.gap - h
+  if (ay >= win.y + M.top && ay >= bounds.y + M.top) {
+    return { side: 'above', rect: { x: clamp(box.x + box.width / 2 - w / 2, xLo, xHi), y: ay, width: w, height: h } }
+  }
+  const side: SlotSide = box.x - win.x > win.x + win.width - (box.x + box.width) ? 'left' : 'right'
+  const x = side === 'left' ? box.x - SLOT.gap - w : box.x + box.width + SLOT.gap
+  const y = clamp(box.y + box.height / 2 - h / 2, win.y + M.top, win.y + win.height - M.bottom - h)
+  return { side, rect: { x: clamp(x, xLo, xHi), y, width: w, height: h } }
+}
+
+/** 사각형들을 감싸는 사각형. 비면 null */
+export function boundsOf(rects: Rect[]): Rect | null {
+  if (rects.length === 0) return null
+  const x = Math.min(...rects.map((r) => r.x))
+  const y = Math.min(...rects.map((r) => r.y))
+  const right = Math.max(...rects.map((r) => r.x + r.width))
+  const bottom = Math.max(...rects.map((r) => r.y + r.height))
+  return { x, y, width: right - x, height: bottom - y }
+}
+
+/**
+ * 열린 메뉴와 펫 몸(판정 사각형을 감싼 범위) 사이 틈을 잇는 사각형(화면 DIP). 몸에서 메뉴 행으로 옮기는 커서가
+ * 클릭 통과로 바뀌지 않고, 틈에서 누른 클릭이 아래 창으로 가지 않게 한다. 위 메뉴는 메뉴 아래 끝에서 몸 위 끝까지를
+ * 둘을 합친 가로 범위로(비스듬히 가는 길도 덮는다), 옆 메뉴는 메뉴 안쪽 끝에서 몸 옆 끝까지를 둘을 합친 세로 범위로 잇는다.
+ * 맞닿거나 겹치면(메뉴를 창 안으로 자른 드문 자리) null
+ */
+export function menuBridge(o: { menu: Rect; side: SlotSide; body: Rect }): Rect | null {
+  const { menu: m, body: b } = o
+  if (o.side === 'above') {
+    const top = m.y + m.height
+    if (b.y <= top) return null
+    const x = Math.min(m.x, b.x)
+    return { x, y: top, width: Math.max(m.x + m.width, b.x + b.width) - x, height: b.y - top }
+  }
+  const left = o.side === 'left' ? m.x + m.width : b.x + b.width
+  const right = o.side === 'left' ? b.x : m.x
+  if (right <= left) return null
+  const y = Math.min(m.y, b.y)
+  return { x: left, y, width: right - left, height: Math.max(m.y + m.height, b.y + b.height) - y }
 }
 
 type Cell = readonly [number, number, number, number]

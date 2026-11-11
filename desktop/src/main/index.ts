@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, dialog, shell as electronShell, globalShortcut, type Tray } from 'electron'
+import { app, dialog, shell as electronShell, globalShortcut, screen, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
+import { IPC } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
+import { parseGlossaryPack } from '../shared/glossary/pack'
+import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
 import { appEvents } from './app-events'
@@ -21,12 +24,14 @@ import { createGlossaryRuntime, type GlossaryRuntime } from './glossary/glossary
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
+import { createHotkeyChanger, type HotkeyChanger } from './hotkeys/hotkey-change'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { registerIpc } from './ipc'
 import { log } from './log'
 import type { MaskingCommands } from './masking/masking-commands'
 import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime'
 import { createMaskingService, type MaskingService } from './masking/masking-service'
+import { exportMaskDictionaryText, importMaskDictionary, loadMaskDictionary, saveMaskDictionary } from './masking/dictionary-store'
 import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
@@ -35,14 +40,22 @@ import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
+import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
+import { deleteReference, listReferenceKinds, readReference, saveReference } from './prompts/references'
 import { createTemplateCache } from './prompts/template-cache'
 import { createSnippetRuntime } from './snippets/snippet-runtime'
 import { DEFAULT_SETTINGS, loadSettings, PALETTE_HOTKEY_FALLBACKS, SETTINGS_FILE, settingsLoadNotice, type Settings, type SettingsLoadError } from './settings/settings-store'
+import { registerSettingsIpc } from './settings/settings-ipc'
+import { shouldShowOnboarding } from './settings/first-run'
+import { createSettingsCommands } from './settings/settings-commands'
+import { createSettingsService } from './settings/settings-service'
 import { createSettingsWriter } from './settings/settings-writer'
+import { realTimers } from './timers'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
 
 app.setName('Sure-Mate')
 
@@ -63,6 +76,12 @@ const barCommands = createBarCommands({
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   notify,
+  log
+})
+const settingsCommands = createSettingsCommands({
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  openSettings: () => openSettings('/settings'),
   log
 })
 let packCommands: { run(id: string): Promise<boolean> } | null = null
@@ -91,6 +110,7 @@ function applySettings(next: Settings): void {
   settings = next
   shell?.refresh()
   barRuntime?.refresh()
+  settingsService.changed()
 }
 
 /**
@@ -109,6 +129,105 @@ const onSettingsLoadError: SettingsLoadError = (what, e, kept) => {
 const settingsWriter = createSettingsWriter({ dir: () => userData, current: () => settings, apply: applySettings, notify, log })
 
 const changeSettings = (update: (current: Settings) => Settings): Promise<void> => settingsWriter.change(update)
+
+/** 팔레트에서 마지막으로 고른 프롬프트(첫 실행 안내의 따라 해 보기를 알아본다) */
+let lastPreparedTemplate: string | null = null
+/** 첫 실행 안내에서 따라 해 보는 프롬프트 */
+const ONBOARDING_TEMPLATE = 'meeting-notes'
+
+/** 단축키 바꾸기(설정 창·온보딩). 트레이·단축키를 만드는 startShell에서 만든다 */
+let hotkeyChanger: HotkeyChanger | null = null
+/** 조회 단축키를 등록했는지(설정 창 표시) */
+let lookupBound = false
+const NOT_READY = '단축키를 아직 준비하지 못했어요'
+/** 설정 IPC는 startShell보다 먼저 열리므로, 단축키 바꾸기가 생기기 전에는 거절한다 */
+const changerProxy: HotkeyChanger = {
+  check: (id, acc) => hotkeyChanger?.check(id, acc) ?? { level: 'block', reason: NOT_READY },
+  startRecording: () => hotkeyChanger?.startRecording(),
+  stopRecording: () => hotkeyChanger?.stopRecording(),
+  set: async (id, acc) => (hotkeyChanger ? hotkeyChanger.set(id, acc) : { ok: false, reason: NOT_READY }),
+  candidates: () => hotkeyChanger?.candidates() ?? [],
+  dispose: () => hotkeyChanger?.dispose()
+}
+
+/** 설정 창의 읽기·저장(설계 문서 §14). 저장은 보낸 필드만 그때의 설정에 덮는다 */
+const settingsService = createSettingsService({
+  current: () => settings,
+  change: changeSettings,
+  hotkeys: () => ({
+    palette: { acc: hotkeys?.current('palette') ?? settings.hotkeys.palette, registered: paletteHotkey() !== null },
+    lookup: { acc: hotkeys?.current('lookup') ?? settings.hotkeys.lookup, registered: lookupBound }
+  }),
+  displays: () => {
+    const primary = screen.getPrimaryDisplay().id
+    return screen.getAllDisplays().map((d) => ({ id: String(d.id), label: `${d.label || '모니터'} · ${d.size.width}×${d.size.height}`, primary: d.id === primary }))
+  },
+  prompts: () => templates.filter((t) => t.kind === 'prompt').map((t) => ({ id: t.id, name: t.name })),
+  packaged: () => app.isPackaged,
+  setLoginItem: (open) => app.setLoginItemSettings({ openAtLogin: open, args: ['--hidden'] }),
+  log
+})
+settingsService.onChanged((s) => sendToSettings(IPC.settingsChanged, s))
+
+/** 설정 창을 부모로 둔 대화상자(창이 닫혀 있으면 부모 없이) */
+async function openDialog(o: Electron.OpenDialogOptions): Promise<string | null> {
+  const parent = settingsWindow()
+  const r = parent ? await dialog.showOpenDialog(parent, o) : await dialog.showOpenDialog(o)
+  return r.canceled ? null : (r.filePaths[0] ?? null)
+}
+
+async function saveDialog(o: Electron.SaveDialogOptions): Promise<string | null> {
+  const parent = settingsWindow()
+  const r = parent ? await dialog.showSaveDialog(parent, o) : await dialog.showSaveDialog(o)
+  return r.canceled || !r.filePath ? null : r.filePath
+}
+
+/** 받은 가명 사전 파일을 지금 사전에 더한다(같은 분류·이름은 건너뜀). 기록에는 개수만 */
+async function importDictionaryFile(): Promise<unknown> {
+  const path = await openDialog({ title: '가명 사전 가져오기', properties: ['openFile'], filters: [{ name: 'Sure-Mate 가명 사전', extensions: ['json'] }] })
+  if (!path) return { canceled: true }
+  let text: string
+  try {
+    if ((await stat(path)).size > PACK_MAX_BYTES) return { ok: false, errors: ['5MB가 넘는 파일은 가져오지 않아요'] }
+    text = await readFile(path, 'utf8')
+  } catch (e) {
+    return { ok: false, errors: [`파일을 읽지 못했어요(${errorCode(e)})`] }
+  }
+  const r = await importMaskDictionary(userData, text)
+  log('masking.dictionary.import', r.ok ? { added: r.added, skipped: r.skipped } : { errors: r.errors.length })
+  return r
+}
+
+/** 가명 사전 내보내기: 고객사 이름이 들어 있으니 사내에서만 공유하라고 먼저 묻는다(설계 문서 §8) */
+async function exportDictionaryFile(): Promise<unknown> {
+  const parent = settingsWindow()
+  const ask: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: 'Sure-Mate',
+    message: '가명 사전을 파일로 내보낼까요?',
+    detail: '고객사·프로젝트·담당자 이름이 그대로 들어 있어요. 사내에서만 공유해 주세요.',
+    buttons: ['내보내기', '취소'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  }
+  const answer = parent ? await dialog.showMessageBox(parent, ask) : await dialog.showMessageBox(ask)
+  if (answer.response !== 0) return { canceled: true }
+  const path = await saveDialog({ title: '가명 사전 내보내기', defaultPath: join(app.getPath('documents'), 'sure-mate-masking.json'), filters: [{ name: 'Sure-Mate 가명 사전', extensions: ['json'] }] })
+  if (!path) return { canceled: true }
+  try {
+    await writeFile(path, await exportMaskDictionaryText(userData), 'utf8')
+  } catch (e) {
+    return { ok: false, errors: [`파일에 쓰지 못했어요(${errorCode(e)})`] }
+  }
+  log('masking.dictionary.export', {})
+  return { ok: true }
+}
+
+/** 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1) */
+function openSettings(route: SettingsRoute = '/settings'): void {
+  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording() })
+}
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
 const setMaskingMode = (mode: MaskingMode): Promise<void> => changeSettings((cur) => ({ ...cur, masking: { ...cur.masking, mode } }))
@@ -130,10 +249,10 @@ async function togglePet(): Promise<void> {
 }
 
 /**
- * 설정 화면이 생기기 전까지 바의 설정 단추·바 메뉴 "설정 열기"는 settings.json을 기본 프로그램으로 연다.
+ * 설정 창 일반 탭의 "설정 파일 열기": settings.json을 기본 프로그램으로 연다(바·트레이·팔레트는 설정 창을 연다).
  * 파일이 없으면 지금 설정으로 만들고, .json을 열 프로그램이 없으면 폴더를 연다(가명 사전 열기와 같은 처리).
  */
-async function openSettings(): Promise<void> {
+async function openSettingsFile(): Promise<void> {
   const path = join(userData, SETTINGS_FILE)
   // 없을 때(ENOENT)만 만든다. 다른 설정 저장과 같은 임시 파일을 쓰므로 같은 줄에서
   const created = await settingsWriter.ensureFile()
@@ -156,7 +275,7 @@ function startBar(): void {
     showPalette,
     runPrompt: (templateId) => (prompts ? prompts.runFromBar(templateId) : Promise.resolve('missing')),
     togglePet,
-    openSettings,
+    openSettings: async () => openSettings('/settings'),
     setMaskingMode,
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
@@ -191,7 +310,11 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
-  if (id.startsWith('prompt:') && prompts) return prompts.prepare(id.slice('prompt:'.length))
+  if (await settingsCommands.run(id)) return
+  if (id.startsWith('prompt:') && prompts) {
+    lastPreparedTemplate = id.slice('prompt:'.length)
+    return prompts.prepare(lastPreparedTemplate)
+  }
   if (id.startsWith('snippet:') && snippets) {
     await snippets.run(id.slice('snippet:'.length))
     return
@@ -255,12 +378,29 @@ async function startShell(): Promise<void> {
     isAcceleratorHeld
   )
   hotkeys = manager
+  hotkeyChanger = createHotkeyChanger({
+    manager,
+    // 등록해 보고 바로 풀어 다른 앱이 쓰는지 본다
+    probe: (acc) => {
+      try {
+        if (!globalShortcut.register(acc, () => {})) return false
+        globalShortcut.unregister(acc)
+        return true
+      } catch {
+        return false
+      }
+    },
+    save: (id, acc) => changeSettings((cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, [id]: acc } })),
+    timers: realTimers,
+    log
+  })
 
   let suspended = false
   shell = createTray({
     paletteHotkey,
     maskingMode: () => settings.masking.mode,
     onOpenPalette: () => showPalette({ mode: 'search' }),
+    onOpenSettings: () => openSettings('/settings'),
     barShape: () => settings.bar.shape,
     onBarShape: (shape) =>
       void setBarShape(shape).catch((e) => {
@@ -304,6 +444,7 @@ async function startShell(): Promise<void> {
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
     if (!isPaletteVisible()) lookupSelection()
   })
+  lookupBound = lookup.ok
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
   flushFileErrors()
@@ -445,6 +586,8 @@ if (!app.requestSingleInstanceLock()) {
         const result = await session.run(req)
         // 복사만이면 팔레트가 남아 있으니 숨기고 원래 창으로 돌아간다(AI를 열었으면 이미 숨김)
         if (result.ok) hidePalette({ restoreFocus: true })
+        // 첫 실행 안내의 따라 해 보기(회의록 정리)를 마쳤다고 안내 창에 알린다
+        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE) sendToSettings(IPC.onboardingProgress)
         return result
       },
       cancelPrompt: () => session.cancel(),
@@ -460,6 +603,109 @@ if (!app.requestSingleInstanceLock()) {
       paletteContentsId,
       imeLoggerContentsId
     })
+    /** 기본 용어 id(설정 창이 기본 용어·고친 기본 용어를 가린다) */
+    const builtinGlossaryIds = parseGlossaryPack(builtinGlossary, 'builtin').entries.map((e) => e.id)
+    /** 기본 템플릿 id(설정 창이 '기본'·'기본을 고침'을 가린다) */
+    const builtinTemplateIds = parseTemplatePack(builtinPrompts, 'builtin').templates.map((t) => t.id)
+    /** 템플릿을 저장·지운 뒤: 다시 읽고 바의 고정 프롬프트·설정 창의 이름 목록을 고친다 */
+    const afterTemplatesChanged = async (): Promise<void> => {
+      templates = await templateCache.get()
+      barRuntime?.refresh()
+      settingsService.changed()
+    }
+    registerSettingsIpc({
+      contentsId: settingsContentsId,
+      service: settingsService,
+      hotkeys: changerProxy,
+      openFile: (which) => {
+        if (which === 'settings') void openSettingsFile()
+        else void electronShell.openPath(join(userData, 'logs'))
+      },
+      openOnboarding: () => openSettings('/onboarding'),
+      finishOnboarding: async () => {
+        await changeSettings((cur) => ({ ...cur, onboardingDone: true }))
+        log('onboarding.finish', {})
+        closeSettingsWindow()
+      },
+      dictionary: {
+        get: () => loadMaskDictionary(userData),
+        save: async (terms) => {
+          const r = await saveMaskDictionary(userData, terms)
+          log('masking.dictionary.save', r.ok ? { count: r.count } : { errors: r.errors.length })
+          return r
+        },
+        importFile: importDictionaryFile,
+        exportFile: exportDictionaryFile
+      },
+      templates: {
+        list: async () => {
+          templates = await templateCache.get()
+          const mine = await readMyTemplates(userData)
+          return { templates, mine: mine.templates.map((t) => t.id), builtinIds: builtinTemplateIds, errors: mine.errors }
+        },
+        save: async (draft) => {
+          const r = await savePersonalTemplate(userData, draft)
+          log('template.save', r.ok ? { id: r.id } : { errors: r.errors.length })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        remove: async (id) => {
+          const r = await deletePersonalTemplate(userData, id)
+          log('template.delete', { id, ok: r.ok })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        importFile: async () => {
+          const path = await openDialog({ title: '템플릿 팩 가져오기', properties: ['openFile'], filters: [{ name: 'Sure-Mate 템플릿 팩', extensions: ['json'] }] })
+          if (!path) return { canceled: true }
+          let text: string
+          try {
+            if ((await stat(path)).size > PACK_MAX_BYTES) return { ok: false, errors: ['5MB가 넘는 파일은 가져오지 않아요'] }
+            text = await readFile(path, 'utf8')
+          } catch (e) {
+            return { ok: false, errors: [`파일을 읽지 못했어요(${errorCode(e)})`] }
+          }
+          const r = await importTemplatePack(userData, text, templates.map((t) => t.id))
+          log('template.import', r.ok ? { added: r.added, replaced: r.replaced } : { errors: r.errors.length })
+          if (r.ok) await afterTemplatesChanged()
+          return r
+        },
+        exportFile: async () => {
+          const path = await saveDialog({ title: '내 템플릿 내보내기', defaultPath: join(app.getPath('documents'), 'sure-mate-templates.json'), filters: [{ name: 'Sure-Mate 템플릿 팩', extensions: ['json'] }] })
+          if (!path) return { canceled: true }
+          try {
+            await writeFile(path, await exportMyTemplatesText(userData), 'utf8')
+          } catch (e) {
+            return { ok: false, errors: [`파일에 쓰지 못했어요(${errorCode(e)})`] }
+          }
+          log('template.export', {})
+          return { ok: true }
+        }
+      },
+      glossary: {
+        list: async () => ({ entries: (await glossaryCache.get()).entries, builtinIds: builtinGlossaryIds }),
+        save: (draft, o) => wiki.save(draft, o),
+        remove: (id) => wiki.remove(id),
+        // 팔레트 명령과 같은 흐름(대화상자·미리 보기 확인·알림)
+        pack: async (which) => {
+          await packCommands?.run(which === 'import' ? 'cmd.glossary-import' : 'cmd.glossary-export')
+        }
+      },
+      references: {
+        list: () => listReferenceKinds(templates, userData),
+        get: (kind) => readReference(userData, kind),
+        save: async (kind, text) => {
+          const r = await saveReference(userData, kind, text)
+          log('reference.save', { ok: r.ok, length: [...text].length })
+          return r
+        },
+        remove: async (kind) => {
+          const r = await deleteReference(userData, kind)
+          log('reference.delete', { ok: r.ok })
+          return r
+        }
+      }
+    })
 
     try {
       await startShell()
@@ -473,11 +719,15 @@ if (!app.requestSingleInstanceLock()) {
     } catch (e) {
       log('bar.startError', { error: errorText(e) })
     }
+
+    // 첫 실행 안내(설계 문서 §6). 끝내지 않았으면 다음 실행에도 띄운다
+    if (shouldShowOnboarding(settings)) openSettings('/onboarding')
   })
 
   // 창이 모두 닫혀도 트레이에 남는다
   app.on('window-all-closed', () => {})
   app.on('will-quit', () => {
+    hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()
     // 맨 앞 유지·전체 화면 확인·펼침 창 타이머와 화면 이벤트 구독을 멈춘다
     barRuntime?.dispose()

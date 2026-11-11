@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PetPose } from '../../../shared/pet/pet-view'
 import { CLIMB_OFFSET, PET_BASELINE } from '../../../shared/pet/pet-world'
-import { CONTROL_BAND, FACE_CENTER, FACE_SHAPES, MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, MALLANG_PROPS, mallangPropPlace, PROP_SHAPES, STROKE } from './mallang-shapes'
+import { CONTROL_BAND, FACE_CENTER, FACE_SHAPES, MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, MALLANG_PROPS, mallangControlPlace, mallangPropPlace, PROP_SHAPES, STROKE } from './mallang-shapes'
 
 const POSES: PetPose[] = ['stand', 'walk', 'climb', 'sit', 'sleep', 'held', 'air']
 const numbers = (d: string): number[] => (d.match(/-?\d*\.?\d+/g) ?? []).map(Number)
@@ -189,6 +189,29 @@ describe('(Task 6 이월) 반응 소품(편지·느낌표)은 자세마다 머�
       expect(circleGap, `${label} 느낌표`).toBeGreaterThan(TOUCH)
       expect(Math.min(rectGap, circleGap), label).toBeLessThanOrEqual(10)
     }
+  })
+
+  it('(Task 7 이월 → Task 8) 조종 표시도 자세마다 머리 위 같은 간격(서기와 같은 18칸 ± 2)에 뜬다: 앉기의 퍼진 머리 위 32칸에 뜨지 않게', () => {
+    const xs = PROP_SHAPES.control.points.map(([x]) => x)
+    const half = PROP_SHAPES.control.stroke / 2
+    const gapOf = (pose: PetPose, mirror: boolean): number => {
+      const at = mallangControlPlace(pose, mirror)
+      const lo = Math.min(...xs) - half + at.dx
+      const hi = Math.max(...xs) + half + at.dx
+      const top = Math.min(...body(pose, mirror).filter((p) => p.x >= lo && p.x <= hi).map((p) => p.y))
+      return top - (CONTROL_BAND.bottom + at.dy)
+    }
+    for (const pose of ['stand', 'walk', 'air'] as const) {
+      expect(mallangControlPlace(pose, false), pose).toEqual({ dx: 0, dy: 0 })
+    }
+    const stand = gapOf('stand', false)
+    expect(stand).toBe(18)
+    for (const [pose, mirror] of CASES) {
+      expect(Math.abs(gapOf(pose, mirror) - stand), `${pose}${mirror ? '(뒤집힘)' : ''}`).toBeLessThanOrEqual(2)
+    }
+    // 오르기는 위를 보는 얼굴 쪽(벽 반대쪽)으로, 뒤집히면 반대로
+    expect(mallangControlPlace('climb', false).dx).toBe(MALLANG_FACE.climb.dx)
+    expect(mallangControlPlace('climb', true).dx).toBe(-MALLANG_FACE.climb.dx)
   })
 
   it('오르기: 소품은 바 면 반대쪽(오른쪽 벽이면 x 44 왼쪽, 뒤집혀 왼쪽 벽이면 x 20 오른쪽)', () => {
