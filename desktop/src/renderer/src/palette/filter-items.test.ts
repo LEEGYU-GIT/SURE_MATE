@@ -13,6 +13,8 @@ import {
   searchPalette,
   WIKI_ADD_ID,
   withWikiAdd,
+  WORKSPACE_SAVE_AS_ID,
+  withWorkspaceSaveAs,
   type SearchContext
 } from './filter-items'
 
@@ -119,6 +121,38 @@ it('범위 없이 한 글자만 치면 "직접 추가하기"를 붙이지 않는
   // ?로 위키를 고르면 한 글자에도 붙이고, 범위 없이 두 글자 이상 쳐서 아무것도 못 찾으면 붙인다
   expect(shown('?회')).toEqual(['wiki:regression', WIKI_ADD_ID])
   expect(shown('없는말')).toEqual([WIKI_ADD_ID])
+})
+
+it('@ 범위에 1~40자를 쳤으면 맨 끝에 그 이름으로 저장하는 줄(같은 이름·별칭의 워크스페이스가 있으면 바꾸기 줄)', () => {
+  const list: PaletteItem[] = [
+    ...items,
+    { id: 'cmd.workspace-save', group: 'workspace', title: '지금 배치 저장', keywords: ['save', 'workspace', '워크스페이스', '배치 저장'] },
+    { id: 'workspace:ws-qa', group: 'workspace', title: 'QA 모드', subtitle: '창 3개', keywords: ['qa'] }
+  ]
+  const shown = (q: string, from: PaletteItem[] = list): PaletteItem[] => withWorkspaceSaveAs(filterItems(from, q), q)
+  const line = (q: string, from?: PaletteItem[]): PaletteItem | undefined => shown(q, from).find((i) => i.id === WORKSPACE_SAVE_AS_ID)
+
+  const withoutQa = list.filter((i) => i.id !== 'workspace:ws-qa')
+  expect(line('@QA 모드', withoutQa)).toEqual({
+    id: WORKSPACE_SAVE_AS_ID,
+    group: 'workspace',
+    title: '‘QA 모드’ 이름으로 지금 배치 저장',
+    subtitle: '지금 열린 창 위치를 이 이름으로 저장해요'
+  })
+  // 같은 이름(compactOf)이 있으면 그 배치를 바꾸는 줄이 맨 끝에(맨 위 후보는 그 워크스페이스)
+  const replace = shown('@qa 모드')
+  expect(replace[0].id).toBe('workspace:ws-qa')
+  expect(replace.at(-1)).toMatchObject({ id: WORKSPACE_SAVE_AS_ID, group: 'workspace', title: '‘QA 모드’ 배치를 지금 배치로 바꾸기' })
+  // 별칭이 같아도 그 워크스페이스를 바꾼다(저장도 이름·별칭으로 찾는다). 저장 명령의 키워드는 이름이 아니다
+  expect(line('@QA')?.title).toBe('‘QA 모드’ 배치를 지금 배치로 바꾸기')
+  expect(line('@워크스페이스')?.title).toBe('‘워크스페이스’ 이름으로 지금 배치 저장')
+  expect(line('@' + '가'.repeat(40))?.title).toBe(`‘${'가'.repeat(40)}’ 이름으로 지금 배치 저장`)
+  // 범위가 없거나, 글이 없거나, 40자를 넘으면 붙이지 않는다
+  expect(line('@')).toBeUndefined()
+  expect(line('@  ')).toBeUndefined()
+  expect(line('QA 모드')).toBeUndefined()
+  expect(line('/QA 모드')).toBeUndefined()
+  expect(line('@' + 'x'.repeat(41))).toBeUndefined()
 })
 
 // ── 말하듯 입력과 최근·자주 쓴 항목(설계 §6·§9·§13) ──────────────────────────────────────────────

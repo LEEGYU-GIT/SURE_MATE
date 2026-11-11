@@ -7,6 +7,15 @@ import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePromptRequest } from '../shared/prompt-request'
 import type { PaletteItem } from '../shared/types'
+import type { WorkspaceEdit } from '../shared/workspace/edit'
+import {
+  parseWorkspaceEdit,
+  parseWorkspaceId,
+  parseWorkspaceName,
+  type WorkspaceEditResult,
+  type WorkspaceSaveResult,
+  type WorkspaceView
+} from '../shared/workspace/workspace-ipc'
 import { errorText } from './error-text'
 import type { GlossaryRuntime } from './glossary/glossary-runtime'
 import { log } from './log'
@@ -28,6 +37,17 @@ export interface OverlayIpc {
   flyoutAction(a: FlyoutAction): Promise<boolean>
 }
 
+/** 워크스페이스 IPC가 부르는 기능(설계 §11). 값은 모두 검사를 마친 것이다 */
+export interface WorkspaceIpc {
+  get(id: string): Promise<WorkspaceView | null>
+  edit(id: string, edit: WorkspaceEdit): Promise<WorkspaceEditResult>
+  /** 편집 화면의 [지금 배치로 다시 저장](결과는 화면에 보이므로 알리지 않는다) */
+  recapture(id: string): Promise<WorkspaceSaveResult>
+  remove(id: string): Promise<boolean>
+  /** 팔레트 `@이름` 줄(키 확인·성공 시 팔레트 숨김 포함) */
+  saveAs(name: string): Promise<WorkspaceSaveResult>
+}
+
 export interface IpcDeps {
   hide: () => void
   runItem: (id: string) => Promise<void>
@@ -44,6 +64,9 @@ export interface IpcDeps {
   paletteContentsId: () => number | null
   /** 한글 입력 기록기 창의 webContents id(기록 저장은 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
   imeLoggerContentsId: () => number | null
+  workspaces: WorkspaceIpc
+  /** 설정 창의 webContents id(워크스페이스 보기·편집·다시 저장·지우기는 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
+  settingsContentsId: () => number | null
 }
 
 const BAD_REQUEST = '요청 형식이 맞지 않아요.'
@@ -119,6 +142,40 @@ export function registerIpc(d: IpcDeps): void {
     sentBy(e, d.imeLoggerContentsId()) ? d.saveImeLog(String(label), String(json)) : ''
   )
   registerOverlayIpc(d.overlay)
+  registerWorkspaceIpc(d)
+}
+
+/**
+ * 워크스페이스 IPC(설계 §11). 편집 화면은 설정 창의 탭이므로 보기·편집·다시 저장·지우기는 설정 창이, `@이름` 저장 줄은
+ * 팔레트 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다). 값 검사를 통과하지 못하거나 보낸 창이 다르면
+ * null·false·요청 형식 오류를 주고, 처리 중 오류는 기록만 하고 같은 값을 준다.
+ */
+function registerWorkspaceIpc(d: IpcDeps): void {
+  const badEdit: WorkspaceEditResult = { ok: false, errors: [BAD_REQUEST] }
+  const badSave: WorkspaceSaveResult = { ok: false, reason: 'invalid', message: BAD_REQUEST }
+  const fromSettings = (e: Sender): boolean => sentBy(e, d.settingsContentsId())
+
+  ipcMain.handle(IPC.workspaceGet, (e, raw: unknown) => {
+    const id = parseWorkspaceId(raw)
+    return fromSettings(e) && id ? attempt(IPC.workspaceGet, null, () => d.workspaces.get(id)) : null
+  })
+  ipcMain.handle(IPC.workspaceEdit, (e, raw: unknown, rawEdit: unknown) => {
+    const id = parseWorkspaceId(raw)
+    const edit = parseWorkspaceEdit(rawEdit)
+    return fromSettings(e) && id && edit ? attempt(IPC.workspaceEdit, badEdit, () => d.workspaces.edit(id, edit)) : badEdit
+  })
+  ipcMain.handle(IPC.workspaceRecapture, (e, raw: unknown) => {
+    const id = parseWorkspaceId(raw)
+    return fromSettings(e) && id ? attempt(IPC.workspaceRecapture, badSave, () => d.workspaces.recapture(id)) : badSave
+  })
+  ipcMain.handle(IPC.workspaceRemove, (e, raw: unknown) => {
+    const id = parseWorkspaceId(raw)
+    return fromSettings(e) && id ? attempt(IPC.workspaceRemove, false, () => d.workspaces.remove(id)) : false
+  })
+  ipcMain.handle(IPC.workspaceSaveAs, (e, raw: unknown) => {
+    const name = parseWorkspaceName(raw)
+    return sentBy(e, d.paletteContentsId()) && name ? attempt(IPC.workspaceSaveAs, badSave, () => d.workspaces.saveAs(name)) : badSave
+  })
 }
 
 type Window = 'bar' | 'flyout'

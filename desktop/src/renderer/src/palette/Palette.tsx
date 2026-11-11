@@ -9,7 +9,7 @@ import { GroupIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
 import { isRepeatedEnter } from './confirm-state'
 import { DevOutput } from './DevOutput'
-import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd } from './filter-items'
+import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd, WORKSPACE_SAVE_AS_ID, withWorkspaceSaveAs } from './filter-items'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 import { WikiDetail } from './WikiDetail'
@@ -42,7 +42,10 @@ export function Palette(): React.JSX.Element {
   const deferredQuery = useDeferredValue(query)
   // 검색 키(초성·자모·자판)는 항목이 바뀔 때만 다시 계산한다
   const index = useMemo(() => buildPaletteIndex(allItems), [allItems])
-  const items = useMemo(() => withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), [allItems, deferredQuery, index])
+  const items = useMemo(
+    () => withWorkspaceSaveAs(withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), deferredQuery),
+    [allItems, deferredQuery, index]
+  )
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
   // 팔레트를 보일 때마다 늘린다. 늦게 온 용어 상세 응답이 그 뒤에 다시 보인 팔레트를 바꾸지 않게
@@ -106,6 +109,14 @@ export function Palette(): React.JSX.Element {
     if (!runGuard(id)) return
     if (id === WIKI_ADD_ID) {
       dispatchWiki({ type: 'add', term: parseQuery(query).text })
+      return
+    }
+    // `@이름` 줄: 친 이름으로 지금 배치를 저장한다(runItem으로 보내지 않아 이름이 palette.run 로그에 남지 않는다).
+    // 성공하면 main이 키를 뗀 것을 확인하고 팔레트를 숨긴다. 숨기지 못했으면(키를 누르고 있음) 새 목록으로 줄을 고친다
+    if (id === WORKSPACE_SAVE_AS_ID) {
+      void window.sureMate.saveWorkspaceAs(parseQuery(query).text).then((r) => {
+        if (r.ok) void window.sureMate.listItems().then(setAllItems)
+      })
       return
     }
     // 용어는 팔레트 안에서 상세를 연다(검색어는 그대로 두어 Esc로 돌아오면 같은 목록)

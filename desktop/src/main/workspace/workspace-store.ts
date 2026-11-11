@@ -61,7 +61,19 @@ async function signature(path: string): Promise<string> {
   }
 }
 
-/** 수정 시각·크기가 바뀔 때만 다시 읽는다. 오류는 다시 읽을 때마다 한 번 알린다. save 뒤에는 저장한 목록을 돌려준다 */
+/** 안쪽까지 얼린다(캐시 목록은 여러 곳이 함께 쓰므로 한 곳이 고쳐 다른 곳·파일과 어긋나지 않게) */
+function deepFreeze<T>(v: T): T {
+  if (v && typeof v === 'object') {
+    Object.freeze(v)
+    for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k])
+  }
+  return v
+}
+
+/**
+ * 수정 시각·크기가 바뀔 때만 다시 읽는다. 오류는 다시 읽을 때마다 한 번 알린다. save 뒤에는 저장한 목록을 돌려준다.
+ * get이 주는 목록은 얼려 둔 것이고(고치면 TypeError), save는 넘긴 목록의 사본을 얼려 둔다(부른 쪽이 나중에 고쳐도 그대로).
+ */
 export function createWorkspaceCache(
   dir: string,
   onErrors: (errors: string[]) => void
@@ -74,13 +86,15 @@ export function createWorkspaceCache(
       if (cached && cached.sig === sig) return cached.value
       const r = await loadWorkspaces(dir)
       if (r.errors.length) onErrors(r.errors)
-      cached = { sig: await signature(path), value: r.workspaces }
-      return r.workspaces
+      const value = deepFreeze(r.workspaces)
+      cached = { sig: await signature(path), value }
+      return value
     },
     async save(list) {
       cached = null
-      await saveWorkspaces(dir, list)
-      cached = { sig: await signature(path), value: list }
+      const value = deepFreeze(structuredClone(list))
+      await saveWorkspaces(dir, value)
+      cached = { sig: await signature(path), value }
     },
     invalidate() {
       cached = null

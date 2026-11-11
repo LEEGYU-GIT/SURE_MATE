@@ -8,6 +8,8 @@ import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
 import type { SettingsPatch } from './settings/settings-patch'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
 import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
+import type { WorkspaceEdit } from './workspace/edit'
+import type { WorkspaceEditResult, WorkspaceSaveResult, WorkspaceView } from './workspace/workspace-ipc'
 
 /** 프롬프트에 넣을 글의 출처 */
 export type PromptSource = 'selection' | 'clipboard' | 'input'
@@ -145,7 +147,17 @@ export const IPC = {
   settingsGlossary: 'settings:glossary',
   settingsGlossarySave: 'settings:glossary-save',
   settingsGlossaryDelete: 'settings:glossary-delete',
-  settingsGlossaryPack: 'settings:glossary-pack'
+  settingsGlossaryPack: 'settings:glossary-pack',
+  /** 설정 창 → main(invoke): 워크스페이스 하나와 지금 모니터 구성에서 저장한 배치인지 */
+  workspaceGet: 'workspace:get',
+  /** 설정 창 → main(invoke): 이름·별칭·창 규칙 편집 저장 */
+  workspaceEdit: 'workspace:edit',
+  /** 설정 창 → main(invoke): 지금 배치로 다시 저장 */
+  workspaceRecapture: 'workspace:recapture',
+  /** 설정 창 → main(invoke): 지우기 */
+  workspaceRemove: 'workspace:remove',
+  /** 팔레트 → main(invoke): `@이름` 줄 — 그 이름으로 지금 배치 저장(같은 이름이 있으면 다시 저장) */
+  workspaceSaveAs: 'workspace:save-as'
 } as const
 
 /**
@@ -229,6 +241,15 @@ export interface SureMateApi {
   petKey(k: PetKey, down: boolean): void
   /** 설정 창·온보딩(설계 문서 §14·§6). 설정 창이 아닌 창이 부르면 main이 거절한다 */
   settings: SettingsApi
+  /** 워크스페이스 편집 화면(설정 창, 설계 §11): 워크스페이스 하나(없으면 null). 설정 창이 아닌 창이 부르면 null */
+  getWorkspace(id: string): Promise<WorkspaceView | null>
+  /** 이름·별칭·창 규칙 편집을 저장한다. 오류는 화면에 보일 문구 */
+  editWorkspace(id: string, edit: WorkspaceEdit): Promise<WorkspaceEditResult>
+  /** 지금 배치로 다시 저장(이름·별칭·단축키는 그대로). 결과는 알리지 않고 돌려준다 */
+  recaptureWorkspace(id: string): Promise<WorkspaceSaveResult>
+  removeWorkspace(id: string): Promise<boolean>
+  /** 팔레트 `@이름` 줄: 그 이름으로 지금 배치 저장(같은 이름·별칭이 있으면 다시 저장). 성공하면 main이 팔레트를 숨긴다 */
+  saveWorkspaceAs(name: string): Promise<WorkspaceSaveResult>
 }
 
 /** 설정 창·온보딩이 쓰는 main 기능 */

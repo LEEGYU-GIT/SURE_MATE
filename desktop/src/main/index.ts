@@ -14,6 +14,7 @@ import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
+import { monitorFingerprint } from '../shared/workspace/monitors'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
@@ -33,6 +34,7 @@ import { createMaskingCommandsRuntime } from './masking/masking-commands-runtime
 import { createMaskingService, type MaskingService } from './masking/masking-service'
 import { exportMaskDictionaryText, importMaskDictionary, loadMaskDictionary, saveMaskDictionary } from './masking/dictionary-store'
 import { createTermsCache } from './masking/terms-cache'
+import { getMonitors } from './native/coords'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
@@ -56,6 +58,8 @@ import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
 import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
+import { createWorkspaceCommands, workspacePaletteItems } from './workspace/workspace-items'
+import { createWorkspaceRuntime } from './workspace/workspace-runtime'
 
 app.setName('Sure-Mate')
 
@@ -85,6 +89,8 @@ const settingsCommands = createSettingsCommands({
   log
 })
 let packCommands: { run(id: string): Promise<boolean> } | null = null
+/** 워크스페이스 팔레트 명령(지금 배치 저장·불러오기, 설계 §11). 앱이 준비되면 만든다 */
+let workspaceCommands: ReturnType<typeof createWorkspaceCommands> | null = null
 /** 지금 용어 목록. 팔레트를 열 때(목록 요청)마다 새로 읽은 것으로 바꾼다({{terms}}는 이것을 쓴다) */
 let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
@@ -311,6 +317,8 @@ async function runItem(id: string): Promise<void> {
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
   if (await settingsCommands.run(id)) return
+  // 지금 배치 저장(cmd.workspace-save)·워크스페이스 불러오기(workspace:<id>)
+  if (workspaceCommands && (await workspaceCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) {
     lastPreparedTemplate = id.slice('prompt:'.length)
     return prompts.prepare(lastPreparedTemplate)
@@ -568,6 +576,20 @@ if (!app.requestSingleInstanceLock()) {
       // 파일을 다시 읽어 모드만 바꾼다(실행 중에 손으로 고친 사내 도메인 등을 덮어쓰지 않게). 트레이·바도 갱신
       setMode: setMaskingMode
     })
+    // 워크스페이스(설계 §11): workspaces.json은 팔레트를 열 때마다 바뀌었는지 보고 다시 읽고, 읽지 못한 항목은 트레이로 알린다.
+    // 저장·불러오기는 한 번에 하나이고, Win32를 쓸 수 없으면 알리기만 하고 창·파일을 바꾸지 않는다
+    const workspaceService = createWorkspaceRuntime({
+      userData,
+      reportErrors: (errors) => reportFileErrors('워크스페이스', 'workspaces.loadErrors', errors)
+    })
+    const workspaceCmds = createWorkspaceCommands({
+      service: workspaceService,
+      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus })
+    })
+    workspaceCommands = workspaceCmds
+    // 시작할 때 한 번 읽어 깨진 파일을 바로 알린다
+    await workspaceService.list()
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
@@ -579,7 +601,9 @@ if (!app.requestSingleInstanceLock()) {
         glossaryEntries = glossary
         // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
         applySettings(settings)
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape })
+        // 워크스페이스 구역: "지금 배치 저장"과 저장한 배치(지금 모니터 구성과 다르면 부제에 알린다)
+        const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()))
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape, workspaces: workspaceItems })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
@@ -599,9 +623,18 @@ if (!app.requestSingleInstanceLock()) {
         aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
       }),
       overlay: () => barRuntime,
-      // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
+      // 편집 화면은 설정 창의 탭: 보기·편집·다시 저장(알림 없이 결과를 화면에)·지우기. `@이름` 저장 줄은 팔레트가 보낸다
+      workspaces: {
+        get: (id) => workspaceService.view(id),
+        edit: (id, edit) => workspaceService.edit(id, edit),
+        recapture: (id) => workspaceService.recapture(id, { source: 'editor', quiet: true }),
+        remove: (id) => workspaceService.remove(id),
+        saveAs: (name) => workspaceCmds.saveAs(name)
+      },
+      // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창, 워크스페이스 편집은 설정 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
       paletteContentsId,
-      imeLoggerContentsId
+      imeLoggerContentsId,
+      settingsContentsId
     })
     /** 기본 용어 id(설정 창이 기본 용어·고친 기본 용어를 가린다) */
     const builtinGlossaryIds = parseGlossaryPack(builtinGlossary, 'builtin').entries.map((e) => e.id)

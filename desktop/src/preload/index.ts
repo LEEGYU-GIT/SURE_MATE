@@ -105,7 +105,12 @@ const api: SureMateApi = {
   petBubbleRect: (r) => ipcRenderer.send(IPC.petBubbleRect, r),
   petMenu: (a) => ipcRenderer.send(IPC.petMenu, a),
   petKey: (k, down) => ipcRenderer.send(IPC.petKey, k, down),
-  settings
+  settings,
+  getWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceGet, id),
+  editWorkspace: (id, edit) => ipcRenderer.invoke(IPC.workspaceEdit, id, edit),
+  recaptureWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRecapture, id),
+  removeWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRemove, id),
+  saveWorkspaceAs: (name) => ipcRenderer.invoke(IPC.workspaceSaveAs, name)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

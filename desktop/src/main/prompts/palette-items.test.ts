@@ -72,6 +72,29 @@ it('용어는 위키 구역에: 제목은 용어, 부제는 설명 첫 줄, 키�
   })
 })
 
+it('워크스페이스 항목(저장 명령 포함)은 명령 다음, 위키 앞에', () => {
+  const glossary: GlossaryEntry[] = [
+    { id: 'mcdc', term: 'MC/DC', aliases: [], definition: '커버리지', links: [], tags: [], source: 'builtin', updatedAt: '2026-11-09T00:00:00.000Z', version: 1 }
+  ]
+  const workspaces: PaletteItem[] = [
+    { id: 'cmd.workspace-save', group: 'workspace', title: '지금 배치 저장' },
+    { id: 'workspace:ws-qa', group: 'workspace', title: 'QA 모드', subtitle: '창 3개', keywords: ['qa'] }
+  ]
+  const items = buildPaletteItems([t({ id: 'a', name: '가' })], commands, { maskingMode: 'restore', glossary, barShape: 'edge', workspaces })
+  expect(items.map((i) => i.id)).toEqual([
+    'prompt:a',
+    ...MASKING_IDS,
+    ...PACK_IDS,
+    ...BAR_IDS,
+    ...SETTINGS_IDS,
+    'dev.listWindows',
+    'cmd.workspace-save',
+    'workspace:ws-qa',
+    'wiki:mcdc'
+  ])
+  expect(items.find((i) => i.id === 'workspace:ws-qa')).toEqual(workspaces[1])
+})
+
 it('바 모양 명령이 명령 구역에 있고 부제가 지금 모양을 보여 준다', () => {
   const items = buildPaletteItems([], [], { maskingMode: 'restore', glossary: [], barShape: 'off' })
   expect(items.find((i) => i.id === 'cmd.bar-shape')).toMatchObject({ group: 'command', subtitle: '지금: 끔 · 누르면 가장자리 띠' })

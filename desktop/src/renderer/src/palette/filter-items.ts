@@ -3,8 +3,9 @@ import { DEFAULT_INTENT_LABELS, idRuleLabel, naturalRank } from '../../../shared
 import { understand } from '../../../shared/natural/understand'
 import { recentIds, usageScore, type UsageRecord } from '../../../shared/natural/usage'
 import { parseQuery } from '../../../shared/palette-query'
-import { buildSearchIndex, rank, type SearchIndex } from '../../../shared/search/ranker'
+import { buildSearchIndex, compactOf, rank, type SearchIndex } from '../../../shared/search/ranker'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
+import { WORKSPACE_LIMITS } from '../../../shared/workspace/types'
 
 /** 팔레트 항목 색인. 제목, 별칭은 키워드, 본문은 부제와 본문(위키 설명)과 태그 */
 export function buildPaletteIndex(items: PaletteItem[]): SearchIndex {
@@ -157,4 +158,25 @@ export function withWikiAdd(items: PaletteItem[], query: string): PaletteItem[] 
   if (scope === null && isOneChar(text)) return items
   if (scope !== 'wiki' && (scope !== null || items.length > 0)) return items
   return [...items, { id: WIKI_ADD_ID, group: 'wiki', title: `‘${text}’ 용어 직접 추가하기`, subtitle: '이 용어를 아시나요? 설명을 적어 팔레트 위키에 넣어요' }]
+}
+
+/** 워크스페이스 범위(@) 목록 맨 끝의 '이 이름으로 지금 배치 저장' 줄 id. 팔레트가 runItem 대신 saveWorkspaceAs로 처리한다 */
+export const WORKSPACE_SAVE_AS_ID = 'workspace-save-as'
+
+/**
+ * `@` 범위에 1~40자를 쳤으면 맨 끝에 그 이름으로 지금 배치를 저장하는 줄을 붙인다(설계 §11 "지금 배치 저장"을 이름과 함께).
+ * 이름이나 별칭이 같은(compactOf) 워크스페이스가 목록에 있으면 저장도 그 워크스페이스를 다시 저장하므로 '바꾸기' 줄로 알린다.
+ * 친 이름은 id에 넣지 않는다(palette.run 로그에 남지 않게).
+ */
+export function withWorkspaceSaveAs(items: PaletteItem[], query: string): PaletteItem[] {
+  const { scope, text } = parseQuery(query)
+  if (scope !== 'workspace' || text.length < 1 || text.length > WORKSPACE_LIMITS.name) return items
+  const key = compactOf(text)
+  const same = items.find(
+    (item) => item.group === 'workspace' && item.id.startsWith('workspace:') && (compactOf(item.title) === key || (item.keywords ?? []).some((k) => compactOf(k) === key))
+  )
+  const line: PaletteItem = same
+    ? { id: WORKSPACE_SAVE_AS_ID, group: 'workspace', title: `‘${same.title}’ 배치를 지금 배치로 바꾸기`, subtitle: '이름·별칭·단축키는 그대로 두고 창 위치만 지금 배치로 바꿔요' }
+    : { id: WORKSPACE_SAVE_AS_ID, group: 'workspace', title: `‘${text}’ 이름으로 지금 배치 저장`, subtitle: '지금 열린 창 위치를 이 이름으로 저장해요' }
+  return [...items, line]
 }

@@ -107,3 +107,24 @@ it('캐시 save 뒤에는 저장한 목록을 돌려준다', async () => {
   await cache.save(list)
   expect(await cache.get()).toEqual(list)
 })
+
+it('캐시 목록은 함께 쓰므로 얼려 두고, save는 넘긴 목록의 사본을 둔다(고쳐도 캐시가 바뀌지 않는다)', async () => {
+  const cache = createWorkspaceCache(dir, () => undefined)
+  await saveWorkspaces(dir, [mk('a', 'one')])
+  const read = await cache.get()
+  expect(Object.isFrozen(read)).toBe(true)
+  expect(Object.isFrozen(read[0].layouts.fp.windows[0].target.rect)).toBe(true)
+  expect(() => (read as Workspace[]).push(mk('b', 'two'))).toThrow(TypeError)
+  expect(() => {
+    read[0].name = 'two'
+  }).toThrow(TypeError)
+
+  const mine = [mk('c', 'three')]
+  await cache.save(mine)
+  mine[0].name = 'changed'
+  mine.push(mk('d', 'four'))
+  const after = await cache.get()
+  expect(after.map((w) => [w.id, w.name])).toEqual([['c', 'three']])
+  expect(Object.isFrozen(after[0].aliases)).toBe(true)
+  expect(Object.isFrozen(mine[0])).toBe(false)
+})

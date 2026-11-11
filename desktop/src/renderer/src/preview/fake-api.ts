@@ -101,7 +101,13 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     petBubbleRect: () => {},
     petMenu: () => {},
     petKey: () => {},
-    settings: fakeSettingsApi(fx)
+    settings: fakeSettingsApi(fx),
+    // 미리 보기에는 창이 없으므로 워크스페이스는 빈 결과(편집 화면 장면은 Task 8이 채운다)
+    getWorkspace: async () => null,
+    editWorkspace: async () => ({ ok: false, errors: [] }),
+    recaptureWorkspace: async () => ({ ok: false, reason: 'native-unavailable', message: '' }),
+    removeWorkspace: async () => false,
+    saveWorkspaceAs: async () => ({ ok: false, reason: 'native-unavailable', message: '' })
   }
 }
 
