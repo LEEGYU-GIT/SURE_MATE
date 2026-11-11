@@ -1,8 +1,9 @@
 import type { IntentPack } from '../../../shared/natural/intent-pack'
+import type { SearchContextPayload } from '../../../shared/natural/natural-ipc'
 import { DEFAULT_INTENT_LABELS, idRuleLabel, naturalRank } from '../../../shared/natural/natural-rank'
 import { understand } from '../../../shared/natural/understand'
 import { recentIds, usageScore, type UsageRecord } from '../../../shared/natural/usage'
-import { parseQuery } from '../../../shared/palette-query'
+import { PALETTE_GROUPS, parseQuery } from '../../../shared/palette-query'
 import { buildSearchIndex, compactOf, rank, type SearchIndex } from '../../../shared/search/ranker'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
 import { WORKSPACE_LIMITS } from '../../../shared/workspace/types'
@@ -46,6 +47,11 @@ export const EMPTY_SEARCH_CONTEXT: SearchContext = Object.freeze({
   usage: new Map<string, UsageRecord>(),
   now: 0
 })
+
+/** main이 IPC로 보낸 검색 문맥([키, 값] 목록)을 검색에 쓰는 Map으로 */
+export function searchContextOf(p: SearchContextPayload): SearchContext {
+  return { pack: p.pack, learned: new Map(p.learned), usage: new Map(p.usage), now: p.now }
+}
 
 export interface PaletteSearch {
   /** 그릴 목록(MAX_ROWS개까지) */
@@ -133,15 +139,38 @@ export function filterItems(
   return searchPalette(items, query, index, ctx).items
 }
 
-/** 구역별로 묶되, 구역 순서는 그 구역 항목이 처음 나온 순서(맨 위 후보가 맨 위 구역에 오게) */
-export function groupItems(items: PaletteItem[]): { group: PaletteGroup; items: PaletteItem[] }[] {
+/** 목록 구역: 항목 구역(PaletteGroup)과 빈 화면 맨 위의 최근 실행 항목 */
+export type PaletteSection = PaletteGroup | 'recent'
+
+/** 구역 머리글. 최근은 '최근', 나머지는 PALETTE_GROUPS의 이름 */
+export const SECTION_LABELS: Record<PaletteSection, string> = {
+  recent: '최근',
+  ...(Object.fromEntries(PALETTE_GROUPS.map((g) => [g.id, g.label])) as Record<PaletteGroup, string>)
+}
+
+/**
+ * 구역별로 묶되, 구역 순서는 그 구역 항목이 처음 나온 순서(맨 위 후보가 맨 위 구역에 오게).
+ * recent(searchPalette의 빈 화면 최근 실행 항목 id, 최근 순)가 있으면 그 항목은 맨 위 '최근' 구역에만 둔다(설계 §6 빈 화면).
+ */
+export function groupItems(items: PaletteItem[], recent: string[] = []): { section: PaletteSection; items: PaletteItem[] }[] {
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const recentItems: PaletteItem[] = []
+  const inRecent = new Set<string>()
+  for (const id of recent) {
+    const item = byId.get(id)
+    if (!item || inRecent.has(id)) continue
+    inRecent.add(id)
+    recentItems.push(item)
+  }
   const groups = new Map<PaletteGroup, PaletteItem[]>()
   for (const item of items) {
+    if (inRecent.has(item.id)) continue
     const list = groups.get(item.group)
     if (list) list.push(item)
     else groups.set(item.group, [item])
   }
-  return [...groups].map(([group, list]) => ({ group, items: list }))
+  const sections = [...groups].map(([group, list]): { section: PaletteSection; items: PaletteItem[] } => ({ section: group, items: list }))
+  return recentItems.length > 0 ? [{ section: 'recent', items: recentItems }, ...sections] : sections
 }
 
 /** 목록 맨 끝의 '직접 추가하기' 항목 id(설계 문서 §9: 이 용어를 아시나요?) */

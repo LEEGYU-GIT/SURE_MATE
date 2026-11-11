@@ -79,7 +79,8 @@ export function createPickHandler(d: PickDeps): (raw: unknown) => Promise<void> 
       if (!key) return
       await d.phrases.learn(key, pick.id)
       d.log('phrase.learn', { keyLength: key.length })
-      d.notify('이 문장을 기억했어요. 다음에 같은 문장을 입력하면 맨 위에 보여요.')
+      // 문장은 알림에도 넣지 않는다(Windows 알림 기록에 남는다)
+      d.notify('이 문장을 기억했어요. 다음부터 같은 문장을 입력하면 고른 항목이 맨 위에 와요.')
     } catch (e) {
       d.log('natural.pickError', { error: errorText(e) })
     }

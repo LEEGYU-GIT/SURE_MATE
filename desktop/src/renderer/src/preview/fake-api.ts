@@ -1,7 +1,7 @@
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from '../../../shared/flyout/flyout-content'
 import { allAiTargets } from '../../../shared/ai-targets'
-import type { AppStatus, SettingsApi, SureMateApi } from '../../../shared/ipc-channels'
+import type { AppStatus, SettingsApi, ShownPayload, SureMateApi } from '../../../shared/ipc-channels'
 import type { PetView } from '../../../shared/pet/pet-view'
 import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
 import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
@@ -42,6 +42,8 @@ export interface FakeFixtures {
   glossary: GlossaryEntry[]
   /** 기억한 문장([키, 항목 id])과 사용 기록([항목 id, 기록]) */
   searchContext: { learned: [string, string][]; usage: [string, UsageRecord][] }
+  /** 팔레트 화면(`<Palette />`)이 onShown을 등록한 직후 한 번 받는 표시 알림(시작 검색어 등). null이면 보내지 않는다 */
+  shown: ShownPayload | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -55,7 +57,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   dictionary: [],
   templates: [],
   glossary: [],
-  searchContext: { learned: [], usage: [] }
+  searchContext: { learned: [], usage: [] },
+  shown: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -84,7 +87,13 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     copyWikiDefinition: async () => false,
     openWikiLink: async () => false,
     saveWikiEntry: async () => ({ ok: false, errors: [] }),
-    onShown: () => () => {},
+    // 실제 main처럼 등록이 끝난 뒤에 보낸다. 등록을 풀면(StrictMode의 다시 등록 포함) 보내지 않는다
+    onShown: (cb) => {
+      const shown = fx.shown
+      if (!shown) return () => {}
+      const timer = setTimeout(() => cb(shown), 0)
+      return () => clearTimeout(timer)
+    },
     saveImeLog: async () => '',
     getBarState: async () => fx.barState,
     onBarState: () => () => {},

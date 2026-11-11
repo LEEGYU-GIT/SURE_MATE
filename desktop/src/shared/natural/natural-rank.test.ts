@@ -28,13 +28,13 @@ it('가산점과 기본 의도 이름', () => {
   expect(INTENT_BONUS).toBe(120)
   expect(LEARN_BONUS).toBe(2000)
   expect(LEARNED_LABEL).toBe('기억한 문장')
-  expect(DEFAULT_INTENT_LABELS).toEqual({ prompt: '프롬프트', command: '명령', workspace: '배치', snippet: '상용구', wiki: '용어 뜻' })
+  expect(DEFAULT_INTENT_LABELS).toEqual({ prompt: '프롬프트', command: '명령', workspace: '창 배치', snippet: '상용구', wiki: '용어 뜻' })
 })
 
 it('규칙 두 개가 같은 문서를 가리키면 240점: "원래 이름으로 돌려줘"는 검색어에 맞지 않아도 가명 되돌리기가 맨 위', () => {
   const hits = rankOf('원래 이름으로 돌려줘')
   // 가명(넓은 규칙)과 가명 되돌리기(좁은 규칙)가 둘 다 id로 가리킨다
-  expect(hits[0]).toEqual({ id: 'cmd.unmask', score: 240, title: false, label: '가명 되돌리기', learned: false })
+  expect(hits[0]).toEqual({ id: 'cmd.unmask', score: 240, title: false, label: '가명 처리', learned: false })
   // 넓은 규칙 하나만 가리키는 나머지 가명 명령은 120점
   expect(hits.filter((h) => h.id !== 'cmd.unmask' && h.id.startsWith('cmd.')).map((h) => [h.score, h.label])).toEqual([
     [120, '가명 처리'],
@@ -43,10 +43,10 @@ it('규칙 두 개가 같은 문서를 가리키면 240점: "원래 이름으로
   ])
 })
 
-it('label은 그 문서를 가리키는 찾은 규칙 중 대상이 가장 적은 규칙: "가명 되돌려줘" → 가명 되돌리기', () => {
+it('기본 목록의 가명 규칙은 이름이 모두 가명 처리다(좁은 두 규칙은 점수용): "가명 되돌려줘"', () => {
   const hits = rankOf('가명 되돌려줘')
-  // 별칭 '가명' 일치 950 + 가명 120 + 가명 되돌리기 120
-  expect(hits[0]).toEqual({ id: 'cmd.unmask', score: 1190, title: false, label: '가명 되돌리기', learned: false })
+  // 별칭 '가명' 일치 950 + 가명 120 + 가명 되돌리기 120. 의도 표시는 제목('가명 되돌리기')을 되풀이하지 않는다
+  expect(hits[0]).toEqual({ id: 'cmd.unmask', score: 1190, title: false, label: '가명 처리', learned: false })
   expect(hits.find((h) => h.id === 'cmd.open-dictionary')).toMatchObject({ score: 1070, label: '가명 처리' })
   // 아무 규칙도 가리키지 않는 문서는 label 없음
   expect(hits.find((h) => h.id === 'wiki:pseudonymization')).toMatchObject({ score: 900, label: null, learned: false })
@@ -85,7 +85,7 @@ it('학습한 문서는 검색어에 맞지 않아도 2,000점을 더해 맨 위
   // 맞는 문서가 있어도 학습한 문서가 맨 위
   const hits = rankOf('가명 되돌려줘', new Map([['가명되돌려줘', 'cmd.open-dictionary']]))
   expect(hits[0]).toEqual({ id: 'cmd.open-dictionary', score: 3070, title: false, label: '기억한 문장', learned: true })
-  expect(hits[1]).toMatchObject({ id: 'cmd.unmask', label: '가명 되돌리기', learned: false })
+  expect(hits[1]).toMatchObject({ id: 'cmd.unmask', label: '가명 처리', learned: false })
 })
 
 it('학습한 id가 색인에 없으면 무시한다', () => {

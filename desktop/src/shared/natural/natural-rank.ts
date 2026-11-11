@@ -11,11 +11,11 @@ export const LEARN_BONUS = 2000
 /** 기억한 문장으로 맨 위가 된 후보의 의도 표시 */
 export const LEARNED_LABEL = '기억한 문장'
 
-/** 규칙이 가리키지 않는 맨 위 후보의 의도 표시(구역 기본 이름, 설계 §6) */
+/** 규칙이 가리키지 않는 맨 위 후보의 의도 표시(구역 기본 이름, 설계 §6). 기본 단어 목록의 규칙 이름과 같은 말을 쓴다 */
 export const DEFAULT_INTENT_LABELS: Record<PaletteGroup, string> = {
   prompt: '프롬프트',
   command: '명령',
-  workspace: '배치',
+  workspace: '창 배치',
   snippet: '상용구',
   wiki: '용어 뜻'
 }
@@ -47,7 +47,7 @@ function narrowestRule(rules: IntentRule[]): IntentRule | null {
 
 /**
  * 그 id를 id로 가리키는 규칙 중 가장 좁은 규칙의 이름(찾았는지와 무관), 없으면 null.
- * 의도 규칙을 찾지 못한 맨 위 후보(접두어 검색 포함)의 의도 표시에 쓴다(지금 배치 저장 → '배치 저장').
+ * 의도 규칙을 찾지 못한 맨 위 후보(접두어 검색 포함)의 의도 표시에 쓴다(가명 되돌리기 → '가명 처리').
  */
 export function idRuleLabel(pack: IntentPack, id: string): string | null {
   return narrowestRule(pack.intents.filter((r) => r.targets.some((t) => 'id' in t && t.id === id)))?.label ?? null

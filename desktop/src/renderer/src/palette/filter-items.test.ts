@@ -10,7 +10,9 @@ import {
   groupItems,
   MAX_ROWS,
   RECENT_MAX,
+  searchContextOf,
   searchPalette,
+  SECTION_LABELS,
   WIKI_ADD_ID,
   withWikiAdd,
   WORKSPACE_SAVE_AS_ID,
@@ -94,11 +96,43 @@ it('미리 만든 색인을 넘겨도 결과가 같다', () => {
 
 it('구역은 가장 먼저 나온 항목 순서대로 묶는다(맨 위 후보가 맨 위 구역에)', () => {
   const ranked: PaletteItem[] = [items[2], items[0], items[3], items[1]]
-  expect(groupItems(ranked).map((g) => [g.group, ids(g.items)])).toEqual([
+  expect(groupItems(ranked).map((g) => [g.section, ids(g.items)])).toEqual([
     ['wiki', ['wiki:mcdc', 'wiki:aspice']],
     ['prompt', ['prompt:meeting-notes']],
     ['command', ['dev.listWindows']]
   ])
+})
+
+it("빈 화면의 최근 실행 항목은 맨 위 '최근' 구역에만 두고 원래 구역에서 반복하지 않는다(설계 §6)", () => {
+  const list: PaletteItem[] = [
+    items[0],
+    items[1],
+    { id: 'prompt:polish', group: 'prompt', title: '문장 다듬기' },
+    { id: 'snippet:mail-signature', group: 'snippet', title: '메일 서명' }
+  ]
+  // 나머지 구역 순서는 최근 항목을 뺀 나머지가 처음 나온 순서
+  expect(groupItems(list, ['prompt:meeting-notes']).map((g) => [g.section, ids(g.items)])).toEqual([
+    ['recent', ['prompt:meeting-notes']],
+    ['command', ['dev.listWindows']],
+    ['prompt', ['prompt:polish']],
+    ['snippet', ['snippet:mail-signature']]
+  ])
+  // 최근 구역은 최근 순(목록 순서와 달라도), 목록에 없는 id는 건너뛴다. 원래 구역이 비면 그 구역은 없다
+  expect(groupItems(list, ['snippet:mail-signature', 'cmd.gone', 'dev.listWindows']).map((g) => [g.section, ids(g.items)])).toEqual([
+    ['recent', ['snippet:mail-signature', 'dev.listWindows']],
+    ['prompt', ['prompt:meeting-notes', 'prompt:polish']]
+  ])
+  // 최근 항목이 없으면 기존 묶음과 같다
+  expect(groupItems(list, [])).toEqual(groupItems(list))
+  expect(groupItems(list, ['cmd.gone'])).toEqual(groupItems(list))
+  // searchPalette의 빈 화면 결과를 그대로 묶으면 최근 구역 다음에 원래 구역
+  const usage = new Map<string, UsageRecord>([['snippet:mail-signature', { count: 1, lastAt: '2026-11-11T08:00:00.000Z' }]])
+  const s = searchPalette(list, '', buildPaletteIndex(list), { ...EMPTY_SEARCH_CONTEXT, usage, now: Date.parse('2026-11-11T09:00:00.000Z') })
+  expect(groupItems(s.items, s.recent).map((g) => g.section)).toEqual(['recent', 'prompt', 'command'])
+})
+
+it("구역 머리글: 최근은 '최근', 나머지는 PALETTE_GROUPS의 이름", () => {
+  expect(SECTION_LABELS).toEqual({ recent: '최근', prompt: '프롬프트', command: '명령', workspace: '워크스페이스', snippet: '상용구', wiki: '위키' })
 })
 
 it('위키 범위에 검색어가 있거나 아무것도 못 찾으면 맨 끝에 "직접 추가하기"를 붙인다(검색어를 용어로)', () => {
@@ -174,6 +208,16 @@ const natIndex = buildPaletteIndex(natItems)
 const ctxOf = (o: Partial<SearchContext> = {}): SearchContext => ({ pack, learned: new Map(), usage: new Map(), now: NOW, ...o })
 const search = (q: string, ctx: SearchContext = ctxOf()): ReturnType<typeof searchPalette> => searchPalette(natItems, q, natIndex, ctx)
 
+it('main이 보낸 검색 문맥([키, 값] 목록)을 Map으로 바꾼다', () => {
+  const rec: UsageRecord = { count: 2, lastAt: minutesAgo(1) }
+  const ctx = searchContextOf({ pack, learned: [['보고서띄워줘', 'workspace:ws-report']], usage: [['cmd.unmask', rec]], now: NOW })
+  expect(ctx.pack).toBe(pack)
+  expect(ctx.learned.get('보고서띄워줘')).toBe('workspace:ws-report')
+  expect(ctx.usage.get('cmd.unmask')).toEqual(rec)
+  expect(ctx.now).toBe(NOW)
+  expect(searchContextOf({ pack: null, learned: [], usage: [], now: 0 })).toEqual(EMPTY_SEARCH_CONTEXT)
+})
+
 it('EMPTY_SEARCH_CONTEXT(단어 목록·기록 없음)면 M4 검색 그대로이고, filterItems는 searchPalette의 목록', () => {
   expect(EMPTY_SEARCH_CONTEXT.pack).toBeNull()
   for (const q of ['', '?', '/', '회', '회의', '가명', '>가명', 'mcdc', '없는말', '가명 되돌려줘']) {
@@ -189,7 +233,7 @@ it('EMPTY_SEARCH_CONTEXT(단어 목록·기록 없음)면 M4 검색 그대로이
 it('말하듯 입력: 접두어 없이 친 문장은 의도·변형 검색어로 찾고 맨 위 후보에 의도를 표시한다(natural·key)', () => {
   const s = search('가명 되돌려줘')
   expect(s.items[0].id).toBe('cmd.unmask')
-  expect(s.top).toEqual({ id: 'cmd.unmask', label: '가명 되돌리기' })
+  expect(s.top).toEqual({ id: 'cmd.unmask', label: '가명 처리' })
   expect(s.natural).toBe(true)
   expect(s.key).toBe('가명되돌려줘')
   expect(s.recent).toEqual([])
@@ -204,8 +248,8 @@ it('말하듯 입력: 접두어 없이 친 문장은 의도·변형 검색어로
 
 it('접두어 검색은 M4와 같은 한 검색어 검색이고 같은 점수면 자주·최근 쓴 항목이 먼저(natural false·key null)', () => {
   expect(ids(search('>가명').items)).toEqual(['cmd.unmask', 'cmd.open-dictionary'])
-  // id로 가리키는 규칙 중 가장 좁은 규칙의 이름
-  expect(search('>가명').top).toEqual({ id: 'cmd.unmask', label: '가명 되돌리기' })
+  // id로 가리키는 규칙 중 가장 좁은 규칙의 이름(가명 규칙은 모두 '가명 처리')
+  expect(search('>가명').top).toEqual({ id: 'cmd.unmask', label: '가명 처리' })
   const usage = new Map<string, UsageRecord>([['cmd.open-dictionary', { count: 2, lastAt: minutesAgo(10) }]])
   const s = search('>가명', ctxOf({ usage }))
   expect(ids(s.items)).toEqual(['cmd.open-dictionary', 'cmd.unmask'])

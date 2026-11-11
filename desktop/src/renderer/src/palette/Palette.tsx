@@ -3,13 +3,28 @@ import { useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } fr
 import { createExecutionGuard } from '../../../shared/execution-guard'
 import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft } from '../../../shared/ipc-channels'
-import { PALETTE_GROUPS, parseQuery, shownView } from '../../../shared/palette-query'
-import type { PaletteGroup, PaletteItem } from '../../../shared/types'
-import { GroupIcon, SearchIcon } from '../design/icons'
+import { parseQuery, shownView } from '../../../shared/palette-query'
+import type { PaletteItem } from '../../../shared/types'
+import { GroupIcon, LightbulbIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
 import { isRepeatedEnter } from './confirm-state'
 import { DevOutput } from './DevOutput'
-import { buildPaletteIndex, filterItems, groupItems, WIKI_ADD_ID, withWikiAdd, WORKSPACE_SAVE_AS_ID, withWorkspaceSaveAs } from './filter-items'
+import {
+  buildPaletteIndex,
+  EMPTY_SEARCH_CONTEXT,
+  groupItems,
+  searchContextOf,
+  searchPalette,
+  SECTION_LABELS,
+  WIKI_ADD_ID,
+  withWikiAdd,
+  WORKSPACE_SAVE_AS_ID,
+  withWorkspaceSaveAs,
+  type PaletteSearch,
+  type SearchContext
+} from './filter-items'
+import { listKeyAction } from './list-keys'
+import { rememberHint, tipFor } from './palette-hints'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
 import { WikiDetail } from './WikiDetail'
@@ -25,11 +40,51 @@ const PREFIX_HINTS = [
   ['>', '명령']
 ] as const
 
-const GROUP_LABELS = Object.fromEntries(PALETTE_GROUPS.map((g) => [g.id, g.label])) as Record<PaletteGroup, string>
+/** 워크스페이스 행의 보조 동작(Ctrl+Enter·→)이 여는 명령. 편집 화면은 설정 창에 두고, 워크스페이스 탭으로 바로 여는 일은 Task 8이 잇는다 */
+const WORKSPACE_EDIT_COMMAND = 'cmd.open-settings'
+
+/** 그릴 목록: 검색 결과 끝에 '직접 추가하기'(위키)와 '이름으로 저장'(@) 줄을 붙인다 */
+const rowsOf = (s: PaletteSearch, query: string): PaletteItem[] => withWorkspaceSaveAs(withWikiAdd(s.items, query), query)
+
+/** 행 오른쪽 덧붙임의 높이·모서리(의도 표시와 키 모양이 같은 줄에 맞게) */
+const ACCESSORY = 'inline-flex h-5 shrink-0 items-center rounded-control border px-1.5 text-caption'
+
+/** 맨 위 후보의 의도 표시(설계 §6). 움직이지 않고, 색과 함께 글자로 알린다 */
+function IntentChip({ label }: { label: string }): React.JSX.Element {
+  return (
+    <span className={`ml-auto ${ACCESSORY} border-brand/45 text-brand`}>
+      <span className="sr-only">의도: </span>
+      {label}
+    </span>
+  )
+}
+
+/** 맨 위가 아닌 고른 행: Shift+Enter로 친 문장을 이 항목에 기억시키며 실행한다(설계 §13 8단계) */
+function RememberHint(): React.JSX.Element {
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1 text-caption text-fg-2">
+      <kbd className={`${ACCESSORY} border-line font-ui text-fg-2`}>Shift</kbd>
+      <kbd className={`${ACCESSORY} border-line font-ui text-fg-2`}>Enter</kbd>
+      <span className="ml-1">기억하고 실행</span>
+    </span>
+  )
+}
+
+/** 빈 화면의 사용 팁 한 줄(설계 §6). 목록 행과 같은 줄에 맞춰 상태 표시줄(아래 구분선)과 나눈다 */
+function TipLine({ text, className = '' }: { text: string; className?: string }): React.JSX.Element {
+  return (
+    <p className={`flex items-center gap-3 text-caption text-fg-2 ${className}`}>
+      <LightbulbIcon size={16} className="shrink-0 text-fg-3" />
+      <span className="min-w-0 truncate">{text}</span>
+    </p>
+  )
+}
 
 export function Palette(): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [allItems, setAllItems] = useState<PaletteItem[]>([])
+  // 말하듯 입력 단어 목록·기억한 문장·사용 기록(설계 §13·§9 동점 순서). 항목과 함께 받는다
+  const [ctx, setCtx] = useState<SearchContext>(EMPTY_SEARCH_CONTEXT)
   const [dev, setDev] = useState<{ title: string; text: string } | null>(null)
   const [confirm, setConfirm] = useState<PromptDraft | null>(null)
   // 용어 상세와 그 위의 추가·수정 화면. 저장하지 않은 추가·수정 글은 팔레트가 숨었다 다시 보여도 남는다
@@ -42,10 +97,8 @@ export function Palette(): React.JSX.Element {
   const deferredQuery = useDeferredValue(query)
   // 검색 키(초성·자모·자판)는 항목이 바뀔 때만 다시 계산한다
   const index = useMemo(() => buildPaletteIndex(allItems), [allItems])
-  const items = useMemo(
-    () => withWorkspaceSaveAs(withWikiAdd(filterItems(allItems, deferredQuery, index), deferredQuery), deferredQuery),
-    [allItems, deferredQuery, index]
-  )
+  const search = useMemo(() => searchPalette(allItems, deferredQuery, index, ctx), [allItems, deferredQuery, index, ctx])
+  const items = useMemo(() => rowsOf(search, deferredQuery), [search, deferredQuery])
   const [selected, setSelected] = useState('')
   const lastQuery = useRef('')
   // 팔레트를 보일 때마다 늘린다. 늦게 온 용어 상세 응답이 그 뒤에 다시 보인 팔레트를 바꾸지 않게
@@ -59,9 +112,15 @@ export function Palette(): React.JSX.Element {
     lastQuery.current = deferredQuery
   }, [deferredQuery, items])
 
-  useEffect(() => {
-    void window.sureMate.listItems().then(setAllItems)
-  }, [])
+  /** 항목과 검색 문맥을 함께 받아 한 번에 바꾼다(문맥을 받지 못하면 말하듯 입력 없이 M4 검색) */
+  const refresh = (): void => {
+    void Promise.all([window.sureMate.listItems(), window.sureMate.getSearchContext().catch(() => null)]).then(([list, payload]) => {
+      setAllItems(list)
+      setCtx(payload ? searchContextOf(payload) : EMPTY_SEARCH_CONTEXT)
+    })
+  }
+
+  useEffect(refresh, [])
 
   useEffect(
     () =>
@@ -71,7 +130,7 @@ export function Palette(): React.JSX.Element {
         // main이 준 검색어로 시작한다(바의 용어 사전 단추는 '?')
         setQuery(view.query)
         setSelected('')
-        void window.sureMate.listItems().then(setAllItems)
+        refresh()
         setShownCount((n) => n + 1)
         setDev(payload.mode === 'dev-output' ? { title: payload.title, text: payload.text } : null)
         setConfirm(payload.mode === 'confirm' ? payload.draft : null)
@@ -105,8 +164,15 @@ export function Palette(): React.JSX.Element {
     window.sureMate.hide()
   }
 
-  const run = (id: string): void => {
+  /**
+   * 항목 실행. 목록 끝에 붙인 줄이 아니면 실행 전에 고른 항목을 main에 알린다(사용 기록, 위키 행 포함).
+   * remember이면 친 문장도 함께 보내 이 항목에 기억시킨다(문장은 로그에 남지 않는다, 설계 §13 8단계).
+   */
+  const run = (id: string, o: { remember: boolean } = { remember: false }): void => {
     if (!runGuard(id)) return
+    if (id !== WIKI_ADD_ID && id !== WORKSPACE_SAVE_AS_ID) {
+      window.sureMate.recordPick({ id, remember: o.remember, query: o.remember ? query : undefined })
+    }
     if (id === WIKI_ADD_ID) {
       dispatchWiki({ type: 'add', term: parseQuery(query).text })
       return
@@ -115,7 +181,7 @@ export function Palette(): React.JSX.Element {
     // 성공하면 main이 키를 뗀 것을 확인하고 팔레트를 숨긴다. 숨기지 못했으면(키를 누르고 있음) 새 목록으로 줄을 고친다
     if (id === WORKSPACE_SAVE_AS_ID) {
       void window.sureMate.saveWorkspaceAs(parseQuery(query).text).then((r) => {
-        if (r.ok) void window.sureMate.listItems().then(setAllItems)
+        if (r.ok) refresh()
       })
       return
     }
@@ -158,7 +224,7 @@ export function Palette(): React.JSX.Element {
         onSaved={(entry) => {
           dispatchWiki({ type: 'saved', entry })
           // 목록과 검색 색인에 새 용어가 들어가게
-          void window.sureMate.listItems().then(setAllItems)
+          refresh()
         }}
       />
     )
@@ -178,6 +244,11 @@ export function Palette(): React.JSX.Element {
       />
     )
   }
+
+  // 빈 화면(설계 §6): 최근 실행 항목 다음에 사용 팁 한 줄. 첫 표시(shownCount 1)에 첫 팁
+  const emptyQuery = deferredQuery.trim() === ''
+  const tip = tipFor(shownCount - 1)
+  const showRemember = rememberHint(search, selected)
 
   return (
     <div
@@ -203,10 +274,30 @@ export function Palette(): React.JSX.Element {
             e.preventDefault()
             return
           }
-          // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 항목을 실행한다
-          if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || query === deferredQuery) return
+          const lagging = query !== deferredQuery
+          const input = inputRef.current
+          const caretAtEnd = !input || (input.selectionStart === input.value.length && input.selectionEnd === input.value.length)
+          const item = items.find((i) => i.id === selected) ?? null
+          const action = listKeyAction(
+            { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent), repeat: e.repeat, caretAtEnd },
+            item,
+            // 목록이 검색어를 못 따라온 동안의 안내는 지난 검색어의 것이라 기억하지 않는다(아래 Enter 처리로)
+            { remember: !lagging && showRemember }
+          )
+          if (action === 'remember') {
+            e.preventDefault()
+            run(selected, { remember: true })
+            return
+          }
+          if (action === 'secondary') {
+            e.preventDefault()
+            if (runGuard(WORKSPACE_EDIT_COMMAND)) void window.sureMate.runItem(WORKSPACE_EDIT_COMMAND)
+            return
+          }
+          // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 줄을 실행한다(직접 추가하기·이름으로 저장 줄 포함)
+          if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || !lagging) return
           e.preventDefault()
-          const top = filterItems(allItems, query, index)[0]
+          const top = rowsOf(searchPalette(allItems, query, index, ctx), query)[0]
           if (top) run(top.id)
         }}
       >
@@ -231,29 +322,36 @@ export function Palette(): React.JSX.Element {
           </div>
         </div>
         <Command.List className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          <Command.Empty className="px-3 py-10 text-center text-small text-fg-3">찾는 항목이 없어요. / ? &gt; 로 범위를 좁혀 보세요.</Command.Empty>
-          {/* 구역 순서는 점수 순: 맨 위 후보가 든 구역이 맨 위 */}
-          {groupItems(items).map(({ group, items: groupList }) => {
-            return (
-              <Command.Group key={group} heading={GROUP_LABELS[group]}>
-                {groupList.map((item) => (
-                  <Command.Item
-                    key={item.id}
-                    value={item.id}
-                    onSelect={() => run(item.id)}
-                    className="group relative flex h-10 cursor-default items-center gap-3 rounded-control px-3 text-body data-[selected=true]:bg-row-selected"
-                  >
-                    <span className="absolute top-2.5 bottom-2.5 left-0 w-0.5 rounded-full bg-brand opacity-0 group-data-[selected=true]:opacity-100" />
-                    <GroupIcon group={item.group} className="shrink-0 text-fg-3 group-data-[selected=true]:text-brand" />
-                    <span className="shrink-0 text-fg">{item.title}</span>
-                    {item.subtitle && <span className="min-w-0 truncate text-small text-fg-3">{item.subtitle}</span>}
-                  </Command.Item>
-                ))}
-              </Command.Group>
-            )
-          })}
+          <Command.Empty className="px-3 py-10 text-center text-small text-fg-3">
+            {emptyQuery ? <TipLine text={tip} className="justify-center" /> : '찾는 항목이 없어요. / ? > 로 범위를 좁혀 보세요.'}
+          </Command.Empty>
+          {/* 구역 순서는 점수 순: 맨 위 후보가 든 구역이 맨 위. 빈 화면은 최근 실행 항목이 맨 위 */}
+          {groupItems(items, search.recent).map(({ section, items: sectionItems }) => (
+            <Command.Group key={section} heading={SECTION_LABELS[section]}>
+              {sectionItems.map((item) => (
+                <Command.Item
+                  key={item.id}
+                  value={item.id}
+                  onSelect={() => run(item.id)}
+                  className="group relative flex h-10 cursor-default items-center gap-3 rounded-control px-3 text-body data-[selected=true]:bg-row-selected"
+                >
+                  <span className="absolute top-2.5 bottom-2.5 left-0 w-0.5 rounded-full bg-brand opacity-0 group-data-[selected=true]:opacity-100" />
+                  <GroupIcon group={item.group} className="shrink-0 text-fg-3 group-data-[selected=true]:text-brand" />
+                  {/* 오른쪽 덧붙임이 자리를 차지하면 부제가 먼저 줄고, 그다음 제목이 말줄임으로 준다 */}
+                  <span className="min-w-0 truncate text-fg">{item.title}</span>
+                  {/* 고른 행 바탕 위의 --text-3은 4.5:1이 안 되므로(4.1:1) 고른 행의 부제는 --text-2 */}
+                  {item.subtitle && (
+                    <span className="min-w-0 flex-1 basis-0 truncate text-small text-fg-3 group-data-[selected=true]:text-fg-2">{item.subtitle}</span>
+                  )}
+                  {search.top?.id === item.id && <IntentChip label={search.top.label} />}
+                  {showRemember && selected === item.id && <RememberHint />}
+                </Command.Item>
+              ))}
+            </Command.Group>
+          ))}
         </Command.List>
       </Command>
+      {emptyQuery && items.length > 0 && <TipLine text={tip} className="h-8 shrink-0 border-t border-line px-5" />}
       <StatusBar refreshKey={shownCount} />
     </div>
   )

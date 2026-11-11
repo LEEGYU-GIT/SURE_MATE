@@ -116,11 +116,21 @@ it('(Review Focus 4) 낱말·영어 낱말·초성·오타·치는 중인 글은
 })
 
 it('의도 표시: 맨 위 후보에 가장 좁은 찾은 규칙의 이름, 없으면 구역 기본 이름', () => {
-  expect(search('가명 되돌려줘').top).toEqual({ id: 'cmd.unmask', label: '가명 되돌리기' })
+  expect(search('가명 되돌려줘').top).toEqual({ id: 'cmd.unmask', label: '가명 처리' })
+  expect(search('선택한 글 가려줘').top).toEqual({ id: 'cmd.mask-selection', label: '가명 처리' })
   expect(search('정확도').top).toEqual({ id: 'wiki:u-accuracy', label: '용어 뜻' })
   expect(search('회의록 정리해줘').top).toEqual({ id: 'prompt:meeting-notes', label: '프롬프트' })
   expect(search('이슈 양식').top).toEqual({ id: 'snippet:defect-report', label: '상용구' })
-  // TODO(10b): '보고서 모드로 바꿔줘' → '배치 불러오기', '@QA' → '배치'
+  // TODO(10b): '보고서 모드로 바꿔줘'·'현재 배치 기억해줘'·'@QA' → '창 배치'
+})
+
+it('의도 표시는 맨 위 항목의 제목을 되풀이하지 않는다(문장 표 전체)', () => {
+  for (const [sentence] of TABLE) {
+    const s = search(sentence)
+    const title = items.find((i) => i.id === s.top?.id)?.title
+    expect(s.top?.label, sentence).toBeTruthy()
+    expect(s.top?.label, sentence).not.toBe(title)
+  }
 })
 
 it('학습: 기억한 문장은 검색어에 맞지 않아도 맨 위이고 의도 표시는 기억한 문장', () => {

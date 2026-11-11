@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import builtinGlossary from '../../../../resources/glossary.json'
+import builtinPrompts from '../../../../resources/prompts.json'
 import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
 import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect, itemOffsets } from '../../../shared/bar/bar-layout'
@@ -17,9 +18,12 @@ import { reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
 import { petWorld, type PetWorld } from '../../../shared/pet/pet-world'
-import type { MaskingMode, MonitorInfo, Rect } from '../../../shared/types'
+import type { UsageRecord } from '../../../shared/natural/usage'
+import { parseTemplatePack } from '../../../shared/template/pack'
+import type { MaskingMode, MonitorInfo, PaletteItem, Rect } from '../../../shared/types'
 import { Bar, BarView } from '../bar/Bar'
 import { Flyout } from '../flyout/Flyout'
+import { Palette } from '../palette/Palette'
 import { StatusBar } from '../palette/StatusBar'
 import { Pet } from '../pet/Pet'
 import { PetSprite } from '../pet/PetSprite'
@@ -787,6 +791,116 @@ const MENU_SCENES: Scene[] = [
   })
 ]
 
+// ── 팔레트 장면: 기본 프롬프트·상용구 팩과 용어 팩, main과 같은 제목의 명령, 가상 워크스페이스를 실제 검색으로 ──────────
+
+const firstLine = (s: string): string => s.split('\n', 1)[0].trim()
+/** 이름이 긴 내 프롬프트(가상, 이름 상한 40자). 의도 표시·기억하기 안내가 긴 제목을 덮지 않는지 본다 */
+const LONG_PROMPT: PaletteItem = {
+  id: 'prompt:my-trace',
+  group: 'prompt',
+  title: '가상자동차 차체제어기 요구사항 추적표 정리·누락 항목 확인·공유용 상세판',
+  subtitle: '요구사항 ID·설계·시험 항목을 한 표로 묶고 빠진 연결을 찾아요',
+  keywords: ['추적표', '요구사항 추적']
+}
+/** main의 명령 항목과 같은 제목·부제(가명 처리 모드는 가명 후 되돌리기, 바는 가장자리 띠) */
+const PALETTE_COMMANDS: PaletteItem[] = [
+  { id: 'cmd.unmask', group: 'command', title: '가명 되돌리기', subtitle: 'AI 답을 복사한 뒤 실행하면 가명을 원래 이름으로 바꿔 클립보드에 넣어요', keywords: ['unmask', 'restore', '복원', '되돌리기', '원래 이름', '가명'] },
+  { id: 'cmd.mask-selection', group: 'command', title: '선택한 글 가명 처리', subtitle: '템플릿 없이 고객사·IP·경로만 가려 클립보드에 넣어요', keywords: ['mask', 'masking', '가리기', '익명', '가명'] },
+  { id: 'cmd.masking-mode', group: 'command', title: '가명 처리 기본값 바꾸기', subtitle: '지금: 가명 후 되돌리기 · 누르면 결과에서 빼기', keywords: ['masking', 'mode', '모드', '끄기', '켜기', '가명'] },
+  { id: 'cmd.open-dictionary', group: 'command', title: '가명 사전 열기', subtitle: '가릴 고객사·프로젝트 이름을 적는 파일(이 PC에만 저장)', keywords: ['dictionary', 'masking', '사전', '고객사', '가명'] },
+  { id: 'cmd.open-intents', group: 'command', title: '말하듯 입력 단어 목록 열기', subtitle: '‘해줘’ 같은 어미와 의도 단어를 고치는 파일(이 PC에만 저장)', keywords: ['intents', 'natural', '단어', '말하듯', '어미', '조사'] },
+  { id: 'cmd.glossary-export', group: 'command', title: '용어 팩 내보내기', subtitle: '내가 추가·고친 용어를 파일로 저장해 팀과 나눠요', keywords: ['export', '내보내기', '용어 팩'] },
+  { id: 'cmd.glossary-import', group: 'command', title: '용어 팩 가져오기', subtitle: '받은 용어 팩 파일을 미리 보고 내 용어에 더해요', keywords: ['import', '가져오기', '용어 팩'] },
+  { id: 'cmd.bar-shape', group: 'command', title: 'Sure-Mate 바 모양 바꾸기', subtitle: '지금: 가장자리 띠 · 누르면 떠 있는 캡슐', keywords: ['bar', 'shape', '바', '모양'] },
+  { id: 'cmd.open-settings', group: 'command', title: '설정 열기', subtitle: '단축키·AI·프롬프트·가명 처리·용어 사전·바를 바꿔요', keywords: ['설정', 'settings', '환경설정', '옵션', 'preferences'] }
+]
+/** workspacePaletteItems와 같은 모양의 가상 워크스페이스(최근에 바꾼 순서) */
+const PALETTE_WORKSPACES: PaletteItem[] = [
+  { id: 'cmd.workspace-save', group: 'workspace', title: '지금 배치 저장', subtitle: '지금 열린 창 위치를 새 워크스페이스로 저장해요', keywords: ['save', 'workspace', 'layout', '워크스페이스', '레이아웃', '창 배치', '배치 저장'] },
+  { id: 'workspace:ws-report', group: 'workspace', title: '보고서 모드', subtitle: '창 3개 · Ctrl+Alt+2', keywords: ['보고'] },
+  { id: 'workspace:ws-qa', group: 'workspace', title: 'QA 모드', subtitle: '창 4개 · Ctrl+Alt+1', keywords: ['qa', '시험', '테스트'] },
+  { id: 'workspace:ws-meeting', group: 'workspace', title: '회의 모드', subtitle: '창 2개 · 다른 모니터 구성', keywords: ['미팅 화면'] }
+]
+const PALETTE_ITEMS: PaletteItem[] = [
+  ...parseTemplatePack(builtinPrompts, 'builtin').templates.map(
+    (t): PaletteItem => ({ id: `${t.kind}:${t.id}`, group: t.kind === 'snippet' ? 'snippet' : 'prompt', title: t.name, subtitle: t.description, keywords: [...t.aliases, ...(t.group ? [t.group] : [])] })
+  ),
+  LONG_PROMPT,
+  ...PALETTE_COMMANDS,
+  ...PALETTE_WORKSPACES,
+  ...PACK.map((e): PaletteItem => ({ id: `wiki:${e.id}`, group: 'wiki', title: e.term, subtitle: firstLine(e.definition), keywords: [...e.aliases], body: e.definition, tags: [...e.tags] }))
+]
+const usedAgo = (minutes: number, count: number): UsageRecord => ({ count, lastAt: new Date(Date.now() - minutes * 60_000).toISOString() })
+
+/**
+ * 팔레트 창 크기(720×460 DIP) 그대로 그린다(캡처 크기도 720×460). 팔레트 바탕은 반투명이라 뒤에 가짜 바탕화면 색을 깐다.
+ * keys: 목록이 그려진 뒤 입력칸에 보낼 키(사람이 ↓를 누른 것처럼). 캡처는 가상 시간 3초 시점이라 늘 같다.
+ */
+function PaletteStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
+  useEffect(() => {
+    // 키마다 0.15초 간격(앞 키로 바뀐 선택이 그려진 뒤 다음 키를 받게)
+    const timers = keys.map((key, i) =>
+      setTimeout(
+        () => document.querySelector('[cmdk-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true })),
+        500 + i * 150
+      )
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [keys])
+  return (
+    <div style={{ width: 720, height: 460, background: 'linear-gradient(135deg, #22355E 0%, #3B4F86 55%, #6A5B9A 100%)' }}>
+      <Palette />
+    </div>
+  )
+}
+
+function paletteScene(
+  id: string,
+  title: string,
+  o: { query: string; keys?: string[]; usage?: [string, UsageRecord][]; learned?: [string, string][] }
+): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      status: { paletteHotkey: 'Ctrl+Alt+Space', maskingMode: 'restore', aiTargetName: 'Claude' },
+      items: PALETTE_ITEMS,
+      shown: { mode: 'search', query: o.query },
+      searchContext: { learned: o.learned ?? [], usage: o.usage ?? [] }
+    },
+    render: () => <PaletteStage keys={o.keys} />
+  }
+}
+
+const PALETTE_SCENES: Scene[] = [
+  paletteScene('palette-natural-prompt', '팔레트: 말하듯 입력 ‘회의록 정리해줘’(맨 위 의도 표시 프롬프트)', { query: '회의록 정리해줘' }),
+  paletteScene('palette-natural-workspace', '팔레트: ‘보고서 모드로 바꿔줘’(맨 위 의도 표시 창 배치)', { query: '보고서 모드로 바꿔줘' }),
+  paletteScene('palette-remember', '팔레트: ‘보고서 띄워줘’에서 둘째 행을 고름(Shift+Enter 기억하고 실행)', { query: '보고서 띄워줘', keys: ['ArrowDown'] }),
+  paletteScene('palette-remember-long', '팔레트: ‘가명 되돌려줘’의 셋째 행(긴 부제가 먼저 줄고 안내는 그대로, 맨 위는 긴 부제와 의도 표시)', {
+    query: '가명 되돌려줘',
+    keys: ['ArrowDown', 'ArrowDown']
+  }),
+  paletteScene('palette-learned', '팔레트: 기억한 문장(‘보고서 띄워줘’ → 보고서 모드)이 맨 위', { query: '보고서 띄워줘', learned: [['보고서띄워줘', 'workspace:ws-report']] }),
+  paletteScene('palette-empty-recent', '팔레트: 빈 검색어(최근 구역 5개와 사용 팁 한 줄)', {
+    query: '',
+    usage: [
+      ['prompt:meeting-notes', usedAgo(5, 12)],
+      ['workspace:ws-report', usedAgo(40, 4)],
+      ['snippet:mail-signature', usedAgo(180, 6)],
+      ['wiki:mcdc', usedAgo(1440, 2)],
+      ['cmd.unmask', usedAgo(2880, 3)]
+    ]
+  }),
+  paletteScene('palette-english-mode', '팔레트: 영문 자판으로 친 ‘ghldmlfhr wjdflgownj’(회의록 정리)', { query: 'ghldmlfhr wjdflgownj' }),
+  paletteScene('palette-chip-long', '팔레트: 이름이 40자인 맨 위 후보(부제가 먼저 줄고 의도 표시는 그대로)', { query: '추적표 정리해줘' }),
+  paletteScene('palette-remember-long-title', '팔레트: 기억한 문장 아래 40자 이름 행을 고름(안내 자리를 위해 제목이 말줄임으로 줄어듦)', {
+    query: '추적표 정리해줘',
+    learned: [['추적표정리해줘', 'prompt:meeting-notes']],
+    keys: ['ArrowDown']
+  }),
+  paletteScene('palette-prefix-workspace', '팔레트: 접두어 검색 ‘@QA’(맨 위 의도 표시 창 배치)', { query: '@QA' })
+]
+
 /** 설정 창 프롬프트 탭 미리 보기(기본 팩 일부 + 가상 내 템플릿) */
 const PREVIEW_TEMPLATES: Template[] = [
   { id: 'meeting-notes', name: '회의록 정리', aliases: ['회의록'], kind: 'prompt', description: '회의 메모를 결정·할 일로 정리', body: '정리해 줘\n{{selection}}', scope: 'personal' },
@@ -810,6 +924,7 @@ export const SCENES: Scene[] = [
       </Desktop>
     )
   },
+  ...PALETTE_SCENES,
   single('bar-edge-right', '바: 가장자리 띠, 오른쪽(기본)', { shape: 'edge', edge: 'right' }),
   single('bar-edge-left', '바: 가장자리 띠, 왼쪽', { shape: 'edge', edge: 'left' }),
   single('bar-capsule-right', '바: 떠 있는 캡슐, 오른쪽(가장자리에서 12)', { shape: 'capsule', edge: 'right' }),
