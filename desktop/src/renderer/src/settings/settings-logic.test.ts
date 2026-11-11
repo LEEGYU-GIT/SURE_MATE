@@ -4,7 +4,7 @@ import { SETTINGS_TAB_IDS } from '../../../shared/settings/settings-route'
 import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import { pinnedPromptsReducer, PINNED_MAX } from './pinned-prompts'
 import { initialSettingsState, settingsReducer } from './settings-state'
-import { initialTabOf, navKey, SETTINGS_TABS } from './tabs'
+import { initialTabOf, initialWorkspaceOf, navKey, SETTINGS_TABS } from './tabs'
 
 const snap = (opacity = 1): SettingsSnapshot => ({
   settings: { ...structuredClone(DEFAULT_SETTINGS), bar: { ...DEFAULT_SETTINGS.bar, opacity } },
@@ -17,7 +17,7 @@ const snap = (opacity = 1): SettingsSnapshot => ({
 
 describe('탭 목록', () => {
   it('설계 §14 순서(지금 있는 기능), id가 겹치지 않는다', () => {
-    expect(SETTINGS_TABS.map((t) => t.label)).toEqual(['일반', '단축키', 'AI 대상', '프롬프트·상용구', '가명 처리', '용어 사전', '바', '말랑 메이트'])
+    expect(SETTINGS_TABS.map((t) => t.label)).toEqual(['일반', '단축키', 'AI 대상', '프롬프트·상용구', '가명 처리', '용어 사전', '워크스페이스', '바', '말랑 메이트'])
     expect(new Set(SETTINGS_TABS.map((t) => t.id)).size).toBe(SETTINGS_TABS.length)
   })
   it('말랑 메이트 탭이 있고, 이름표 목록의 id는 main이 여는 탭 id(shared)와 같은 순서다', () => {
@@ -28,6 +28,12 @@ describe('탭 목록', () => {
     expect(initialTabOf('#/settings?tab=pet')).toBe('pet')
     expect(initialTabOf('#/settings')).toBe('general')
     expect(initialTabOf('#/settings?tab=nope')).toBe('general')
+    expect(initialTabOf('#/settings?tab=workspace&ws=ws-qa')).toBe('workspace')
+  })
+  it('처음 열 워크스페이스: 워크스페이스 탭 주소의 id(팔레트 Ctrl+Enter·지금 배치 저장), 없거나 틀리면 null(목록)', () => {
+    expect(initialWorkspaceOf('#/settings?tab=workspace&ws=ws-qa')).toBe('ws-qa')
+    expect(initialWorkspaceOf('#/settings?tab=workspace')).toBeNull()
+    expect(initialWorkspaceOf('#/settings?tab=workspace&ws=a/b')).toBeNull()
   })
   it('↑↓는 끝에서 멈추고 Home·End는 처음·끝, 한글 조합 중이나 다른 키는 무시', () => {
     expect(navKey(0, { code: 'ArrowDown', isComposing: false }, 7)).toBe(1)
@@ -54,6 +60,20 @@ describe('설정 화면 상태', () => {
     // 화면은 마지막으로 받은 스냅숏(0.8)을 그대로 그린다(실패한 값이 남지 않음)
     expect(s.snapshot?.settings.bar.opacity).toBe(0.8)
     expect(s.revision).toBeGreaterThan(0)
+  })
+
+  it('설정 파일이 아닌 저장(워크스페이스 칸)도 상태 줄에: 저장 중 → 저장했어요, 실패면 상태 줄은 그대로(까닭은 칸 옆에)', () => {
+    let s = settingsReducer(initialSettingsState, { type: 'loaded', snapshot: snap(1) })
+    const revision = s.revision
+    s = settingsReducer(s, { type: 'saving' })
+    s = settingsReducer(s, { type: 'done', ok: true })
+    expect(s).toMatchObject({ saving: 0, status: { kind: 'saved' } })
+    // 스냅숏은 그대로라 다른 탭의 입력칸을 다시 그리지 않는다
+    expect(s.revision).toBe(revision)
+    s = settingsReducer(s, { type: 'saving' })
+    s = settingsReducer(s, { type: 'done', ok: false })
+    expect(s).toMatchObject({ saving: 0, status: { kind: 'idle' } })
+    expect(settingsReducer(initialSettingsState, { type: 'done', ok: true }).saving).toBe(0)
   })
 
   it('다른 곳에서 바뀌면(changed) 스냅숏을 바꾸되 오류 표시는 지우지 않는다', () => {

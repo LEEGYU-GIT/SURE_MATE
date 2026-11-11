@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { isImeComposing } from '../../../shared/ime'
 import { isSettingsTabId } from '../../../shared/settings/settings-route'
+import { parseWorkspaceId } from '../../../shared/workspace/workspace-ipc'
 import { AiTab } from './AiTab'
 import { BarTab } from './BarTab'
 import { GeneralTab } from './GeneralTab'
@@ -10,7 +11,8 @@ import { MaskingTab } from './MaskingTab'
 import { PetTab } from './PetTab'
 import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
-import { SettingsContext, useSettingsState } from './use-settings'
+import { SettingsContext, useSettingsState, type SettingsCtx } from './use-settings'
+import { WorkspaceTab } from './WorkspaceTab'
 
 /** 탭별 화면. 아직 없는 탭은 '준비 중' */
 const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
@@ -20,6 +22,7 @@ const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   prompts: PromptsTab,
   masking: MaskingTab,
   glossary: GlossaryTab,
+  workspace: WorkspaceTab,
   bar: BarTab,
   pet: PetTab
 }
@@ -28,21 +31,35 @@ const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
  * #/settings 설정 창(설계 문서 §14). 왼쪽 탭 목록(↑↓·Home·End), 오른쪽 내용, 아래 상태 줄.
  * 바꾼 값은 그 자리에서 저장한다(바꾼 필드만 보내 다른 곳에서 바꾼 값을 덮지 않는다).
  */
-export function SettingsApp({ initialTab = 'general' }: { initialTab?: SettingsTabId }): React.JSX.Element {
-  const { state, save } = useSettingsState()
+export function SettingsApp({
+  initialTab = 'general',
+  initialWorkspace = null
+}: {
+  initialTab?: SettingsTabId
+  /** 워크스페이스 탭에서 처음 열 워크스페이스('#/settings?tab=workspace&ws=<id>') */
+  initialWorkspace?: string | null
+}): React.JSX.Element {
+  const { state, save, track } = useSettingsState()
   const [tab, setTab] = useState<SettingsTabId>(initialTab)
+  // main이 열라고 한 워크스페이스. 같은 id를 다시 보내도(팔레트에서 또 Ctrl+Enter) 탭이 그 워크스페이스로 가게 seq를 올린다
+  const [workspaceTarget, setWorkspaceTarget] = useState<SettingsCtx['workspaceTarget']>(() =>
+    initialTab === 'workspace' && initialWorkspace ? { id: initialWorkspace, seq: 1 } : null
+  )
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   const index = SETTINGS_TABS.findIndex((t) => t.id === tab)
   const View = VIEWS[tab]
   const current = SETTINGS_TABS[index]
 
-  // 열려 있는 설정 창에서 main이 탭을 고르라고 알린다(펫 메뉴 "펫 설정" → 말랑 메이트). 창을 다시 읽지 않아 쓰던 값이 남는다
+  // 열려 있는 설정 창에서 main이 탭을 고르라고 알린다(펫 메뉴 "펫 설정" → 말랑 메이트, 팔레트 Ctrl+Enter → 그 워크스페이스).
+  // 창을 다시 읽지 않아 쓰던 값이 남는다. 워크스페이스를 열면 포커스는 그 탭이 이름 칸으로 옮긴다
   useEffect(
     () =>
-      window.sureMate.settings.onShowTab((next) => {
+      window.sureMate.settings.onShowTab((next, ws) => {
         if (!isSettingsTabId(next)) return
         setTab(next)
-        tabRefs.current[SETTINGS_TABS.findIndex((t) => t.id === next)]?.focus()
+        const id = next === 'workspace' ? parseWorkspaceId(ws) : null
+        if (id) setWorkspaceTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }))
+        else tabRefs.current[SETTINGS_TABS.findIndex((t) => t.id === next)]?.focus()
       }),
     []
   )
@@ -99,7 +116,7 @@ export function SettingsApp({ initialTab = 'general' }: { initialTab?: SettingsT
           {!state.snapshot ? (
             <p className="text-small text-fg-2">설정을 읽는 중이에요…</p>
           ) : View ? (
-            <SettingsContext.Provider value={{ snapshot: state.snapshot, save, revision: state.revision }}>
+            <SettingsContext.Provider value={{ snapshot: state.snapshot, save, revision: state.revision, track, workspaceTarget }}>
               <div className="flex max-w-[680px] flex-col gap-7">
                 <View />
               </div>

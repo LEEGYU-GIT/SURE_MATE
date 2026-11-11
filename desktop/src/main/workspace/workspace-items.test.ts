@@ -72,24 +72,43 @@ describe('팔레트 명령(createWorkspaceCommands)', () => {
         calls.push('wait')
         return o.released ?? true
       },
-      hidePalette: (restoreFocus) => void calls.push(`hide:${restoreFocus}`)
+      hidePalette: (restoreFocus) => void calls.push(`hide:${restoreFocus}`),
+      openEditor: (id) => void calls.push(`editor:${id}`),
+      notify: (message) => void calls.push(`notify:${message}`)
     })
     return { calls, commands }
   }
 
-  it('지금 배치 저장: 키를 뗐는지 보고 저장한 뒤, 성공이고 뗐으면 팔레트를 숨기고 원래 창으로', async () => {
+  it('지금 배치 저장: 키를 뗐는지 보고 알림 없이 저장한 뒤, 설정 창 워크스페이스 탭에서 새 워크스페이스를 연다(이름을 바로 바꾸게)', async () => {
     const { calls, commands } = setup()
     expect(await commands.run(WORKSPACE_SAVE_ID)).toBe(true)
-    expect(calls).toEqual(['wait', 'saveNew:palette', 'hide:true'])
+    // 설정 창이 포커스를 가져가므로 원래 창으로 돌아가지 않는다
+    expect(calls).toEqual(['wait', 'saveNew:palette:quiet', 'hide:false', 'editor:ws-1'])
   })
 
-  it('지금 배치 저장: 키를 떼지 않았거나 저장하지 못했으면 팔레트를 둔다', async () => {
+  it('지금 배치 저장: 키를 떼지 않았으면 숨기지 않고 연다(팔레트는 포커스를 잃으면 숨는다)', async () => {
     const held = setup({ released: false })
     await held.commands.run(WORKSPACE_SAVE_ID)
-    expect(held.calls).toEqual(['wait', 'saveNew:palette'])
+    expect(held.calls).toEqual(['wait', 'saveNew:palette:quiet', 'editor:ws-1'])
+  })
+
+  it('지금 배치 저장: 저장하지 못했으면 팔레트를 두고 까닭을 알린다(설정 창은 열지 않는다)', async () => {
     const bad = setup({ save: failed })
-    await bad.commands.run(WORKSPACE_SAVE_ID)
-    expect(bad.calls).toEqual(['wait', 'saveNew:palette'])
+    expect(await bad.commands.run(WORKSPACE_SAVE_ID)).toBe(true)
+    expect(bad.calls).toEqual(['wait', 'saveNew:palette:quiet', 'notify:저장할 창이 없어요.'])
+  })
+
+  it('workspace-edit:<id>(워크스페이스 행의 Ctrl+Enter·→): 키를 뗐으면 숨기고, 설정 창 워크스페이스 탭에서 그 워크스페이스를 연다', async () => {
+    const a = setup()
+    expect(await a.commands.run('workspace-edit:ws-qa')).toBe(true)
+    expect(a.calls).toEqual(['wait', 'hide:false', 'editor:ws-qa'])
+    const b = setup({ released: false })
+    await b.commands.run('workspace-edit:ws-qa')
+    expect(b.calls).toEqual(['wait', 'editor:ws-qa'])
+    // 형식이 틀린 id는 맡되 아무것도 하지 않는다
+    const c = setup()
+    expect(await c.commands.run('workspace-edit:a/b')).toBe(true)
+    expect(c.calls).toEqual([])
   })
 
   it('workspace:<id>: 키를 뗐으면 팔레트를 숨기고(원래 창으로) 불러오고, 떼지 않았으면 팔레트를 둔 채 불러온다', async () => {

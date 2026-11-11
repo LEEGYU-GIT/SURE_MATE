@@ -1,3 +1,4 @@
+import { sameAccelerator } from '../../shared/hotkeys/accelerator-input'
 import { compactOf } from '../../shared/search/ranker'
 import type { MonitorInfo, Rect, WindowInfo } from '../../shared/types'
 import { captureLayout } from '../../shared/workspace/capture'
@@ -11,6 +12,7 @@ import { nextWorkspaceName } from '../../shared/workspace/workspace-file'
 import type {
   WorkspaceEditResult,
   WorkspaceFailReason,
+  WorkspaceListView,
   WorkspaceRunResult,
   WorkspaceSaveResult,
   WorkspaceSource,
@@ -18,7 +20,7 @@ import type {
 } from '../../shared/workspace/workspace-ipc'
 import { errorCode, errorText } from '../error-text'
 
-export type { WorkspaceEditResult, WorkspaceFailReason, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceSource, WorkspaceView }
+export type { WorkspaceEditResult, WorkspaceFailReason, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceSource, WorkspaceView }
 
 /**
  * 워크스페이스 저장·불러오기(설계 §11). list·onChange가 주는 목록은 저장소 캐시와 함께 쓰는 얼린 값이므로
@@ -26,8 +28,10 @@ export type { WorkspaceEditResult, WorkspaceFailReason, WorkspaceRunResult, Work
  */
 export interface WorkspaceService {
   list(): Promise<Workspace[]>
-  /** 편집 화면용. Win32 없이 된다(창 목록을 읽지 않는다) */
+  /** 설정 창 워크스페이스 탭용. Win32 없이 된다(창 목록을 읽지 않는다) */
   view(id: string): Promise<WorkspaceView | null>
+  /** 설정 창 워크스페이스 탭의 목록: 최근에 바꾼 순서, 창을 저장·불러올 수 있는지. 읽지 못하면 빈 목록 */
+  listView(): Promise<WorkspaceListView>
   saveNew(o: { source: WorkspaceSource; name?: string; quiet?: boolean }): Promise<WorkspaceSaveResult>
   recapture(id: string, o: { source: WorkspaceSource; quiet?: boolean }): Promise<WorkspaceSaveResult>
   /** 이름이 기존 워크스페이스의 이름·별칭과 compactOf로 같으면 그것을 다시 저장, 아니면 그 이름으로 새로 저장 */
@@ -58,6 +62,11 @@ export interface WorkspaceServiceDeps {
   now(): Date
   /** 이름·별칭·창 제목은 남기지 않는다(id·건수·까닭·시간만) */
   log(event: string, data: Record<string, unknown>): void
+  /**
+   * 그 워크스페이스 단축키로 지금 등록된 조합(HotkeyManager.current('workspace:<id>')). 없거나 못 잡았으면 undefined.
+   * 단축키 관리자는 서비스보다 늦게 만들어지므로 부를 때마다 묻는다. 없으면 모두 등록 안 됨으로 본다
+   */
+  hotkeyBound?(workspaceId: string): string | undefined
 }
 
 /** 실패 까닭마다 알림·화면 문구 */
@@ -69,6 +78,12 @@ const FAIL_MESSAGE: Record<WorkspaceFailReason, string> = {
   missing: NOTES.missing,
   'save-failed': NOTES.saveFailed,
   invalid: '요청 형식이 맞지 않아요.'
+}
+
+/** 최근에 바꾼 순서(팔레트·바 메뉴와 같은 순서). 읽지 못하는 시각은 맨 뒤 */
+const updatedTime = (ws: Workspace): number => {
+  const t = Date.parse(ws.updatedAt)
+  return Number.isNaN(t) ? 0 : t
 }
 
 /** 복원 결과 로그에 세는 까닭(placed는 report.placed) */
@@ -164,6 +179,7 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
         const updatedAt = d.now().toISOString()
         let next: Workspace
         let nextList: Workspace[]
+        let autoNamed = false
         if (target) {
           // 이름·별칭·단축키는 그대로, 배치는 지금 구성 하나(Should 8 전까지 배치는 하나)
           const id = target.id
@@ -173,6 +189,7 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
           if (list.length >= WORKSPACE_LIMITS.workspaces) return fail('limit', counts)
           const wanted = what.kind === 'recapture' ? undefined : what.name
           const name = wanted?.trim().slice(0, WORKSPACE_LIMITS.name).trim()
+          autoNamed = !name
           next = { id: d.newId(), name: name || nextWorkspaceName(list), aliases: [], hotkey: null, layouts: { [fingerprint]: layout }, updatedAt }
           nextList = [...list, next]
         }
@@ -181,7 +198,8 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
         } catch (e) {
           return fail('save-failed', { ...counts, error: errorCode(e) })
         }
-        if (!quiet) d.notify(saveSummary({ name: next.name, windows: counts.windows, skipped }))
+        // 이름 없이 저장했으면('배치 N') 이름·단축키를 바꾸는 곳(설정)을 함께 알린다
+        if (!quiet) d.notify(saveSummary({ name: next.name, windows: counts.windows, skipped, renameHint: autoNamed }))
         d.log('workspace.save', { op, source, ok: true, id: next.id, ...counts })
         return { ok: true, id: next.id, name: next.name, windows: counts.windows, skipped }
       })
@@ -257,19 +275,39 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     }
   }
 
+  /** 지금 모니터 구성 지문(Electron screen). 읽지 못하면 null(모두 다른 구성으로 보인다) */
+  function currentFingerprint(): string | null {
+    try {
+      return monitorFingerprint(d.monitors())
+    } catch (e) {
+      d.log('workspace.monitorsError', { error: errorText(e) })
+      return null
+    }
+  }
+
+  /** 설정 창이 그리는 워크스페이스 하나: 같은 구성인지, 저장한 단축키를 지금 잡고 있는지 */
+  function viewOf(ws: Workspace, fingerprint: string | null): WorkspaceView {
+    const bound = ws.hotkey === null ? undefined : d.hotkeyBound?.(ws.id)
+    return {
+      workspace: ws,
+      sameConfig: fingerprint !== null && Object.hasOwn(ws.layouts, fingerprint),
+      hotkeyRegistered: ws.hotkey !== null && bound !== undefined && sameAccelerator(bound, ws.hotkey)
+    }
+  }
+
   return {
     list: safeList,
 
     async view(id) {
       const ws = (await safeList()).find((w) => w.id === id)
-      if (!ws) return null
-      let fingerprint: string | null = null
-      try {
-        fingerprint = monitorFingerprint(d.monitors())
-      } catch (e) {
-        d.log('workspace.monitorsError', { error: errorText(e) })
-      }
-      return { workspace: ws, sameConfig: fingerprint !== null && Object.hasOwn(ws.layouts, fingerprint) }
+      return ws ? viewOf(ws, currentFingerprint()) : null
+    },
+
+    async listView() {
+      const list = await safeList()
+      const fingerprint = currentFingerprint()
+      const sorted = [...list].sort((a, b) => updatedTime(b) - updatedTime(a))
+      return { items: sorted.map((ws) => viewOf(ws, fingerprint)), canControl: d.nativeOk() }
     },
 
     saveNew: (o) => save({ kind: 'new', name: o.name }, o.source, o.quiet === true),

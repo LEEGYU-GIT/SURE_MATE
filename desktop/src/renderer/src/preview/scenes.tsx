@@ -35,6 +35,10 @@ import { allAiTargets } from '../../../shared/ai-targets'
 import { DEFAULT_SETTINGS } from '../../../shared/settings/settings'
 import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import type { Template } from '../../../shared/template/types'
+import { monitorFingerprint, monitorKey, toSavedMonitor } from '../../../shared/workspace/monitors'
+import { L, P } from '../../../shared/workspace/test-monitors'
+import type { RatioRect, WindowRule, Workspace } from '../../../shared/workspace/types'
+import type { WorkspaceListView } from '../../../shared/workspace/workspace-ipc'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -911,6 +915,174 @@ const PREVIEW_TEMPLATES: Template[] = [
   { id: 'team-greeting', name: '팀 인사말', aliases: [], kind: 'snippet', body: '안녕하세요', scope: 'imported' }
 ]
 
+// 워크스페이스 탭(설계 §11): 가상 창 제목만(가상자동차, XY방산, SureMate-WS-*). 모니터는 시험과 같은 P(주, 100%)·L(내장, 150%, 왼쪽)
+
+const WS_FP = monitorFingerprint([P, L])
+const WS_MONITORS = [toSavedMonitor(P), toSavedMonitor(L)]
+const KP = monitorKey(P)
+const KL = monitorKey(L)
+
+function wsRule(
+  id: string,
+  exe: string,
+  title: string,
+  monitor: string,
+  rect: RatioRect,
+  o: { order: number; maximized?: boolean; enabled?: boolean; titleIncludes?: string }
+): WindowRule {
+  return {
+    id,
+    enabled: o.enabled ?? true,
+    match: { exe, ...(o.titleIncludes ? { titleIncludes: o.titleIncludes } : {}) },
+    savedTitle: title,
+    target: { monitor, rect: o.maximized ? { x: 0, y: 0, w: 1, h: 1 } : rect, state: o.maximized ? 'maximized' : 'normal' },
+    order: o.order
+  }
+}
+
+function previewWorkspace(id: string, name: string, windows: WindowRule[], o: Partial<Pick<Workspace, 'aliases' | 'hotkey' | 'updatedAt'>> = {}): Workspace {
+  return { id, name, aliases: o.aliases ?? [], hotkey: o.hotkey ?? null, layouts: { [WS_FP]: { monitors: WS_MONITORS, windows } }, updatedAt: o.updatedAt ?? '2026-11-10T09:00:00.000Z' }
+}
+
+/** QA 모드: 주 모니터 왼쪽·오른쪽 절반의 Excel 두 개, 내장 화면 왼쪽 위 메모장, 내장 화면에서 최대화한 Chrome(뺌) */
+const WS_QA = previewWorkspace(
+  'ws-qa',
+  'QA 모드',
+  [
+    wsRule('r1', 'EXCEL.EXE', '가상자동차 보고서.xlsx - Excel', KP, { x: 0, y: 0, w: 0.5, h: 1 }, { order: 0, titleIncludes: '가상자동차 보고서.xlsx' }),
+    wsRule('r2', 'EXCEL.EXE', 'XY방산 예산.xlsx - Excel', KP, { x: 0.5, y: 0, w: 0.5, h: 1 }, { order: 1, titleIncludes: 'XY방산 예산.xlsx' }),
+    wsRule('r3', 'notepad.exe', 'SureMate-WS-A - Windows 메모장', KL, { x: 0.04, y: 0.06, w: 0.5, h: 0.55 }, { order: 2 }),
+    wsRule('r4', 'chrome.exe', '가상자동차 사내 포털 - Chrome', KL, { x: 0, y: 0, w: 1, h: 1 }, { order: 3, maximized: true, enabled: false })
+  ],
+  { aliases: ['qa', '시험'], hotkey: 'Ctrl+Alt+1', updatedAt: '2026-11-11T09:00:00.000Z' }
+)
+
+const WS_REPORT = previewWorkspace(
+  'ws-report',
+  '보고서 모드',
+  [
+    wsRule('p1', 'WINWORD.EXE', 'XY방산 시험 결과 보고서.docx - Word', KP, { x: 0, y: 0, w: 0.62, h: 1 }, { order: 0 }),
+    wsRule('p2', 'EXCEL.EXE', '가상자동차 시험 항목.xlsx - Excel', KP, { x: 0.62, y: 0, w: 0.38, h: 0.6 }, { order: 1 }),
+    wsRule('p3', 'notepad.exe', 'SureMate-WS-B - Windows 메모장', KP, { x: 0.62, y: 0.6, w: 0.38, h: 0.4 }, { order: 2 })
+  ],
+  { updatedAt: '2026-11-10T09:00:00.000Z' }
+)
+
+/** 창 12개(Excel·Word·메모장·Chrome·탐색기 등, 두 모니터에 격자로) */
+const MANY_APPS: [string, string][] = [
+  ['EXCEL.EXE', '가상자동차 보고서.xlsx - Excel'],
+  ['EXCEL.EXE', 'XY방산 예산.xlsx - Excel'],
+  ['EXCEL.EXE', '가상자동차 시험 항목.xlsx - Excel'],
+  ['WINWORD.EXE', 'XY방산 시험 결과 보고서.docx - Word'],
+  ['WINWORD.EXE', '가상자동차 회의록.docx - Word'],
+  ['POWERPNT.EXE', '가상자동차 주간 보고.pptx - PowerPoint'],
+  ['notepad.exe', 'SureMate-WS-A - Windows 메모장'],
+  ['notepad.exe', 'SureMate-WS-B - Windows 메모장'],
+  ['chrome.exe', '가상자동차 사내 포털 - Chrome'],
+  ['chrome.exe', 'XY방산 협업 게시판 - Chrome'],
+  ['explorer.exe', '시험 자료 - 파일 탐색기'],
+  ['powershell.exe', 'SureMate-WS-C']
+]
+const WS_MANY = previewWorkspace(
+  'ws-many',
+  '시험장 전체',
+  MANY_APPS.map(([exe, title], i) =>
+    wsRule(`m${i + 1}`, exe, title, i < 6 ? KP : KL, { x: (i % 3) / 3, y: Math.floor((i % 6) / 3) / 2, w: 1 / 3, h: 1 / 2 }, {
+      order: i,
+      enabled: i !== 7,
+      titleIncludes: ['EXCEL.EXE', 'WINWORD.EXE', 'notepad.exe', 'chrome.exe'].includes(exe) ? title.split(' - ')[0] : undefined
+    })
+  ),
+  { aliases: ['전체'], hotkey: 'Ctrl+Alt+9', updatedAt: '2026-11-09T09:00:00.000Z' }
+)
+
+const WS_THREE = previewWorkspace(
+  'ws-3',
+  '배치 3',
+  [
+    wsRule('t1', 'EXCEL.EXE', '가상자동차 보고서.xlsx - Excel', KP, { x: 0, y: 0, w: 1, h: 1 }, { order: 0, maximized: true }),
+    wsRule('t2', 'notepad.exe', 'SureMate-WS-A - Windows 메모장', KL, { x: 0.1, y: 0.1, w: 0.6, h: 0.7 }, { order: 1 })
+  ],
+  { hotkey: 'Ctrl+Alt+M', updatedAt: '2026-11-08T09:00:00.000Z' }
+)
+
+const wsView = (workspace: Workspace, o: { sameConfig?: boolean; registered?: boolean } = {}): WorkspaceListView['items'][number] => ({
+  workspace,
+  sameConfig: o.sameConfig ?? true,
+  hotkeyRegistered: o.registered ?? workspace.hotkey !== null
+})
+
+/** 목록 세 개: QA 모드(단축키 쓰는 중), 보고서 모드(다른 모니터 구성), 배치 3(단축키를 다른 앱이 써서 등록 못 함) */
+const WS_LIST: WorkspaceListView = {
+  items: [wsView(WS_QA), wsView(WS_REPORT, { sameConfig: false }), wsView(WS_THREE, { registered: false })],
+  canControl: true
+}
+
+/**
+ * 워크스페이스 탭 장면: 880×640 설정 창. open을 주면 그 워크스페이스를 연 채로(main이 연 것처럼 이름 칸을 골라 둔 뒤
+ * prep.blur로 풀어 기본 모습을 찍는다)
+ */
+function workspaceScene(
+  id: string,
+  title: string,
+  list: WorkspaceListView,
+  o: { open?: string; prep?: ScenePrepOptions; width?: number; height?: number } = {}
+): Scene {
+  return {
+    id,
+    title,
+    fixtures: { settings: settingsSnapshot(), workspaces: list },
+    render: () => (
+      <div style={{ width: o.width ?? 880, height: o.height ?? 640, overflow: 'hidden', position: 'relative' }}>
+        <SettingsApp initialTab="workspace" initialWorkspace={o.open ?? null} />
+        {o.prep ? <ScenePrep {...o.prep} /> : null}
+      </div>
+    )
+  }
+}
+
+const WORKSPACE_SCENES: Scene[] = [
+  workspaceScene('settings-workspace', '설정: 워크스페이스 QA 모드(창 4개, Chrome은 뺌·최대화, 단축키 쓰는 중, 첫 줄 강조)', WS_LIST, {
+    open: 'ws-qa',
+    prep: { blur: true }
+  }),
+  workspaceScene('settings-workspace-rules', '설정: QA 모드 창 배치까지 내림(메모장 줄을 골라 그림에서 강조)', WS_LIST, {
+    open: 'ws-qa',
+    prep: { blur: true, hover: '[data-rule="r3"]' }
+  }),
+  workspaceScene('settings-workspace-other-config', '설정: 다른 모니터 구성에서 저장한 워크스페이스(주의 줄, 단축키 없음)', WS_LIST, { open: 'ws-report', prep: { blur: true } }),
+  workspaceScene('settings-workspace-recording', '설정: 워크스페이스 단축키 바꾸기를 눌러 녹화 중', WS_LIST, { open: 'ws-qa', prep: { click: '단축키 바꾸기' } }),
+  workspaceScene('settings-workspace-hotkey-in-use', '설정: 워크스페이스 단축키를 다른 앱이 써서 등록 못 함(최대화한 Excel)', WS_LIST, {
+    open: 'ws-3',
+    prep: { blur: true }
+  }),
+  workspaceScene(
+    'settings-workspace-many',
+    '설정: 창 12개(하나는 뺌) — 아래 줄을 골라 내려도 그림은 위에 붙어 그 창을 강조',
+    { ...WS_LIST, items: [wsView(WS_MANY), ...WS_LIST.items] },
+    { open: 'ws-many', prep: { blur: true, hover: '[data-rule="m10"]' } }
+  ),
+  workspaceScene('settings-workspace-list', '설정: 워크스페이스 목록(3개: 쓰는 중·다른 모니터 구성·등록 못 함)', WS_LIST),
+  workspaceScene('settings-workspace-empty', '설정: 저장한 워크스페이스 없음', { items: [], canControl: true }),
+  workspaceScene('settings-workspace-blocked', '설정: 보안 프로그램이 창 제어를 막음(저장·불러오기 단추 막힘, 편집은 됨)', { ...WS_LIST, canControl: false }, {
+    open: 'ws-qa',
+    prep: { blur: true }
+  }),
+  workspaceScene('settings-workspace-narrow', '설정: 워크스페이스, 가장 좁은 창 720×520(그림과 단추가 편집 칸 위로)', WS_LIST, {
+    open: 'ws-qa',
+    prep: { blur: true, top: true },
+    width: 720,
+    height: 520
+  }),
+  workspaceScene('settings-workspace-narrow-rules', '설정: 워크스페이스, 가장 좁은 창 720×520의 창 배치(두 번째 Excel 줄을 고름)', WS_LIST, {
+    open: 'ws-qa',
+    prep: { blur: true, hover: '[data-rule="r2"]' },
+    width: 720,
+    height: 520
+  }),
+  workspaceScene('settings-workspace-list-narrow', '설정: 워크스페이스 목록, 가장 좁은 창 720×520', WS_LIST, { width: 720, height: 520 })
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -994,6 +1166,7 @@ export const SCENES: Scene[] = [
     },
     { scrollEnd: true, width: 720, height: 520 }
   ),
+  ...WORKSPACE_SCENES,
   onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
   onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
   onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
@@ -1047,18 +1220,44 @@ function petSet(s: SettingsSnapshot): void {
  * 미리 보기 준비: 설정을 읽어 그린 뒤 이름이 click으로 시작하는 단추를 누르고(녹화 칸 보기), 내용 칸을 끝까지 내린다
  * (880×640 창에서 아래쪽 구역 보기). 캡처는 가상 시간 3초 시점이라 매번 같다
  */
-function ScenePrep({ scrollEnd, click }: { scrollEnd?: boolean; click?: string }): null {
+function ScenePrep({ scrollEnd, click, blur, top, hover }: ScenePrepOptions): null {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = []
     timers.push(
       setTimeout(() => {
+        // 처음 포커스(워크스페이스 탭이 골라 둔 이름 칸)를 풀어 기본 모습을 찍는다
+        if (blur && document.activeElement instanceof HTMLElement) document.activeElement.blur()
+        // 이름 칸으로 포커스가 가며 내려간 내용 칸을 맨 위로
+        if (top) document.getElementById('settings-panel')?.scrollTo({ top: 0 })
+        if (hover) {
+          // 캡처 창은 포커스가 없어 focus 이벤트가 오지 않으므로, 마우스를 올린 것처럼 알리고 그 요소가 보이게 내린다
+          const el = document.querySelector<HTMLElement>(hover)
+          el?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }))
+          // 설정 내용 칸만 내린다(scrollIntoView는 미리 보기 페이지까지 내려 캡처 아래가 빈다)
+          const panel = document.getElementById('settings-panel')
+          if (el && panel) {
+            const offset = el.getBoundingClientRect().top - panel.getBoundingClientRect().top
+            panel.scrollTop += offset - panel.clientHeight / 2 + el.clientHeight / 2
+          }
+        }
         if (click) document.querySelector<HTMLButtonElement>(`button[aria-label^="${click}"]`)?.click()
         if (scrollEnd) timers.push(setTimeout(() => document.getElementById('settings-panel')?.scrollTo({ top: 100000 }), 100))
       }, 300)
     )
     return () => timers.forEach(clearTimeout)
-  }, [scrollEnd, click])
+  }, [scrollEnd, click, blur, top, hover])
   return null
+}
+
+type ScenePrepOptions = {
+  scrollEnd?: boolean
+  click?: string
+  /** 처음 포커스를 푼다 */
+  blur?: boolean
+  /** 내용 칸을 맨 위로 올린다 */
+  top?: boolean
+  /** 이 요소(선택자)에 마우스를 올린 것처럼 알리고 가운데로 내린다(워크스페이스 탭: 그 줄을 고르면 그림이 그 창을 강조) */
+  hover?: string
 }
 
 /**
@@ -1070,7 +1269,7 @@ function settingsScene(
   title: string,
   tab: SettingsTabId,
   tweak?: (s: SettingsSnapshot) => void,
-  prep?: { scrollEnd?: boolean; click?: string; width?: number; height?: number }
+  prep?: ScenePrepOptions & { width?: number; height?: number }
 ): Scene {
   const snapshot = settingsSnapshot()
   tweak?.(snapshot)
@@ -1089,7 +1288,7 @@ function settingsScene(
     render: () => (
       <div style={{ width: prep?.width ?? 880, height: prep?.height ?? 640, overflow: 'hidden', position: 'relative' }}>
         <SettingsApp initialTab={tab} />
-        {prep ? <ScenePrep scrollEnd={prep.scrollEnd} click={prep.click} /> : null}
+        {prep ? <ScenePrep {...prep} /> : null}
       </div>
     )
   }

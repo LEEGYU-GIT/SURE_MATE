@@ -236,6 +236,24 @@ export const ChevronRightIcon = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+/** 워크스페이스 창 규칙의 대상 모니터 */
+export const MonitorIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <rect width="20" height="14" x="2" y="3" rx="2" />
+    <line x1="8" x2="16" y1="21" y2="21" />
+    <line x1="12" x2="12" y1="17" y2="21" />
+  </Svg>
+)
+
+/** 주의(다른 모니터 구성에서 저장한 배치 등). 색만으로 알리지 않고 글자와 함께 쓴다 */
+export const TriangleAlertIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+    <path d="M12 9v4" />
+    <path d="M12 17h.01" />
+  </Svg>
+)
+
 /** 클립보드 글로 찾기 */
 export const ClipboardPasteIcon = (p: IconProps): React.JSX.Element => (
   <Svg {...p}>

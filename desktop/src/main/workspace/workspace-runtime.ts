@@ -53,7 +53,12 @@ function ownHiddenWindow(hwnd: string): boolean {
  * 워크스페이스 연결부(설계 §11): workspaces.json 캐시, Win32 창 기능(native/windows.ts), 화면 좌표 변환(native/coords.ts),
  * 대화상자·알림을 서비스에 넘긴다. Win32를 쓰는 함수는 모두 nativeStatus()를 확인한 뒤에만 부른다(서비스도 nativeOk로 먼저 막는다).
  */
-export function createWorkspaceRuntime(o: { userData: string; reportErrors(errors: string[]): void }): WorkspaceService {
+export function createWorkspaceRuntime(o: {
+  userData: string
+  reportErrors(errors: string[]): void
+  /** 그 워크스페이스 단축키로 지금 등록된 조합(설정 창의 '쓰는 중'·'등록 못 함'). 단축키 관리자가 생기기 전에는 undefined */
+  hotkeyBound?(workspaceId: string): string | undefined
+}): WorkspaceService {
   const native = (): boolean => nativeStatus().ok
   const runner = createRestoreRunner({
     // Win32를 못 쓰면 null(사라진 창으로 처리)이라 실행기는 move까지 가지 않는다
@@ -85,6 +90,7 @@ export function createWorkspaceRuntime(o: { userData: string; reportErrors(error
     notify,
     newId: randomUUID,
     now: () => new Date(),
-    log
+    log,
+    hotkeyBound: o.hotkeyBound
   })
 }

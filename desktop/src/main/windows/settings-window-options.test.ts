@@ -38,14 +38,29 @@ describe('설정 창을 탭과 함께 열기(펫 메뉴 "펫 설정" → 말랑 
   })
 
   it('설정 창이 열려 있으면 다시 읽지 않고 그 탭을 고르라고 알린다(쓰던 녹화·입력을 지킨다)', () => {
-    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'pet')).toEqual({ kind: 'show', tab: 'pet' })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'pet')).toEqual({ kind: 'show', tab: 'pet', ws: null })
     // 탭 없이 열면 보던 탭 그대로 앞으로만
-    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings')).toEqual({ kind: 'show', tab: null })
-    expect(planSettingsOpen({ route: '/onboarding', loading: false }, '/onboarding', 'pet')).toEqual({ kind: 'show', tab: null })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings')).toEqual({ kind: 'show', tab: null, ws: null })
+    expect(planSettingsOpen({ route: '/onboarding', loading: false }, '/onboarding', 'pet')).toEqual({ kind: 'show', tab: null, ws: null })
   })
 
   it('설정 창을 아직 읽는 중이면(화면이 알림을 아직 못 받음) 탭을 붙여 다시 읽는다', () => {
     expect(planSettingsOpen({ route: '/settings', loading: true }, '/settings', 'pet')).toEqual({ kind: 'reload', hash: '/settings?tab=pet' })
-    expect(planSettingsOpen({ route: '/settings', loading: true }, '/settings')).toEqual({ kind: 'show', tab: null })
+    expect(planSettingsOpen({ route: '/settings', loading: true }, '/settings')).toEqual({ kind: 'show', tab: null, ws: null })
+  })
+
+  it('워크스페이스 탭은 열 워크스페이스를 함께: 새 창·다시 읽기는 주소에, 열린 창은 탭 고르기 알림에 붙인다', () => {
+    expect(planSettingsOpen(null, '/settings', 'workspace', 'ws-qa')).toEqual({ kind: 'create', hash: '/settings?tab=workspace&ws=ws-qa' })
+    expect(planSettingsOpen({ route: '/onboarding', loading: false }, '/settings', 'workspace', 'ws-qa')).toEqual({
+      kind: 'switch-route',
+      hash: '/settings?tab=workspace&ws=ws-qa'
+    })
+    expect(planSettingsOpen({ route: '/settings', loading: true }, '/settings', 'workspace', 'ws-qa')).toEqual({ kind: 'reload', hash: '/settings?tab=workspace&ws=ws-qa' })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'workspace', 'ws-qa')).toEqual({ kind: 'show', tab: 'workspace', ws: 'ws-qa' })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'workspace')).toEqual({ kind: 'show', tab: 'workspace', ws: null })
+    // 형식이 틀린 id, 다른 탭의 id는 버린다
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'workspace', 'a/b')).toEqual({ kind: 'show', tab: 'workspace', ws: null })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'pet', 'ws-qa')).toEqual({ kind: 'show', tab: 'pet', ws: null })
+    expect(planSettingsOpen(null, '/settings', 'pet', 'ws-qa')).toEqual({ kind: 'create', hash: '/settings?tab=pet' })
   })
 })

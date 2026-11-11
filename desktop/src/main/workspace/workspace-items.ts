@@ -1,13 +1,11 @@
 import type { FlyoutContent } from '../../shared/flyout/flyout-content'
 import type { PaletteItem } from '../../shared/types'
 import type { Workspace } from '../../shared/workspace/types'
-import { parseWorkspaceId, type WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
+import { parseWorkspaceId, WORKSPACE_EDIT_PREFIX, WORKSPACE_ITEM_PREFIX as ITEM_PREFIX, type WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
 import type { WorkspaceService } from './workspace-service'
 
 /** 팔레트 명령 "지금 배치 저장" */
 export const WORKSPACE_SAVE_ID = 'cmd.workspace-save'
-/** 워크스페이스 항목 id는 `workspace:<워크스페이스 id>` */
-const ITEM_PREFIX = 'workspace:'
 
 const time = (iso: string): number => {
   const t = Date.parse(iso)
@@ -66,13 +64,19 @@ export interface WorkspaceCommandDeps {
   /** 항목을 고른 Enter·보조키를 뗄 때까지 기다린다. 시간 안에 안 떼면 false(그때는 팔레트를 숨기지 않는다) */
   waitKeysReleased(): Promise<boolean>
   hidePalette(restoreFocus: boolean): void
+  /** 설정 창의 워크스페이스 탭에서 그 워크스페이스를 연다(이름 칸을 골라 둔다). 설정 창이 포커스를 가져간다 */
+  openEditor(workspaceId: string): void
+  notify(message: string): void
 }
 
 /**
  * 팔레트의 워크스페이스 명령. 누른 채로 숨기면 자동 반복 Enter가 원래 앱으로 가므로, 키를 뗀 것을 확인했을 때만 숨긴다.
- * - "지금 배치 저장"·다른 이름으로 저장(`@이름` 줄): 키 확인 → 저장 → 성공이고 뗐으면 팔레트를 숨기고 원래 창으로.
- *   팔레트(Sure-Mate 자신의 창)는 저장 대상이 아니다. 실패하면 알림을 보고 팔레트에서 다시 할 수 있게 둔다.
+ * - "지금 배치 저장": 키 확인 → 알림 없이 저장 → 성공하면 설정 창 워크스페이스 탭에서 새 워크스페이스를 연다(이름 '배치 N'을
+ *   바로 바꾸게. 설정 창이 포커스를 가져가므로 원래 창으로 돌아가지 않고, 키를 떼지 않았어도 팔레트는 포커스를 잃어 숨는다).
+ *   실패하면 까닭을 알리고 팔레트에서 다시 할 수 있게 둔다. 팔레트(Sure-Mate 자신의 창)는 저장 대상이 아니다.
+ * - 다른 이름으로 저장(`@이름` 줄): 키 확인 → 저장(알림) → 성공이고 뗐으면 팔레트를 숨기고 원래 창으로.
  * - `workspace:<id>`: 키를 뗐으면 팔레트를 숨기고(원래 창으로) 불러온다. 떼지 않았으면 팔레트를 둔 채 불러온다(M5 바 명령과 같은 규칙).
+ * - `workspace-edit:<id>`(워크스페이스 행의 Ctrl+Enter·→): 키를 뗐으면 숨기고 설정 창 워크스페이스 탭에서 그 워크스페이스를 연다.
  */
 export function createWorkspaceCommands(d: WorkspaceCommandDeps): {
   run(id: string): Promise<boolean>
@@ -82,8 +86,20 @@ export function createWorkspaceCommands(d: WorkspaceCommandDeps): {
     async run(id) {
       if (id === WORKSPACE_SAVE_ID) {
         const released = await d.waitKeysReleased()
-        const r = await d.service.saveNew({ source: 'palette' })
-        if (r.ok && released) d.hidePalette(true)
+        const r = await d.service.saveNew({ source: 'palette', quiet: true })
+        if (!r.ok) {
+          d.notify(r.message)
+          return true
+        }
+        if (released) d.hidePalette(false)
+        d.openEditor(r.id)
+        return true
+      }
+      if (id.startsWith(WORKSPACE_EDIT_PREFIX)) {
+        const wsId = parseWorkspaceId(id.slice(WORKSPACE_EDIT_PREFIX.length))
+        if (!wsId) return true
+        if (await d.waitKeysReleased()) d.hidePalette(false)
+        d.openEditor(wsId)
         return true
       }
       if (!id.startsWith(ITEM_PREFIX)) return false

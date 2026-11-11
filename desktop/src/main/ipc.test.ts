@@ -88,15 +88,24 @@ function petFake(): PetFake {
   }
 }
 
-const wsView = { workspace: { id: 'ws-qa', name: 'QA 모드', aliases: [], hotkey: null, layouts: {}, updatedAt: '2026-11-11T00:00:00.000Z' }, sameConfig: true }
+const wsView = {
+  workspace: { id: 'ws-qa', name: 'QA 모드', aliases: [], hotkey: null, layouts: {}, updatedAt: '2026-11-11T00:00:00.000Z' },
+  sameConfig: true,
+  hotkeyRegistered: false
+}
+const wsList = { items: [wsView], canControl: true }
 const wsSaved = { ok: true as const, id: 'ws-qa', name: 'QA 모드', windows: 3, skipped: { minimized: 0, excluded: 0, offscreen: 0, overLimit: 0 } }
+const wsRun = { ok: false as const, reason: 'cancelled' as const }
 
-/** 워크스페이스 처리기(보기·편집·다시 저장·지우기는 설정 창 id 41, 다른 이름으로 저장은 팔레트 창 id 1) */
+/** 워크스페이스 처리기(목록·보기·편집·다시 저장·불러오기·새로 저장·지우기는 설정 창 id 41, 다른 이름으로 저장은 팔레트 창 id 1) */
 function workspacesFake() {
   return {
+    list: vi.fn(async () => wsList),
     get: vi.fn(async () => wsView),
     edit: vi.fn(async () => ({ ok: true as const, workspace: wsView.workspace })),
     recapture: vi.fn(async () => wsSaved),
+    run: vi.fn(async () => wsRun),
+    saveNew: vi.fn(async () => wsSaved),
     remove: vi.fn(async () => true),
     saveAs: vi.fn(async () => wsSaved)
   } satisfies WorkspaceIpc
@@ -394,10 +403,12 @@ describe('처리 중 오류가 나도 던지지 않는다(main의 처리하지 �
   })
 })
 
-describe('워크스페이스 IPC: 보기·편집·다시 저장·지우기는 설정 창, 다른 이름으로 저장은 팔레트 창이 보낸 것만', () => {
+describe('워크스페이스 IPC: 목록·보기·편집·다시 저장·불러오기·새로 저장·지우기는 설정 창, 다른 이름으로 저장은 팔레트 창이 보낸 것만', () => {
   const EDIT = { name: '보고서 모드', aliases: ['보고'], rules: [{ id: 'r1', enabled: false, titleIncludes: null, monitor: 'm1' }] }
   const BAD_EDIT = { ok: false, errors: [BAD] }
   const BAD_SAVE = { ok: false, reason: 'invalid', message: BAD }
+  const BAD_RUN = { ok: false, reason: 'invalid' }
+  const NO_LIST = { items: [], canControl: false }
 
   /** 워크스페이스 채널을 모두 한 번씩 invoke한 결과 */
   const invokeAll = async (settings: { sender: { id: number } }, paletteWin: { sender: { id: number } }): Promise<unknown[]> => [
@@ -405,21 +416,36 @@ describe('워크스페이스 IPC: 보기·편집·다시 저장·지우기는 �
     await invoke(IPC.workspaceEdit, settings, 'ws-qa', EDIT),
     await invoke(IPC.workspaceRecapture, settings, 'ws-qa'),
     await invoke(IPC.workspaceRemove, settings, 'ws-qa'),
-    await invoke(IPC.workspaceSaveAs, paletteWin, ' QA 모드 ')
+    await invoke(IPC.workspaceSaveAs, paletteWin, ' QA 모드 '),
+    await invoke(IPC.workspaceList, settings),
+    await invoke(IPC.workspaceRun, settings, 'ws-qa'),
+    await invoke(IPC.workspaceSaveNew, settings)
   ]
-  const handlers = () => [workspaces.get, workspaces.edit, workspaces.recapture, workspaces.remove, workspaces.saveAs]
+  const handlers = () => [
+    workspaces.get,
+    workspaces.edit,
+    workspaces.recapture,
+    workspaces.remove,
+    workspaces.saveAs,
+    workspaces.list,
+    workspaces.run,
+    workspaces.saveNew
+  ]
 
   it('그 창이 보낸 것은 값을 검사해 넘긴다(이름은 앞뒤 공백을 뺀다)', async () => {
-    expect(await invokeAll(SETTINGS, PALETTE)).toEqual([wsView, { ok: true, workspace: wsView.workspace }, wsSaved, true, wsSaved])
+    expect(await invokeAll(SETTINGS, PALETTE)).toEqual([wsView, { ok: true, workspace: wsView.workspace }, wsSaved, true, wsSaved, wsList, wsRun, wsSaved])
     expect(workspaces.get).toHaveBeenCalledWith('ws-qa')
     expect(workspaces.edit).toHaveBeenCalledWith('ws-qa', EDIT)
     expect(workspaces.recapture).toHaveBeenCalledWith('ws-qa')
     expect(workspaces.remove).toHaveBeenCalledWith('ws-qa')
     expect(workspaces.saveAs).toHaveBeenCalledWith('QA 모드')
+    expect(workspaces.list).toHaveBeenCalledWith()
+    expect(workspaces.run).toHaveBeenCalledWith('ws-qa')
+    expect(workspaces.saveNew).toHaveBeenCalledWith()
   })
 
   it('다른 창이 보냈거나 그 창이 없으면 처리하지 않고 빈 값을 준다', async () => {
-    const empty = [null, BAD_EDIT, BAD_SAVE, false, BAD_SAVE]
+    const empty = [null, BAD_EDIT, BAD_SAVE, false, BAD_SAVE, NO_LIST, BAD_RUN, BAD_SAVE]
     // 편집 채널을 팔레트·바·펼침 창·펫 창·다른 창이, 저장 채널을 설정 창·바·펼침 창·펫 창·다른 창이 보냄
     for (const [settings, paletteWin] of [
       [PALETTE, SETTINGS],
@@ -442,6 +468,7 @@ describe('워크스페이스 IPC: 보기·편집·다시 저장·지우기는 �
       expect(await invoke(IPC.workspaceEdit, SETTINGS, bad, EDIT)).toEqual(BAD_EDIT)
       expect(await invoke(IPC.workspaceRecapture, SETTINGS, bad)).toEqual(BAD_SAVE)
       expect(await invoke(IPC.workspaceRemove, SETTINGS, bad)).toBe(false)
+      expect(await invoke(IPC.workspaceRun, SETTINGS, bad)).toEqual(BAD_RUN)
     }
     for (const bad of [{ ...EDIT, name: 3 }, { ...EDIT, rules: [{ ...EDIT.rules[0], enabled: 'yes' }] }, 'edit', null]) {
       expect(await invoke(IPC.workspaceEdit, SETTINGS, 'ws-qa', bad)).toEqual(BAD_EDIT)
@@ -452,9 +479,18 @@ describe('워크스페이스 IPC: 보기·편집·다시 저장·지우기는 �
 
   it('처리 중 오류가 나도 던지지 않고 빈 값을 준다(채널 이름만 기록)', async () => {
     for (const fn of handlers()) fn.mockRejectedValueOnce(new Error('boom'))
-    expect(await invokeAll(SETTINGS, PALETTE)).toEqual([null, BAD_EDIT, BAD_SAVE, false, BAD_SAVE])
+    expect(await invokeAll(SETTINGS, PALETTE)).toEqual([null, BAD_EDIT, BAD_SAVE, false, BAD_SAVE, NO_LIST, BAD_RUN, BAD_SAVE])
     expect(reg.logs.map((l) => l.data.channel).sort()).toEqual(
-      [IPC.workspaceGet, IPC.workspaceEdit, IPC.workspaceRecapture, IPC.workspaceRemove, IPC.workspaceSaveAs].sort()
+      [
+        IPC.workspaceGet,
+        IPC.workspaceEdit,
+        IPC.workspaceRecapture,
+        IPC.workspaceRemove,
+        IPC.workspaceSaveAs,
+        IPC.workspaceList,
+        IPC.workspaceRun,
+        IPC.workspaceSaveNew
+      ].sort()
     )
   })
 })

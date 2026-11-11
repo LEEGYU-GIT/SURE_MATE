@@ -5,6 +5,7 @@ import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../s
 import type { PetView } from '../shared/pet/pet-view'
 import type { SettingsTabId } from '../shared/settings/settings-route'
 import type { SettingsSnapshot } from '../shared/settings/settings-snapshot'
+import type { WorkspaceListView } from '../shared/workspace/workspace-ipc'
 
 const settings: SettingsApi = {
   get: () => ipcRenderer.invoke(IPC.settingsGet),
@@ -14,9 +15,9 @@ const settings: SettingsApi = {
     ipcRenderer.on(IPC.settingsChanged, listener)
     return () => ipcRenderer.removeListener(IPC.settingsChanged, listener)
   },
-  // 받은 탭 id는 화면(SettingsApp)이 다시 확인한다
+  // 받은 탭 id·워크스페이스 id는 화면(SettingsApp)이 다시 확인한다
   onShowTab: (cb) => {
-    const listener = (_e: IpcRendererEvent, tab: SettingsTabId): void => cb(tab)
+    const listener = (_e: IpcRendererEvent, tab: SettingsTabId, ws?: string | null): void => cb(tab, ws ?? null)
     ipcRenderer.on(IPC.settingsShowTab, listener)
     return () => ipcRenderer.removeListener(IPC.settingsShowTab, listener)
   },
@@ -115,9 +116,17 @@ const api: SureMateApi = {
   petMenu: (a) => ipcRenderer.send(IPC.petMenu, a),
   petKey: (k, down) => ipcRenderer.send(IPC.petKey, k, down),
   settings,
+  listWorkspaces: () => ipcRenderer.invoke(IPC.workspaceList),
+  onWorkspacesChanged: (cb) => {
+    const listener = (_e: IpcRendererEvent, v: WorkspaceListView): void => cb(v)
+    ipcRenderer.on(IPC.workspaceChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.workspaceChanged, listener)
+  },
   getWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceGet, id),
   editWorkspace: (id, edit) => ipcRenderer.invoke(IPC.workspaceEdit, id, edit),
   recaptureWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRecapture, id),
+  runWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRun, id),
+  saveWorkspaceNew: () => ipcRenderer.invoke(IPC.workspaceSaveNew),
   removeWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRemove, id),
   saveWorkspaceAs: (name) => ipcRenderer.invoke(IPC.workspaceSaveAs, name)
 }

@@ -11,7 +11,7 @@ import type { SettingsTabId } from './settings/settings-route'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
 import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
 import type { WorkspaceEdit } from './workspace/edit'
-import type { WorkspaceEditResult, WorkspaceSaveResult, WorkspaceView } from './workspace/workspace-ipc'
+import type { WorkspaceEditResult, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceView } from './workspace/workspace-ipc'
 
 /** 프롬프트에 넣을 글의 출처 */
 export type PromptSource = 'selection' | 'clipboard' | 'input'
@@ -126,7 +126,7 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   /** main → 설정 창: 설정이 바뀜(어디서든) */
   settingsChanged: 'settings:changed',
-  /** main → 설정 창: 열려 있는 설정 창에서 이 탭을 고른다(펫 메뉴 "펫 설정" 등, SettingsTabId) */
+  /** main → 설정 창: 열려 있는 설정 창에서 이 탭을 고른다(펫 메뉴 "펫 설정" 등, SettingsTabId). 워크스페이스 탭은 열 워크스페이스 id도(없으면 null) */
   settingsShowTab: 'settings:show-tab',
   settingsHotkeyCheck: 'settings:hotkey-check',
   /** 설정 창 → main(send): 단축키 녹화 시작·끝(녹화 중에는 모든 단축키를 잠시 푼다) */
@@ -156,12 +156,20 @@ export const IPC = {
   settingsGlossarySave: 'settings:glossary-save',
   settingsGlossaryDelete: 'settings:glossary-delete',
   settingsGlossaryPack: 'settings:glossary-pack',
+  /** 설정 창 → main(invoke): 워크스페이스 탭 목록(최근에 바꾼 순서)과 창을 저장·불러올 수 있는지 */
+  workspaceList: 'workspace:list',
+  /** main → 설정 창: 워크스페이스 목록이 바뀜(어디서든: 팔레트·바 저장, 편집, 단축키, 지우기) */
+  workspaceChanged: 'workspace:changed',
   /** 설정 창 → main(invoke): 워크스페이스 하나와 지금 모니터 구성에서 저장한 배치인지 */
   workspaceGet: 'workspace:get',
   /** 설정 창 → main(invoke): 이름·별칭·창 규칙 편집 저장 */
   workspaceEdit: 'workspace:edit',
   /** 설정 창 → main(invoke): 지금 배치로 다시 저장 */
   workspaceRecapture: 'workspace:recapture',
+  /** 설정 창 → main(invoke): 불러오기(결과 알림은 서비스가 띄운다) */
+  workspaceRun: 'workspace:run',
+  /** 설정 창 → main(invoke): 지금 배치를 새 워크스페이스로 저장(알림 없이 결과를 화면에) */
+  workspaceSaveNew: 'workspace:save-new',
   /** 설정 창 → main(invoke): 지우기 */
   workspaceRemove: 'workspace:remove',
   /** 팔레트 → main(invoke): `@이름` 줄 — 그 이름으로 지금 배치 저장(같은 이름이 있으면 다시 저장) */
@@ -253,12 +261,20 @@ export interface SureMateApi {
   petKey(k: PetKey, down: boolean): void
   /** 설정 창·온보딩(설계 문서 §14·§6). 설정 창이 아닌 창이 부르면 main이 거절한다 */
   settings: SettingsApi
-  /** 워크스페이스 편집 화면(설정 창, 설계 §11): 워크스페이스 하나(없으면 null). 설정 창이 아닌 창이 부르면 null */
+  /** 설정 창 워크스페이스 탭(설계 §11): 목록과 창을 저장·불러올 수 있는지. 설정 창이 아닌 창이 부르면 빈 목록 */
+  listWorkspaces(): Promise<WorkspaceListView>
+  /** 워크스페이스 목록이 바뀌면(어디서든) 새 목록. 돌려받은 함수로 그만 듣는다 */
+  onWorkspacesChanged(cb: (v: WorkspaceListView) => void): () => void
+  /** 워크스페이스 하나(없으면 null). 설정 창이 아닌 창이 부르면 null */
   getWorkspace(id: string): Promise<WorkspaceView | null>
   /** 이름·별칭·창 규칙 편집을 저장한다. 오류는 화면에 보일 문구 */
   editWorkspace(id: string, edit: WorkspaceEdit): Promise<WorkspaceEditResult>
   /** 지금 배치로 다시 저장(이름·별칭·단축키는 그대로). 결과는 알리지 않고 돌려준다 */
   recaptureWorkspace(id: string): Promise<WorkspaceSaveResult>
+  /** 그 워크스페이스를 불러온다(다른 모니터 구성이면 먼저 묻는다). 결과 알림은 main이 띄우고, 결과도 돌려준다 */
+  runWorkspace(id: string): Promise<WorkspaceRunResult>
+  /** 지금 배치를 새 워크스페이스로 저장('배치 N'). 결과는 알리지 않고 돌려준다 */
+  saveWorkspaceNew(): Promise<WorkspaceSaveResult>
   removeWorkspace(id: string): Promise<boolean>
   /** 팔레트 `@이름` 줄: 그 이름으로 지금 배치 저장(같은 이름·별칭이 있으면 다시 저장). 성공하면 main이 팔레트를 숨긴다 */
   saveWorkspaceAs(name: string): Promise<WorkspaceSaveResult>
@@ -269,8 +285,8 @@ export interface SettingsApi {
   get(): Promise<SettingsSnapshot | null>
   update(patch: SettingsPatch): Promise<SettingsUpdateResult>
   onChanged(cb: (s: SettingsSnapshot) => void): () => void
-  /** main이 열린 설정 창에서 이 탭을 고르라고 알린다(창을 다시 읽지 않는다) */
-  onShowTab(cb: (tab: SettingsTabId) => void): () => void
+  /** main이 열린 설정 창에서 이 탭을 고르라고 알린다(창을 다시 읽지 않는다). ws는 워크스페이스 탭에서 열 워크스페이스(없으면 null) */
+  onShowTab(cb: (tab: SettingsTabId, ws: string | null) => void): () => void
   hotkeyCheck(id: SettingsHotkeyId, acc: string): Promise<HotkeyCheck>
   hotkeyRecord(on: boolean): void
   /** acc null은 단축키 비우기(조종 단축키만, 나머지는 main이 거절) */

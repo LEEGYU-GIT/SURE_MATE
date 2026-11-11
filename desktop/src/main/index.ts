@@ -28,7 +28,7 @@ import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
 import { createHotkeyChanger, resumeFailedNotice, type HotkeyChanger } from './hotkeys/hotkey-change'
-import { HotkeyManager } from './hotkeys/hotkey-manager'
+import { HotkeyManager, workspaceHotkeyId } from './hotkeys/hotkey-manager'
 import { hotkeyStatuses, withHotkeySetting } from './hotkeys/hotkey-settings'
 import { registerIpc } from './ipc'
 import { log } from './log'
@@ -254,10 +254,11 @@ async function exportDictionaryFile(): Promise<unknown> {
 
 /**
  * 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1).
- * tab을 주면 그 탭으로 연다(펫 메뉴 "펫 설정" → 'pet'). 열려 있던 설정 창은 다시 읽지 않고 탭만 바꾼다
+ * tab을 주면 그 탭으로 연다(펫 메뉴 "펫 설정" → 'pet'). 열려 있던 설정 창은 다시 읽지 않고 탭만 바꾼다.
+ * ws는 워크스페이스 탭에서 열 워크스페이스(팔레트 행의 Ctrl+Enter, 지금 배치 저장 뒤 이름 바꾸기)
  */
-function openSettings(route: SettingsRoute = '/settings', o: { tab?: SettingsTabId } = {}): void {
-  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording(), tab: o.tab })
+function openSettings(route: SettingsRoute = '/settings', o: { tab?: SettingsTabId; ws?: string } = {}): void {
+  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording(), tab: o.tab, ws: o.ws })
 }
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
@@ -327,8 +328,8 @@ function startBar(): void {
     // 메뉴는 이미 닫혔고 포커스는 원래 창에 있다. 알림(이름 포함)·바쁨·Win32 불가는 서비스가 처리한다
     onWorkspaceAction: async (a) => {
       if (a.type === 'workspace-edit') {
-        // 편집 화면은 설정 창에 둔다(Task 8이 워크스페이스 탭을 더한 뒤 openSettings('/settings', { tab: 'workspace' })로 잇는다)
-        openSettings('/settings')
+        // '모두 보기·편집': 설정 창의 워크스페이스 탭(목록)으로 연다
+        openSettings('/settings', { tab: 'workspace' })
         return true
       }
       if (!workspaceSvc) return false
@@ -693,14 +694,27 @@ if (!app.requestSingleInstanceLock()) {
     // 저장·불러오기는 한 번에 하나이고, Win32를 쓸 수 없으면 알리기만 하고 창·파일을 바꾸지 않는다
     const workspaceService = createWorkspaceRuntime({
       userData,
-      reportErrors: (errors) => reportFileErrors('워크스페이스', 'workspaces.loadErrors', errors)
+      reportErrors: (errors) => reportFileErrors('워크스페이스', 'workspaces.loadErrors', errors),
+      // 설정 창의 '쓰는 중'·'등록 못 함'(단축키 관리자는 startShell에서 생긴다)
+      hotkeyBound: (id) => hotkeys?.current(workspaceHotkeyId(id))
     })
     const workspaceCmds = createWorkspaceCommands({
       service: workspaceService,
       waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
-      hidePalette: (restoreFocus) => hidePalette({ restoreFocus })
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+      // 편집은 설정 창의 워크스페이스 탭에서(그 워크스페이스의 이름 칸을 골라 둔다)
+      openEditor: (ws) => openSettings('/settings', { tab: 'workspace', ws }),
+      notify
     })
     workspaceCommands = workspaceCmds
+    // 열린 설정 창의 워크스페이스 탭이 어디서 바뀐 것이든(팔레트·바 저장, 단축키, 편집, 지우기) 새 목록을 그리게 한다
+    workspaceService.onChange(() => {
+      if (settingsContentsId() === null) return
+      void workspaceService
+        .listView()
+        .then((v) => sendToSettings(IPC.workspaceChanged, v))
+        .catch((e) => log('workspace.pushError', { error: errorText(e) }))
+    })
     // 말하듯 입력(설계 §13): 단어 목록(기본본 + 사용자 intents.json), 기억한 문장, 사용 기록은 모두 이 PC에만 저장한다
     const intentCache = createIntentCache(userData, builtinIntents, (errors) => reportFileErrors('말하듯 입력 단어 목록', 'intents.loadErrors', errors))
     const phraseStore = createPhraseStore(userData)
@@ -766,11 +780,15 @@ if (!app.requestSingleInstanceLock()) {
         aiTargetName: pickAiTarget({ defaultId: settings.ai.defaultTarget, targets: allAiTargets(settings.ai.custom) }).name
       }),
       overlay: () => barRuntime,
-      // 편집 화면은 설정 창의 탭: 보기·편집·다시 저장(알림 없이 결과를 화면에)·지우기. `@이름` 저장 줄은 팔레트가 보낸다
+      // 편집 화면은 설정 창의 워크스페이스 탭: 목록·보기·편집·다시 저장·새로 저장(알림 없이 결과를 화면에)·불러오기(결과 알림)·지우기.
+      // `@이름` 저장 줄은 팔레트가 보낸다
       workspaces: {
+        list: () => workspaceService.listView(),
         get: (id) => workspaceService.view(id),
         edit: (id, edit) => workspaceService.edit(id, edit),
         recapture: (id) => workspaceService.recapture(id, { source: 'editor', quiet: true }),
+        run: (id) => workspaceService.run(id, 'editor'),
+        saveNew: () => workspaceService.saveNew({ source: 'editor', quiet: true }),
         remove: (id) => workspaceService.remove(id),
         saveAs: (name) => workspaceCmds.saveAs(name)
       },
