@@ -17,6 +17,11 @@ export type SettingsViewAction =
   | { type: 'failed'; errors: string[] }
   /** 다른 곳(트레이·바 메뉴·팔레트)에서 설정이 바뀜 */
   | { type: 'changed'; snapshot: SettingsSnapshot }
+  /**
+   * 설정 파일이 아닌 저장(워크스페이스 탭의 칸)이 끝남. 스냅숏은 그대로라 revision을 올리지 않는다.
+   * 실패한 까닭은 그 칸 옆에 보이므로 상태 줄은 기본 안내로 둔다
+   */
+  | { type: 'done'; ok: boolean }
 
 export const initialSettingsState: SettingsViewState = { snapshot: null, saving: 0, status: { kind: 'idle' }, revision: 0 }
 
@@ -35,5 +40,7 @@ export function settingsReducer(s: SettingsViewState, a: SettingsViewAction): Se
       return { ...s, saving: Math.max(0, s.saving - 1), status: { kind: 'error', errors: a.errors }, revision: s.revision + 1 }
     case 'changed':
       return { ...s, snapshot: a.snapshot, revision: s.revision + 1 }
+    case 'done':
+      return { ...s, saving: Math.max(0, s.saving - 1), status: a.ok ? { kind: 'saved' } : { kind: 'idle' } }
   }
 }

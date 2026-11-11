@@ -12,6 +12,9 @@ import type { PaletteItem } from '../../../shared/types'
 import builtinIntents from '../../../../resources/intents.json'
 import { parseIntentPack } from '../../../shared/natural/intent-pack'
 import type { UsageRecord } from '../../../shared/natural/usage'
+import { applyWorkspaceEdit } from '../../../shared/workspace/edit'
+import { WORKSPACE_NOTES } from '../../../shared/workspace/messages'
+import type { WorkspaceListView } from '../../../shared/workspace/workspace-ipc'
 
 /**
  * 미리 보기의 펼침 창 연결(main의 펼침 창 컨트롤러 대신). 내용을 보내고, 화면이 알린 크기로 배치한 뒤 shown을 보낸다.
@@ -44,6 +47,8 @@ export interface FakeFixtures {
   searchContext: { learned: [string, string][]; usage: [string, UsageRecord][] }
   /** 팔레트 화면(`<Palette />`)이 onShown을 등록한 직후 한 번 받는 표시 알림(시작 검색어 등). null이면 보내지 않는다 */
   shown: ShownPayload | null
+  /** 설정 창 워크스페이스 탭이 받는 목록. 편집·단축키·지우기는 진짜 검사(applyWorkspaceEdit)로 이 값을 바꾼다 */
+  workspaces: WorkspaceListView | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -58,12 +63,14 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   templates: [],
   glossary: [],
   searchContext: { learned: [], usage: [] },
-  shown: null
+  shown: null,
+  workspaces: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
 export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
   const fx: FakeFixtures = { ...DEFAULT_FIXTURES, ...f }
+  const ws = fakeWorkspaces(fx)
   return {
     hide: () => {},
     runItem: async () => {},
@@ -118,18 +125,64 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     petBubbleRect: () => {},
     petMenu: () => {},
     petKey: () => {},
-    settings: fakeSettingsApi(fx),
-    // 미리 보기에는 창이 없으므로 워크스페이스는 빈 결과(편집 화면 장면은 Task 8이 채운다)
-    getWorkspace: async () => null,
-    editWorkspace: async () => ({ ok: false, errors: [] }),
-    recaptureWorkspace: async () => ({ ok: false, reason: 'native-unavailable', message: '' }),
-    removeWorkspace: async () => false,
+    settings: fakeSettingsApi(fx, ws),
+    listWorkspaces: async () => ws.view(),
+    onWorkspacesChanged: (cb) => ws.listen(cb),
+    getWorkspace: async (id) => ws.view().items.find((i) => i.workspace.id === id) ?? null,
+    editWorkspace: async (id, edit) => ws.edit(id, edit),
+    // 미리 보기에는 창이 없으므로 창을 읽는 일(다시 저장·새로 저장·불러오기)은 Win32를 막은 것처럼 답한다
+    recaptureWorkspace: async () => ({ ok: false, reason: 'native-unavailable', message: WORKSPACE_NOTES.nativeUnavailable }),
+    runWorkspace: async () => ({ ok: false, reason: 'native-unavailable' }),
+    saveWorkspaceNew: async () => ({ ok: false, reason: 'native-unavailable', message: WORKSPACE_NOTES.nativeUnavailable }),
+    removeWorkspace: async (id) => ws.remove(id),
     saveWorkspaceAs: async () => ({ ok: false, reason: 'native-unavailable', message: '' })
   }
 }
 
+/** 미리 보기 워크스페이스: 메모리의 목록을 진짜 편집 규칙으로 바꾸고 듣는 화면에 알린다(실제 main의 workspace:changed처럼) */
+function fakeWorkspaces(fx: FakeFixtures): {
+  view(): WorkspaceListView
+  listen(cb: (v: WorkspaceListView) => void): () => void
+  edit(id: string, edit: Parameters<SureMateApi['editWorkspace']>[1]): ReturnType<SureMateApi['editWorkspace']>
+  remove(id: string): Promise<boolean>
+  setHotkey(id: string, acc: string | null): void
+} {
+  let state: WorkspaceListView = fx.workspaces ?? { items: [], canControl: true }
+  const listeners = new Set<(v: WorkspaceListView) => void>()
+  const publish = (next: WorkspaceListView): void => {
+    state = next
+    for (const cb of listeners) cb(state)
+  }
+  return {
+    view: () => state,
+    listen(cb) {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    },
+    async edit(id, edit) {
+      const item = state.items.find((i) => i.workspace.id === id)
+      if (!item) return { ok: false, errors: [WORKSPACE_NOTES.missing] }
+      const r = applyWorkspaceEdit(
+        item.workspace,
+        edit,
+        state.items.map((i) => i.workspace),
+        new Date()
+      )
+      if (r.ok) publish({ ...state, items: state.items.map((i) => (i.workspace.id === id ? { ...i, workspace: r.workspace } : i)) })
+      return r
+    },
+    async remove(id) {
+      publish({ ...state, items: state.items.filter((i) => i.workspace.id !== id) })
+      return true
+    },
+    setHotkey(id, acc) {
+      publish({ ...state, items: state.items.map((i) => (i.workspace.id === id ? { ...i, workspace: { ...i.workspace, hotkey: acc }, hotkeyRegistered: acc !== null } : i)) })
+    }
+  }
+}
+
 /** 설정 창 미리 보기: 저장은 진짜 검사(validateSettingsPatch)·적용 규칙으로 메모리의 스냅숏만 바꾼다 */
-function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
+function fakeSettingsApi(fx: FakeFixtures, ws: ReturnType<typeof fakeWorkspaces>): SettingsApi {
   let snap = fx.settings
   const listeners = new Set<(s: SettingsSnapshot) => void>()
   return {
@@ -150,9 +203,10 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
     onShowTab: () => () => {},
     hotkeyCheck: async () => ({ level: 'ok' }),
     hotkeyRecord: () => {},
-    // 바꾼 조합을 스냅숏에도 넣어 화면이 실제처럼 다시 그리게 한다(조종 단축키는 비울 수 있다). 워크스페이스 단축키는 스냅숏에 없다
+    // 바꾼 조합을 스냅숏에도 넣어 화면이 실제처럼 다시 그리게 한다(조종 단축키는 비울 수 있다). 워크스페이스 단축키는 목록에 넣는다
     hotkeySet: async (id, acc) => {
-      if (snap && !id.startsWith('workspace:')) {
+      if (id.startsWith('workspace:')) ws.setHotkey(id.slice('workspace:'.length), acc)
+      else if (snap) {
         const settings = id === 'pet-control' ? { ...snap.settings, pet: { ...snap.settings.pet, controlHotkey: acc } } : snap.settings
         snap = { ...snap, settings, hotkeys: { ...snap.hotkeys, [id]: { acc, registered: acc !== null } } }
         for (const cb of listeners) cb(snap)

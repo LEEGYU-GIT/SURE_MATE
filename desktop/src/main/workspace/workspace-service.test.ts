@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { MonitorInfo, WindowInfo } from '../../shared/types'
 import type { CaptureSkipped } from '../../shared/workspace/capture'
+import { EDIT_ERRORS } from '../../shared/workspace/edit'
 import { restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../shared/workspace/messages'
 import { monitorFingerprint, monitorKey } from '../../shared/workspace/monitors'
 import type { ReadyPlan } from '../../shared/workspace/restore-plan'
@@ -53,6 +54,8 @@ interface World {
   confirms: { savedMonitors: number; currentMonitors: number }[]
   notes: string[]
   logs: [string, Record<string, unknown>][]
+  /** 지금 등록된 워크스페이스 단축키(워크스페이스 id → 조합) */
+  bound: Map<string, string>
 }
 
 const worlds: World[] = []
@@ -73,7 +76,8 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     plans: [],
     confirms: [],
     notes: [],
-    logs: []
+    logs: [],
+    bound: new Map()
   }
   worlds.push(w)
   let n = 0
@@ -109,7 +113,8 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     notify: (m) => void w.notes.push(m),
     newId: () => `id-${++n}`,
     now: () => new Date(NOW),
-    log: (event, data) => void w.logs.push([event, data])
+    log: (event, data) => void w.logs.push([event, data]),
+    hotkeyBound: (id) => w.bound.get(id)
   }
   return { w, service: createWorkspaceService(deps) }
 }
@@ -137,7 +142,8 @@ describe('지금 배치 저장(saveNew)', () => {
       ['EXCEL.EXE', 'XY방산 예산.xlsx', true],
       ['notepad.exe', null, true]
     ])
-    expect(w.notes).toEqual([saveSummary({ name: '배치 1', windows: 3, skipped: NONE })])
+    // 이름 없이 저장했으니 이름을 바꾸는 곳(설정)을 함께 알린다
+    expect(w.notes).toEqual([saveSummary({ name: '배치 1', windows: 3, skipped: NONE, renameHint: true })])
     expect(changes).toEqual([w.list])
     expect(w.logs).toContainEqual([
       'workspace.save',
@@ -155,7 +161,7 @@ describe('지금 배치 저장(saveNew)', () => {
     const { w, service } = world({ windows: [...TEST_WINDOWS, chrome] })
     const skipped = { ...NONE, minimized: 1 }
     expect(await service.saveNew({ source: 'hotkey' })).toMatchObject({ ok: true, windows: 3, skipped })
-    expect(w.notes).toEqual([saveSummary({ name: '배치 1', windows: 3, skipped })])
+    expect(w.notes).toEqual([saveSummary({ name: '배치 1', windows: 3, skipped, renameHint: true })])
   })
 
   it('quiet면 알리지 않는다(편집 화면이 결과를 보여 준다)', async () => {
@@ -360,7 +366,7 @@ describe('편집·지우기·단축키(파일만 바꾸므로 Win32 없이도 �
     expect(w.logs).toContainEqual(['workspace.edit', expect.objectContaining({ rules: 3, enabled: 2, aliases: 2 })])
 
     const saves = w.saves
-    expect(await service.edit('ws-qa', { name: '회의모드', aliases: [], rules: [] })).toEqual({ ok: false, errors: ['같은 이름의 워크스페이스가 있어요'] })
+    expect(await service.edit('ws-qa', { name: '회의모드', aliases: [], rules: [] })).toEqual({ ok: false, errors: [EDIT_ERRORS.nameTaken] })
     expect(await service.edit('nope', { name: '가상 모드', aliases: [], rules: [] })).toEqual({ ok: false, errors: [WORKSPACE_NOTES.missing] })
     w.failSave = true
     expect(await service.edit('ws-qa', { name: '가상 모드', aliases: [], rules: [] })).toEqual({ ok: false, errors: [WORKSPACE_NOTES.saveFailed] })
@@ -420,13 +426,63 @@ describe('파일 쓰기는 한 줄로(읽고 고치고 저장하는 사이에 �
 })
 
 describe('보기(view)·목록(list)', () => {
-  it('지금 구성과 같은지 함께 돌려주고 없는 id는 null(Win32 없이, 창 목록을 읽지 않는다)', async () => {
+  it('지금 구성과 같은지·단축키가 등록됐는지 함께 돌려주고 없는 id는 null(Win32 없이, 창 목록을 읽지 않는다)', async () => {
     const { w, service } = world({ list: [testWorkspace()], native: false })
-    expect(await service.view('ws-qa')).toEqual({ workspace: w.list[0], sameConfig: true })
+    expect(await service.view('ws-qa')).toEqual({ workspace: w.list[0], sameConfig: true, hotkeyRegistered: false })
     w.monitors = [P]
-    expect(await service.view('ws-qa')).toEqual({ workspace: w.list[0], sameConfig: false })
+    expect(await service.view('ws-qa')).toEqual({ workspace: w.list[0], sameConfig: false, hotkeyRegistered: false })
     expect(await service.view('nope')).toBeNull()
     expect(await service.list()).toBe(w.list)
     expect(w.snapshots).toBe(0)
+  })
+
+  it('단축키 등록: 저장한 조합이 지금 등록된 조합과 같을 때만(보조키 순서·대소문자는 따지지 않는다)', async () => {
+    const { w, service } = world({ list: [testWorkspace({ hotkey: 'Ctrl+Alt+1' })] })
+    expect((await service.view('ws-qa'))?.hotkeyRegistered).toBe(false)
+    w.bound.set('ws-qa', 'alt+ctrl+1')
+    expect((await service.view('ws-qa'))?.hotkeyRegistered).toBe(true)
+    // 다른 조합이 남아 있으면(바꾸다 실패) 등록 못 함
+    w.bound.set('ws-qa', 'Ctrl+Alt+2')
+    expect((await service.view('ws-qa'))?.hotkeyRegistered).toBe(false)
+    // 조합이 없으면 등록할 것도 없다
+    w.list = deepFreeze([testWorkspace({ hotkey: null })])
+    expect((await service.view('ws-qa'))?.hotkeyRegistered).toBe(false)
+  })
+
+  it('설정 창 목록(listView): 최근에 바꾼 순서, 항목마다 같은 구성·단축키 등록, 창 제어를 쓸 수 있는지', async () => {
+    const a = testWorkspace({ id: 'ws-a', name: '가상 A', updatedAt: '2026-11-09T00:00:00.000Z' })
+    const b = testWorkspace({ id: 'ws-b', name: '가상 B', hotkey: 'Ctrl+Alt+2', updatedAt: '2026-11-11T00:00:00.000Z' })
+    const { w, service } = world({ list: [a, b], native: false })
+    w.bound.set('ws-b', 'Ctrl+Alt+2')
+    expect(await service.listView()).toEqual({
+      items: [
+        { workspace: w.list[1], sameConfig: true, hotkeyRegistered: true },
+        { workspace: w.list[0], sameConfig: true, hotkeyRegistered: false }
+      ],
+      canControl: false
+    })
+    w.native = true
+    w.monitors = [P]
+    const v = await service.listView()
+    expect(v.canControl).toBe(true)
+    expect(v.items.map((i) => [i.workspace.id, i.sameConfig])).toEqual([
+      ['ws-b', false],
+      ['ws-a', false]
+    ])
+    // 창 목록은 읽지 않는다(설정 창을 여는 것만으로 Win32를 부르지 않게)
+    expect(w.snapshots).toBe(0)
+  })
+
+  it('목록을 읽지 못하면 빈 목록(설정 창은 빈 화면 안내)', async () => {
+    const { service } = world()
+    const broken = createWorkspaceService({
+      ...({} as WorkspaceServiceDeps),
+      store: { get: async () => Promise.reject(new Error('EACCES')), save: async () => {} },
+      nativeOk: () => true,
+      monitors: () => [P],
+      log: () => {}
+    })
+    expect(await broken.listView()).toEqual({ items: [], canControl: true })
+    expect(await service.listView()).toEqual({ items: [], canControl: true })
   })
 })

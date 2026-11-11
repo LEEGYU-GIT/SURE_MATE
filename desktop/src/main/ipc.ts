@@ -16,6 +16,8 @@ import {
   parseWorkspaceId,
   parseWorkspaceName,
   type WorkspaceEditResult,
+  type WorkspaceListView,
+  type WorkspaceRunResult,
   type WorkspaceSaveResult,
   type WorkspaceView
 } from '../shared/workspace/workspace-ipc'
@@ -57,10 +59,16 @@ export interface PetIpc {
 
 /** 워크스페이스 IPC가 부르는 기능(설계 §11). 값은 모두 검사를 마친 것이다 */
 export interface WorkspaceIpc {
+  /** 설정 창 워크스페이스 탭의 목록 */
+  list(): Promise<WorkspaceListView>
   get(id: string): Promise<WorkspaceView | null>
   edit(id: string, edit: WorkspaceEdit): Promise<WorkspaceEditResult>
-  /** 편집 화면의 [지금 배치로 다시 저장](결과는 화면에 보이므로 알리지 않는다) */
+  /** 워크스페이스 탭의 [지금 배치로 다시 저장](결과는 화면에 보이므로 알리지 않는다) */
   recapture(id: string): Promise<WorkspaceSaveResult>
+  /** 워크스페이스 탭의 [불러오기](결과 알림은 서비스가 띄운다) */
+  run(id: string): Promise<WorkspaceRunResult>
+  /** 워크스페이스 탭의 [지금 배치 저장](결과는 화면에 보이므로 알리지 않는다) */
+  saveNew(): Promise<WorkspaceSaveResult>
   remove(id: string): Promise<boolean>
   /** 팔레트 `@이름` 줄(키 확인·성공 시 팔레트 숨김 포함) */
   saveAs(name: string): Promise<WorkspaceSaveResult>
@@ -87,7 +95,7 @@ export interface IpcDeps {
   workspaces: WorkspaceIpc
   /** 말하듯 입력: 검색 문맥과 선택 기록(값 검사는 pick이 한다. pick은 던지지 않는다) */
   natural: { searchContext(): Promise<SearchContextPayload>; pick(raw: unknown): Promise<void> }
-  /** 설정 창의 webContents id(워크스페이스 보기·편집·다시 저장·지우기는 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
+  /** 설정 창의 webContents id(워크스페이스 목록·보기·편집·저장·불러오기·지우기는 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
   settingsContentsId: () => number | null
 }
 
@@ -171,15 +179,23 @@ export function registerIpc(d: IpcDeps): void {
 }
 
 /**
- * 워크스페이스 IPC(설계 §11). 편집 화면은 설정 창의 탭이므로 보기·편집·다시 저장·지우기는 설정 창이, `@이름` 저장 줄은
- * 팔레트 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다). 값 검사를 통과하지 못하거나 보낸 창이 다르면
- * null·false·요청 형식 오류를 주고, 처리 중 오류는 기록만 하고 같은 값을 준다.
+ * 워크스페이스 IPC(설계 §11). 편집 화면은 설정 창의 탭이므로 목록·보기·편집·다시 저장·불러오기·새로 저장·지우기는 설정 창이,
+ * `@이름` 저장 줄은 팔레트 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다). 값 검사를 통과하지 못하거나 보낸 창이 다르면
+ * 빈 목록·null·false·요청 형식 오류를 주고, 처리 중 오류는 기록만 하고 같은 값을 준다.
  */
 function registerWorkspaceIpc(d: IpcDeps): void {
   const badEdit: WorkspaceEditResult = { ok: false, errors: [BAD_REQUEST] }
   const badSave: WorkspaceSaveResult = { ok: false, reason: 'invalid', message: BAD_REQUEST }
+  const badRun: WorkspaceRunResult = { ok: false, reason: 'invalid' }
+  const noList: WorkspaceListView = { items: [], canControl: false }
   const fromSettings = (e: Sender): boolean => sentBy(e, d.settingsContentsId())
 
+  ipcMain.handle(IPC.workspaceList, (e) => (fromSettings(e) ? attempt(IPC.workspaceList, noList, () => d.workspaces.list()) : noList))
+  ipcMain.handle(IPC.workspaceRun, (e, raw: unknown) => {
+    const id = parseWorkspaceId(raw)
+    return fromSettings(e) && id ? attempt(IPC.workspaceRun, badRun, () => d.workspaces.run(id)) : badRun
+  })
+  ipcMain.handle(IPC.workspaceSaveNew, (e) => (fromSettings(e) ? attempt(IPC.workspaceSaveNew, badSave, () => d.workspaces.saveNew()) : badSave))
   ipcMain.handle(IPC.workspaceGet, (e, raw: unknown) => {
     const id = parseWorkspaceId(raw)
     return fromSettings(e) && id ? attempt(IPC.workspaceGet, null, () => d.workspaces.get(id)) : null

@@ -5,6 +5,7 @@ import { isImeComposing } from '../../../shared/ime'
 import type { PromptDraft } from '../../../shared/ipc-channels'
 import { parseQuery, shownView } from '../../../shared/palette-query'
 import type { PaletteItem } from '../../../shared/types'
+import { WORKSPACE_EDIT_PREFIX, WORKSPACE_ITEM_PREFIX } from '../../../shared/workspace/workspace-ipc'
 import { GroupIcon, LightbulbIcon, SearchIcon } from '../design/icons'
 import { Confirm } from './Confirm'
 import { isRepeatedEnter } from './confirm-state'
@@ -40,8 +41,8 @@ const PREFIX_HINTS = [
   ['>', '명령']
 ] as const
 
-/** 워크스페이스 행의 보조 동작(Ctrl+Enter·→)이 여는 명령. 편집 화면은 설정 창에 두고, 워크스페이스 탭으로 바로 여는 일은 Task 8이 잇는다 */
-const WORKSPACE_EDIT_COMMAND = 'cmd.open-settings'
+/** 워크스페이스 행의 보조 동작(Ctrl+Enter·@에서 →): 설정 창 워크스페이스 탭에서 그 워크스페이스를 연다(workspace-edit:<id>) */
+const workspaceEditId = (itemId: string): string => `${WORKSPACE_EDIT_PREFIX}${itemId.slice(WORKSPACE_ITEM_PREFIX.length)}`
 
 /** 그릴 목록: 검색 결과 끝에 '직접 추가하기'(위키)와 '이름으로 저장'(@) 줄을 붙인다 */
 const rowsOf = (s: PaletteSearch, query: string): PaletteItem[] => withWorkspaceSaveAs(withWikiAdd(s.items, query), query)
@@ -281,17 +282,19 @@ export function Palette(): React.JSX.Element {
           const action = listKeyAction(
             { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent), repeat: e.repeat, caretAtEnd },
             item,
-            // 목록이 검색어를 못 따라온 동안의 안내는 지난 검색어의 것이라 기억하지 않는다(아래 Enter 처리로)
-            { remember: !lagging && showRemember }
+            // 목록이 검색어를 못 따라온 동안의 안내는 지난 검색어의 것이라 기억하지 않는다(아래 Enter 처리로).
+            // →로 편집을 여는 것은 지금 친 검색어가 @ 범위일 때만
+            { remember: !lagging && showRemember, workspaceScope: parseQuery(query).scope === 'workspace' }
           )
           if (action === 'remember') {
             e.preventDefault()
             run(selected, { remember: true })
             return
           }
-          if (action === 'secondary') {
+          if (action === 'secondary' && item) {
             e.preventDefault()
-            if (runGuard(WORKSPACE_EDIT_COMMAND)) void window.sureMate.runItem(WORKSPACE_EDIT_COMMAND)
+            const editId = workspaceEditId(item.id)
+            if (runGuard(editId)) void window.sureMate.runItem(editId)
             return
           }
           // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 줄을 실행한다(직접 추가하기·이름으로 저장 줄 포함)

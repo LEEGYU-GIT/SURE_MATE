@@ -26,12 +26,12 @@ export function sendToSettings(channel: string, ...args: unknown[]): void {
 /**
  * 설정 창(설계 문서 §5): 열 때 만들고 닫으면 없앤다(§16 메모리). 하나만 열고, 이미 열려 있으면 그 경로로 바꿔 앞으로 가져온다.
  * tab을 주면 그 탭을 연다(설정 창만): 새 창·경로 바꾸기는 주소에 붙이고, 열린 설정 창은 다시 읽지 않고 화면에 알린다
- * (planSettingsOpen). closed는 창이 닫힐 때 한 번 부른다(단축키 녹화를 멈추는 등).
+ * (planSettingsOpen). ws는 워크스페이스 탭에서 열 워크스페이스. closed는 창이 닫힐 때 한 번 부른다(단축키 녹화를 멈추는 등).
  */
-export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void; tab?: SettingsTabId } = {}): void {
+export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void; tab?: SettingsTabId; ws?: string } = {}): void {
   if (o.closed) onClosed = o.closed
   const open = win && !win.isDestroyed() ? win : null
-  const plan = planSettingsOpen(open ? { route, loading: open.webContents.isLoading() } : null, next, o.tab)
+  const plan = planSettingsOpen(open ? { route, loading: open.webContents.isLoading() } : null, next, o.tab, o.ws)
   if (open) {
     if (plan.kind === 'switch-route') {
       route = next
@@ -46,7 +46,7 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
     } else if (plan.kind === 'reload') {
       loadRoute(open, plan.hash)
     } else if (plan.kind === 'show' && plan.tab) {
-      open.webContents.send(IPC.settingsShowTab, plan.tab)
+      open.webContents.send(IPC.settingsShowTab, plan.tab, plan.ws)
     }
     if (open.isMinimized()) open.restore()
     open.show()

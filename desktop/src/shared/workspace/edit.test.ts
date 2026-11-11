@@ -50,7 +50,7 @@ describe('applyWorkspaceEdit', () => {
     const other = testWorkspace({ id: 'ws-other', name: 'QA 모드' })
     const mine = testWorkspace({ id: 'ws-mine', name: '배치 1' })
     const r = applyWorkspaceEdit(mine, { ...editOf(mine), name: 'qa 모드' }, [other], NOW)
-    expect(r).toEqual({ ok: false, errors: ['같은 이름의 워크스페이스가 있어요'] })
+    expect(r).toEqual({ ok: false, errors: ['같은 이름의 워크스페이스가 있어요. 다른 이름을 적어 주세요'] })
     expect(ok(apply({ name: 'qa모드' }, [testWorkspace({ id: 'ws-x', name: '회의 모드' })])).name).toBe('qa모드')
   })
 
@@ -82,6 +82,17 @@ describe('applyWorkspaceEdit', () => {
     expect(r2.match.titleIncludes).toBe('XY방산 예산.xlsx')
   })
 
+  it('오류 문구: 해요체로 무엇이 문제인지(와 고칠 방법), 앱의 다른 입력칸과 같은 "N자까지예요" 꼴', () => {
+    expect(EDIT_ERRORS).toEqual({
+      nameEmpty: '이름을 적어 주세요',
+      nameLong: '이름은 40자까지예요',
+      nameTaken: '같은 이름의 워크스페이스가 있어요. 다른 이름을 적어 주세요',
+      aliases: '별칭은 10개, 하나에 40자까지예요',
+      titleLong: '‘제목에 포함’은 100자까지예요',
+      monitor: '대상 모니터를 찾지 못했어요. 대상 모니터 단추로 다시 골라 주세요'
+    })
+  })
+
   it('제목 조건이 100자를 넘으면 오류', () => {
     const edit = editOf(ws)
     edit.rules[0] = { ...edit.rules[0], titleIncludes: 'z'.repeat(101) }
@@ -93,7 +104,7 @@ describe('applyWorkspaceEdit', () => {
   it('대상 모니터가 그 배치의 모니터 키가 아니면 오류', () => {
     const edit = editOf(ws)
     edit.rules[2] = { ...edit.rules[2], monitor: '1280x720@100:5000,0' }
-    expect(applyWorkspaceEdit(ws, edit, [], NOW)).toEqual({ ok: false, errors: ['대상 모니터를 찾지 못했어요'] })
+    expect(applyWorkspaceEdit(ws, edit, [], NOW)).toEqual({ ok: false, errors: ['대상 모니터를 찾지 못했어요. 대상 모니터 단추로 다시 골라 주세요'] })
     edit.rules[2] = { ...edit.rules[2], monitor: monitorKey(L) }
     expect(applyWorkspaceEdit(ws, edit, [], NOW).ok).toBe(true)
   })

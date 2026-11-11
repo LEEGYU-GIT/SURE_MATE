@@ -3,11 +3,23 @@ import type { WorkspaceEdit } from './edit'
 import type { RestoreReport } from './restore-result'
 import { type Workspace, WORKSPACE_LIMITS } from './types'
 
-/** 편집 화면이 여는 워크스페이스와, 지금 모니터 구성에서 저장한 배치가 있는지 */
+/** 설정 창 워크스페이스 탭이 그리는 워크스페이스 하나: 지금 모니터 구성에서 저장한 배치가 있는지, 단축키가 지금 등록돼 있는지 */
 export interface WorkspaceView {
   workspace: Workspace
   sameConfig: boolean
+  /** 저장한 단축키를 지금 Sure-Mate가 잡고 있는지(조합이 없으면 false. 다른 앱이 쓰면 false) */
+  hotkeyRegistered: boolean
 }
+
+/** 설정 창 워크스페이스 탭: 모든 워크스페이스(최근에 바꾼 순서)와, 창을 저장·불러올 수 있는지(Win32를 막았으면 false) */
+export interface WorkspaceListView {
+  items: WorkspaceView[]
+  canControl: boolean
+}
+
+/** 팔레트 항목 id: 워크스페이스 불러오기는 `workspace:<id>`, 설정 창에서 편집(행의 Ctrl+Enter·→)은 `workspace-edit:<id>` */
+export const WORKSPACE_ITEM_PREFIX = 'workspace:'
+export const WORKSPACE_EDIT_PREFIX = 'workspace-edit:'
 
 /** 저장·불러오기를 하지 않은 까닭. invalid는 IPC 값 검사에 걸린 요청(보낸 창이 다르거나 값이 틀림) */
 export type WorkspaceFailReason = 'native-unavailable' | 'busy' | 'no-windows' | 'limit' | 'missing' | 'save-failed' | 'invalid'
@@ -22,7 +34,7 @@ export type WorkspaceEditResult = { ok: true; workspace: Workspace } | { ok: fal
 /** 불러오기 결과. cancelled는 다른 모니터 구성 질문에서 취소, empty는 불러올(켜진) 창 규칙이 없음 */
 export type WorkspaceRunResult = { ok: true; report: RestoreReport } | { ok: false; reason: WorkspaceFailReason | 'cancelled' | 'empty' }
 
-/** 저장·불러오기를 부른 곳(로그용) */
+/** 저장·불러오기를 부른 곳(로그용). editor는 설정 창의 워크스페이스 탭 */
 export type WorkspaceSource = 'palette' | 'bar' | 'hotkey' | 'editor'
 
 // renderer가 보낸 값 검사(renderer는 믿지 않는다). 내용 검사는 applyWorkspaceEdit가 하고, 여기서는 모양만 본다.

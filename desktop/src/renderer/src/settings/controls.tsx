@@ -276,7 +276,8 @@ export function TextField({
   labelId,
   describedBy,
   width = 'w-64',
-  maxLength
+  maxLength,
+  ref
 }: {
   value: string
   onChange(v: string): void
@@ -287,9 +288,12 @@ export function TextField({
   describedBy?: string
   width?: string
   maxLength?: number
+  /** 화면이 이 칸으로 포커스를 옮길 때(워크스페이스 탭: 열자마자 이름 칸을 골라 둔다) */
+  ref?: Ref<HTMLInputElement>
 }): React.JSX.Element {
   return (
     <input
+      ref={ref}
       type="text"
       value={value}
       placeholder={placeholder}

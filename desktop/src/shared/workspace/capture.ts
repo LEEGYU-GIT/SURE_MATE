@@ -13,7 +13,8 @@ export interface CaptureSkipped {
   overLimit: number
 }
 
-const TITLE_SEP = /\s(?:-|—|\|)\s/
+/** 창 제목의 조각 구분(' - ', ' — ', ' | '). 설정 창이 제목에서 프로그램 이름을 뗄 때도 쓴다 */
+export const TITLE_SEP = /\s(?:-|—|\|)\s/
 const norm = (s: string): string => s.trim().toLowerCase()
 
 function splitTitle(t: string): string[] {

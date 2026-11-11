@@ -10,14 +10,17 @@ export interface WorkspaceEdit {
   rules: { id: string; enabled: boolean; titleIncludes: string | null; monitor: string }[]
 }
 
-/** 편집 오류 문구(초안. Task 8의 ux-copy에서 다듬는다) */
+/**
+ * 편집 오류 문구. 설정 창 워크스페이스 탭이 그 칸 아래에 그대로 보인다(어느 칸인지는 화면이 이 값으로 가린다).
+ * 길이 문구는 앱의 다른 입력칸과 같은 'N자까지예요' 꼴, 겹침·모니터는 고칠 방법까지 말한다.
+ */
 export const EDIT_ERRORS = {
   nameEmpty: '이름을 적어 주세요',
   nameLong: `이름은 ${L.name}자까지예요`,
-  nameTaken: '같은 이름의 워크스페이스가 있어요',
+  nameTaken: '같은 이름의 워크스페이스가 있어요. 다른 이름을 적어 주세요',
   aliases: `별칭은 ${L.aliases}개, 하나에 ${L.alias}자까지예요`,
-  titleLong: `제목에 포함할 글은 ${L.titleIncludes}자까지예요`,
-  monitor: '대상 모니터를 찾지 못했어요'
+  titleLong: `‘제목에 포함’은 ${L.titleIncludes}자까지예요`,
+  monitor: '대상 모니터를 찾지 못했어요. 대상 모니터 단추로 다시 골라 주세요'
 } as const
 
 /** 앞뒤 공백·빈 칸·중복(검색과 같은 compactOf)을 뺀 별칭 */
