@@ -25,6 +25,7 @@ export interface IntentFileDeps {
   /** 기본 프로그램으로 연다. 실패하면 까닭(빈 글이면 성공) */
   openFile(path: string): Promise<string>
   showInFolder(path: string): void
+  /** Windows 알림. 열 프로그램이 없을 때 팔레트 명령만 쓴다(설정 창 탭은 같은 문구를 탭 안 경고 줄로 보인다) */
   notify(message: string): void
   /** 길이·건수만 넘긴다 */
   log(event: string, data: Record<string, unknown>): void
@@ -38,14 +39,15 @@ export interface NaturalCommandDeps extends IntentFileDeps {
 
 /**
  * 단어 목록 파일을 연다: 없으면 기본 목록으로 만들고(ensure) 기본 프로그램으로 연다. 열 프로그램이 없으면 폴더에서 그 파일을
- * 골라 두고 알린다. 열었으면 true. 경로는 화면·로그에 내지 않는다(Windows 사용자 이름이 있다)
+ * 골라 두고, o.notify이면 Windows 알림으로 알린다(팔레트 명령. 설정 창 탭은 false를 받아 탭 안 경고 줄로 알리므로 두 번 알리지 않는다).
+ * 열었으면 true. 경로는 화면·로그에 내지 않는다(Windows 사용자 이름이 있다)
  */
-export async function openIntentsFile(d: IntentFileDeps): Promise<boolean> {
+export async function openIntentsFile(d: IntentFileDeps, o: { notify?: boolean } = {}): Promise<boolean> {
   const path = await d.ensure()
   const error = await d.openFile(path)
   if (error) {
     d.showInFolder(path)
-    d.notify(NATURAL_NOTES.openFallback)
+    if (o.notify) d.notify(NATURAL_NOTES.openFallback)
   }
   d.log('natural.openIntents', { opened: !error })
   return !error
@@ -54,7 +56,8 @@ export async function openIntentsFile(d: IntentFileDeps): Promise<boolean> {
 export function createNaturalCommands(d: NaturalCommandDeps): { run(id: string): Promise<boolean> } {
   const openIntents = async (): Promise<void> => {
     if (await d.waitKeysReleased()) d.hidePalette(false)
-    await openIntentsFile(d)
+    // 팔레트는 숨었으므로 열 프로그램이 없으면 알림으로 알린다
+    await openIntentsFile(d, { notify: true })
   }
   return {
     async run(id) {

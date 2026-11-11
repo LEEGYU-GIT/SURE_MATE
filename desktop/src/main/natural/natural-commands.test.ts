@@ -47,13 +47,21 @@ it('설정 창의 [단어 목록 파일 열기]는 같은 흐름에서 키 확�
   expect(d.log).toHaveBeenCalledWith('natural.openIntents', { opened: true })
 })
 
-it('설정 창에서도 열 프로그램이 없으면 폴더를 열고 같은 알림을 띄우며 false(화면에 같은 문구를 쓴다)', async () => {
+it('설정 창에서 열 프로그램이 없으면 폴더를 열고 false이며 Windows 알림은 띄우지 않는다(탭 안 경고 줄과 두 번 알리지 않게)', async () => {
   const { d } = cmdDeps('no app')
   expect(await openIntentsFile(d)).toBe(false)
   expect(d.showInFolder).toHaveBeenCalledWith('C:/x/intents.json')
-  expect(d.notify).toHaveBeenCalledWith(NATURAL_NOTES.openFallback)
+  expect(d.notify).not.toHaveBeenCalled()
+  // 탭은 같은 문구를 경고 줄로 보인다(NaturalTab)
   expect(NATURAL_NOTES.openFallback).toBe('단어 목록 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
   expect(d.log).toHaveBeenCalledWith('natural.openIntents', { opened: false })
+})
+
+it('팔레트 명령은 팔레트를 숨긴 뒤라 열 프로그램이 없을 때 같은 문구를 Windows 알림으로 한 번 띄운다', async () => {
+  const { d } = cmdDeps('no app')
+  await createNaturalCommands(d).run('cmd.open-intents')
+  expect(d.notify).toHaveBeenCalledTimes(1)
+  expect(d.notify).toHaveBeenCalledWith(NATURAL_NOTES.openFallback)
 })
 
 it('키를 못 뗐으면 숨기지 않고, 다른 id는 false', async () => {

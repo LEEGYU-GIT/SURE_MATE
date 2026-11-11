@@ -21,6 +21,8 @@ async function signature(path: string): Promise<string> {
 /**
  * 사용자 목록이 있고 읽을 수 있으면 그것만 쓴다(기본 목록과 합치지 않는다). 없거나 못 읽으면 기본 목록.
  * 일부 값을 뺀 경우와 못 읽은 경우는 다시 읽을 때마다 한 번 알린다(내용은 싣지 않는다). 수정 시각·크기가 바뀔 때만 다시 읽는다.
+ * 읽은 결과는 읽기 전에 잰 수정 시각·크기로 기억한다. 편집기가 저장하는 중에 읽어 깨진 결과를 얻었으면, 저장이 끝난 파일은 수정 시각·크기가
+ * 달라 다음에 다시 읽는다(읽은 뒤에 재면 깨진 결과를 다 저장된 파일의 것으로 기억한다).
  * state는 설정 창 말하듯 입력 탭이 쓴다: 지금 목록과 출처, 마지막으로 읽을 때 생긴 문제(알림과 같은 글에서 파일 이름만 뺀 것).
  */
 export function createIntentCache(
@@ -46,7 +48,7 @@ export function createIntentCache(
       next.errors = p.errors
     }
     if (next.errors.length) onErrors(next.errors.map((e) => `${INTENTS_FILE}: ${e}`))
-    cached = { sig: await signature(path), state: next }
+    cached = { sig, state: next }
     return next
   }
   return {

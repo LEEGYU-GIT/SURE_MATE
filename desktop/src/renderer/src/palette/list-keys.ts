@@ -27,3 +27,28 @@ export function listKeyAction(
   if (o.workspaceScope && k.code === 'ArrowRight' && k.caretAtEnd && !k.ctrlKey && !k.shiftKey && !k.altKey) return 'secondary'
   return null
 }
+
+/** 목록이 검색어를 못 따라온 동안 누른 Enter의 처리: 줄 실행, 줄의 보조 동작, 아무것도 하지 않음(삼킴) */
+export type LaggingEnter = { type: 'run'; id: string } | { type: 'secondary'; id: string } | { type: 'none' }
+
+/**
+ * 목록(지연 값으로 그린 것)이 검색어를 아직 못 따라온 동안 누른 Enter. 고른 행은 지난 검색어의 것이므로 지금 검색어로 다시 만든
+ * 맨 위 줄(topRow, Enter일 때만 부른다)에 같은 키로 listKeyAction을 다시 적용한다.
+ * - 'secondary'(맨 위가 저장한 워크스페이스이고 Ctrl+Enter)면 그 줄의 보조 동작(설정 창에서 편집). 불러와 창을 옮기지 않는다.
+ * - 보조키 없는 Enter면 그 줄을 실행한다(직접 추가하기·이름으로 저장 줄 포함).
+ * - 보조키를 누른 Enter인데 맞는 동작이 없으면 삼킨다. 기억하기 안내도 지난 검색어의 것이라 Shift+Enter로 기억하지 않는다.
+ * Enter가 아니거나 한글 조합 중이면 null(cmdk와 입력칸에 맡긴다).
+ */
+export function laggingEnterAction(
+  k: KeyInfo & { caretAtEnd: boolean },
+  topRow: () => Pick<PaletteItem, 'id' | 'group'> | null,
+  o: { workspaceScope?: boolean } = {}
+): LaggingEnter | null {
+  if (!isEnter(k) || k.isComposing) return null
+  const top = k.repeat ? null : topRow()
+  if (!top) return { type: 'none' }
+  const action = listKeyAction(k, top, { remember: false, workspaceScope: o.workspaceScope })
+  if (action === 'secondary') return { type: 'secondary', id: top.id }
+  if (!k.ctrlKey && !k.shiftKey && !k.altKey) return { type: 'run', id: top.id }
+  return { type: 'none' }
+}

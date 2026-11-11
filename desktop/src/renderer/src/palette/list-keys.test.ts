@@ -1,7 +1,8 @@
-import { expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PaletteItem } from '../../../shared/types'
 import type { KeyInfo } from './confirm-state'
-import { listKeyAction } from './list-keys'
+import { WIKI_ADD_ID, WORKSPACE_SAVE_AS_ID } from './filter-items'
+import { laggingEnterAction, listKeyAction } from './list-keys'
 
 type ListKey = KeyInfo & { caretAtEnd: boolean }
 const enter = (o: Partial<ListKey> = {}): ListKey => ({
@@ -79,4 +80,53 @@ it('목록 이동·다른 키는 cmdk와 입력칸에 맡긴다', () => {
   for (const code of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'Tab', 'Space', 'KeyA', 'Escape']) {
     expect(listKeyAction(enter({ code, key: code, shiftKey: true }), workspace, { remember: true }), code).toBeNull()
   }
+})
+
+describe('목록이 검색어를 못 따라온 동안의 Enter: 지금 검색어의 맨 위 줄에 같은 보조키로 판단한다', () => {
+  const top = (item: Pick<PaletteItem, 'id' | 'group'> | null) => (): Pick<PaletteItem, 'id' | 'group'> | null => item
+
+  it('그냥 Enter는 맨 위 줄을 실행한다(워크스페이스면 불러오기, 직접 추가하기·이름으로 저장 줄 포함)', () => {
+    expect(laggingEnterAction(enter(), top(prompt))).toEqual({ type: 'run', id: 'prompt:weekly-report' })
+    expect(laggingEnterAction(enter({ code: 'NumpadEnter' }), top(workspace))).toEqual({ type: 'run', id: 'workspace:ws-report' })
+    expect(laggingEnterAction(enter({ key: 'Process' }), top({ id: WIKI_ADD_ID, group: 'wiki' }))).toEqual({ type: 'run', id: WIKI_ADD_ID })
+    expect(laggingEnterAction(enter(), top({ id: WORKSPACE_SAVE_AS_ID, group: 'workspace' }), { workspaceScope: true })).toEqual({
+      type: 'run',
+      id: WORKSPACE_SAVE_AS_ID
+    })
+  })
+
+  it('맨 위 줄이 저장한 워크스페이스면 Ctrl+Enter는 편집(보조 동작)이고 불러오지 않는다', () => {
+    expect(laggingEnterAction(enter({ ctrlKey: true }), top(workspace))).toEqual({ type: 'secondary', id: 'workspace:ws-report' })
+    expect(laggingEnterAction(enter({ ctrlKey: true, code: 'NumpadEnter' }), top(workspace), { workspaceScope: true })).toEqual({
+      type: 'secondary',
+      id: 'workspace:ws-report'
+    })
+  })
+
+  it('보조키를 누른 Enter인데 맨 위 줄에 맞는 동작이 없으면 실행하지 않고 삼킨다', () => {
+    // 워크스페이스가 아닌 줄에서 Ctrl+Enter, 저장 명령·이름으로 저장 줄에서 Ctrl+Enter
+    expect(laggingEnterAction(enter({ ctrlKey: true }), top(prompt))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ ctrlKey: true }), top({ id: 'cmd.workspace-save', group: 'workspace' }))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ ctrlKey: true }), top({ id: WIKI_ADD_ID, group: 'wiki' }))).toEqual({ type: 'none' })
+    // 지난 목록의 기억하기 안내는 지금 검색어의 것이 아니므로 Shift+Enter로 기억하지도 실행하지도 않는다
+    expect(laggingEnterAction(enter({ shiftKey: true }), top(prompt))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ shiftKey: true }), top(workspace))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ altKey: true }), top(prompt))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ ctrlKey: true, altKey: true }), top(workspace))).toEqual({ type: 'none' })
+  })
+
+  it('맨 위 줄이 없거나 자동 반복된 Enter는 삼킨다', () => {
+    expect(laggingEnterAction(enter(), top(null))).toEqual({ type: 'none' })
+    expect(laggingEnterAction(enter({ repeat: true }), top(prompt))).toEqual({ type: 'none' })
+  })
+
+  it('Enter가 아니거나 한글 조합 중이면 처리하지 않고(null) 맨 위 줄도 만들지 않는다', () => {
+    const topRow = vi.fn(top(workspace))
+    for (const code of ['ArrowDown', 'ArrowUp', 'ArrowRight', 'Tab', 'Escape']) {
+      expect(laggingEnterAction(enter({ code, key: code, ctrlKey: true }), topRow, { workspaceScope: true }), code).toBeNull()
+    }
+    expect(laggingEnterAction(enter({ isComposing: true }), topRow)).toBeNull()
+    expect(laggingEnterAction(enter({ ctrlKey: true, isComposing: true }), topRow)).toBeNull()
+    expect(topRow).not.toHaveBeenCalled()
+  })
 })
