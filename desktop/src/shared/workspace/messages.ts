@@ -1,4 +1,4 @@
-import type { RestoreReport, OutcomeResult } from './restore-result'
+import type { RestoreReport, WindowOutcome } from './restore-result'
 import type { CaptureSkipped } from './capture'
 import { WORKSPACE_LIMITS } from './types'
 
@@ -10,20 +10,26 @@ function names(apps: string[]): string {
   return apps.length > MAX_NAMES ? `${head} 외 ${apps.length - MAX_NAMES}개` : head
 }
 
+/**
+ * 옮겨지지 않은 창(blocked)의 까닭: 관리자 권한인지 모를 때(null)만 관리자 권한 창(UIPI)으로 본다. 관리자 권한이 아니라고 알거나,
+ * 관리자 권한 창을 옮기려 했으면(나도 관리자 권한) 다른 까닭이라 '옮기지 못함'으로 알린다(A-M3)
+ */
+const unmovedAdmin = (o: WindowOutcome): boolean => o.result === 'blocked' && o.elevated == null
+
 /** 결과 구간 순서와 문구. 이름 뒤에는 조사를 붙이지 않는다(받침을 알 수 없는 앱 이름) */
-const GROUPS: { results: OutcomeResult[]; text: (apps: string) => string }[] = [
-  { results: ['missing', 'gone'], text: (a) => `${a} 못 찾음` },
-  { results: ['elevated', 'blocked'], text: (a) => `관리자 권한 창이라 건너뜀: ${a}` },
-  { results: ['hung'], text: (a) => `${a} 응답 없음` },
-  { results: ['off'], text: (a) => `${a} 위치가 조금 다름` },
-  { results: ['failed', 'timeout'], text: (a) => `${a} 옮기지 못함` }
+const GROUPS: { has: (o: WindowOutcome) => boolean; text: (apps: string) => string }[] = [
+  { has: (o) => o.result === 'missing' || o.result === 'gone', text: (a) => `${a} 못 찾음` },
+  { has: (o) => o.result === 'elevated' || unmovedAdmin(o), text: (a) => `관리자 권한 창이라 건너뜀: ${a}` },
+  { has: (o) => o.result === 'hung', text: (a) => `${a} 응답 없음` },
+  { has: (o) => o.result === 'off', text: (a) => `${a} 위치가 조금 다름` },
+  { has: (o) => o.result === 'failed' || o.result === 'timeout' || (o.result === 'blocked' && !unmovedAdmin(o)), text: (a) => `${a} 옮기지 못함` }
 ]
 
 export function restoreSummary(name: string, r: RestoreReport): string {
   const head = r.placed >= r.total ? `${name} · 창 ${r.total}개 모두 배치했어요` : `${name} · 창 ${r.total}개 중 ${r.placed}개 배치`
   const parts = [head]
   for (const g of GROUPS) {
-    const apps = r.outcomes.filter((o) => g.results.includes(o.result)).map((o) => o.app)
+    const apps = r.outcomes.filter(g.has).map((o) => o.app)
     if (apps.length > 0) parts.push(g.text(names(apps)))
   }
   const text = parts.join(' · ')
@@ -31,12 +37,22 @@ export function restoreSummary(name: string, r: RestoreReport): string {
 }
 
 /**
+ * 저장 결과에 덧붙이는, 빼고 저장한 창 조각: 최소화한 창, 40개를 넘은 창(capture가 센 수, A-M9).
+ * 작업 표시줄·화면 밖 창은 사용자가 놓은 창이 아니라 알리지 않는다. 설정 창의 다시 저장 결과도 같은 조각을 쓴다
+ */
+export function skippedParts(skipped: CaptureSkipped): string[] {
+  const parts: string[] = []
+  if (skipped.minimized > 0) parts.push(`최소화된 창 ${skipped.minimized}개는 빼고 저장`)
+  if (skipped.overLimit > 0) parts.push(`${WORKSPACE_LIMITS.windows}개를 넘는 창 ${skipped.overLimit}개는 빼고 저장`)
+  return parts
+}
+
+/**
  * 저장 알림. renameHint: 이름을 붙이지 않고 저장했을 때(바·지금 배치 저장의 '배치 N') 이름·단축키를 바꾸는 곳(설정 창의
  * 워크스페이스 탭)을 덧붙인다. 팔레트 `@이름` 줄은 이름을 친 것이라 붙이지 않는다
  */
 export function saveSummary(o: { name: string; windows: number; skipped: CaptureSkipped; renameHint?: boolean }): string {
-  const parts = [`${o.name} · 창 ${o.windows}개 배치를 저장했어요`]
-  if (o.skipped.minimized > 0) parts.push(`최소화된 창 ${o.skipped.minimized}개는 빼고 저장`)
+  const parts = [`${o.name} · 창 ${o.windows}개 배치를 저장했어요`, ...skippedParts(o.skipped)]
   if (o.renameHint) parts.push('이름·단축키는 설정에서 바꿀 수 있어요')
   return parts.join(' · ')
 }

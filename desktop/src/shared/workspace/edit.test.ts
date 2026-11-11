@@ -54,6 +54,18 @@ describe('applyWorkspaceEdit', () => {
     expect(ok(apply({ name: 'qa모드' }, [testWorkspace({ id: 'ws-x', name: '회의 모드' })])).name).toBe('qa모드')
   })
 
+  it('이름을 바꾸지 않은 편집은 이름 겹침을 다시 보지 않는다(이미 겹친 두 이름도 다른 칸을 저장할 수 있다, A-M1)', () => {
+    const other = testWorkspace({ id: 'ws-other', name: '배치1' })
+    const mine = testWorkspace({ id: 'ws-mine', name: '배치 1' })
+    const edit = editOf(mine)
+    const r = applyWorkspaceEdit(mine, { ...edit, rules: edit.rules.map((x, i) => (i === 0 ? { ...x, enabled: false } : x)) }, [other], NOW)
+    expect(r.ok).toBe(true)
+    // 앞뒤 공백만 붙인 이름도 바꾸지 않은 것
+    expect(applyWorkspaceEdit(mine, { ...edit, name: ' 배치 1 ' }, [other], NOW).ok).toBe(true)
+    // 다른 이름으로 바꾸면 겹침을 본다(겹친 이름 그대로 바꾸는 것도)
+    expect(applyWorkspaceEdit(mine, { ...edit, name: '배치1' }, [other], NOW)).toEqual({ ok: false, errors: [EDIT_ERRORS.nameTaken] })
+  })
+
   it('별칭: 앞뒤 공백·빈 칸·중복(compactOf)을 뺀다(쉼표로 나누기는 편집 화면이 한다)', () => {
     expect(ok(apply({ aliases: ['qa', ' 시험'] })).aliases).toEqual(['qa', '시험'])
     expect(ok(apply({ aliases: ['qa', '', '  ', 'QA', '시험', 'Q A'] })).aliases).toEqual(['qa', '시험'])

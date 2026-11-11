@@ -38,6 +38,14 @@ it('설정 창의 단축키 상태: 등록된 조합, 못 잡았으면 설정 �
   expect(hotkeyStatuses(base(), () => undefined)['pet-control']).toEqual({ acc: null, registered: false })
 })
 
+it('(A-M6) 되살리지 못한 단축키는 그 조합으로 등록 못 함이다(조합은 기억하지만 등록되지 않음)', () => {
+  const s = base()
+  const bound: Record<string, string> = { palette: 'Ctrl+Alt+Space', lookup: 'Ctrl+Alt+W' }
+  const statuses = hotkeyStatuses(s, (id) => bound[id], (id) => id !== 'palette')
+  expect(statuses.palette).toEqual({ acc: 'Ctrl+Alt+Space', registered: false })
+  expect(statuses.lookup).toEqual({ acc: 'Ctrl+Alt+W', registered: true })
+})
+
 it('연결(index.ts와 같은 모양): 조종 단축키를 정하면 바로 등록·저장되고, 비우면 바로 풀린다(다시 시작하지 않아도)', async () => {
   const registered = new Map<string, () => void>()
   const backend: ShortcutBackend = {

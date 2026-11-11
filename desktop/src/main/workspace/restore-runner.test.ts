@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Rect } from '../../shared/types'
 import type { ReadyPlan, RestoreStep } from '../../shared/workspace/restore-plan'
-import { createRestoreRunner, type RestorePorts } from './restore-runner'
+import { createRestoreRunner, focusReturn, type RestorePorts, unfocusableOwnWindow } from './restore-runner'
 
 interface Win {
   minimized: boolean
@@ -30,9 +30,14 @@ interface Win {
 const R = (x: number, y = 0, w = 800, h = 600): Rect => ({ x, y, width: w, height: h })
 const win = (o: Partial<Win> = {}): Win => ({ minimized: false, maximized: false, hung: false, frame: R(5, 5, 100, 100), moves: 0, ...o })
 
+/**
+ * 가짜 창 세계. fg는 시작 때 앞 창이고, 최대화(SW_SHOWMAXIMIZED)와 activate:true 복원(SW_RESTORE)은 실제처럼 그 창을 앞 창으로 만든다
+ * (activate:false 복원·이동·raise(SWP_NOACTIVATE)는 앞 창을 바꾸지 않는다)
+ */
 function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgThrows?: boolean } = {}) {
   const calls: string[] = []
   let clock = 0
+  let front = fg
   // 가짜 sleep이 시계를 앞당기고 지정 시간 뒤 상태가 풀린다
   const pendingRelease = new Map<string, number>()
   const ports: RestorePorts = {
@@ -51,6 +56,7 @@ function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgTh
     normalize: (h, o) => {
       calls.push(`normalize:${h}:${o.activate}`)
       const w = wins[h]
+      if (o.activate) front = h
       if (w.stuck) return
       if (w.stubborn && !o.activate) return
       if (w.goneAfterNormalize) w.gone = true
@@ -68,6 +74,7 @@ function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgTh
     },
     maximize: (h) => {
       calls.push(`maximize:${h}`)
+      front = h
       if (!wins[h].noMaximize) wins[h].maximized = true
     },
     raise: (h) => {
@@ -75,10 +82,11 @@ function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgTh
       if (wins[h].raiseThrows) throw new Error('raise')
     },
     toPhysical: (d) => d,
-    foreground: () => fg,
+    foreground: () => front,
     setForeground: (h) => {
       calls.push(`fg:${h}`)
       if (opts.fgThrows) throw new Error('fg')
+      front = h
       return true
     },
     sleep: async (ms) => {
@@ -87,7 +95,13 @@ function world(wins: Record<string, Win>, fg: string | null = 'fg', opts: { fgTh
     },
     now: () => clock
   }
-  return { ports, calls, clock: () => clock }
+  return {
+    ports,
+    calls,
+    clock: () => clock,
+    /** 다른 창이 스스로 앞으로 나왔다(실행하는 동안 앞 창이 바뀜) */
+    activate: (h: string | null) => void (front = h)
+  }
 }
 
 const step = (id: string, extra: Partial<RestoreStep> = {}): RestoreStep => ({
@@ -97,6 +111,7 @@ const step = (id: string, extra: Partial<RestoreStep> = {}): RestoreStep => ({
   target: R(100, 100),
   dpi: 96,
   state: 'normal',
+  elevated: false,
   ...extra
 })
 const plan = (steps: RestoreStep[], extra: Partial<ReadyPlan> = {}): ReadyPlan => ({
@@ -208,9 +223,9 @@ describe('createRestoreRunner', () => {
     expect(w.calls).not.toContain('move:c')
   })
 
-  it('계획의 missing·elevated 포함, total은 계획 값, 포커스 복귀 한 번', async () => {
+  it('계획의 missing·elevated 포함, total은 계획 값, 최대화가 앞 창을 바꿨으면 끝에 포커스 복귀 한 번', async () => {
     const w = world({ a: win() })
-    const p = plan([step('a')], {
+    const p = plan([step('a', { state: 'maximized' })], {
       total: 3,
       skipped: [
         { ruleId: 'x', app: 'Excel', reason: 'missing' },
@@ -245,17 +260,75 @@ describe('createRestoreRunner', () => {
     expect(rep.maxDiff).toBe(30)
   })
 
-  it('raise가 던지면 그 창만 failed로 기록하고 run은 끝까지 간다', async () => {
+  it('raise가 던지면 그 창만 failed로 기록하고 run은 끝까지 간다(포커스 복귀까지)', async () => {
     const w = world({ a: win({ raiseThrows: true }), b: win() })
-    const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]))
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b', { state: 'maximized' })]))
     expect(rep.outcomes.map((o) => o.result)).toEqual(['failed', 'placed'])
     expect(only(w.calls, /^fg:/)).toEqual(['fg:fg'])
   })
 
   it('setForeground가 던져도 report를 돌려준다', async () => {
     const w = world({ a: win() }, 'fg', { fgThrows: true })
-    const rep = await createRestoreRunner(w.ports).run(plan([step('a')]))
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a', { state: 'maximized' })]))
     expect(rep.restoredFocus).toBe(false)
     expect(rep.placed).toBe(1)
+  })
+
+  describe('끝의 포커스 복귀(A-M4): 실행하는 동안 앞 창이 바뀌었을 때만', () => {
+    it('앞 창이 그대로면 돌려주지 않아 복원한 z-순서(raise 순서)를 지킨다. 포커스는 시작 때 창에 있다(restoredFocus true)', async () => {
+      const w = world({ a: win({ minimized: true }), b: win() })
+      const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]))
+      expect(only(w.calls, /^fg:/)).toEqual([])
+      expect(w.calls[w.calls.length - 1]).toBe('raise:b')
+      expect(rep.restoredFocus).toBe(true)
+    })
+
+    it('다른 창이 앞으로 나왔으면(최대화·SW_RESTORE·스스로 나온 창) 끝에 한 번 돌려준다', async () => {
+      const w = world({ a: win(), b: win() })
+      const ports = { ...w.ports, raise: (h: string) => (w.ports.raise(h), h === 'a' ? w.activate('popup') : undefined) }
+      const rep = await createRestoreRunner(ports).run(plan([step('a'), step('b')]))
+      expect(only(w.calls, /^fg:/)).toEqual(['fg:fg'])
+      expect(w.calls[w.calls.length - 1]).toBe('fg:fg')
+      expect(rep.restoredFocus).toBe(true)
+    })
+
+    it('끝에 앞 창을 읽지 못하면(던짐) 바뀐 것으로 보고 돌려준다', async () => {
+      const w = world({ a: win() })
+      let reads = 0
+      const ports = { ...w.ports, foreground: () => (++reads > 1 ? (() => { throw new Error('fg') })() : w.ports.foreground()) }
+      const rep = await createRestoreRunner(ports).run(plan([step('a')]))
+      expect(only(w.calls, /^fg:/)).toEqual(['fg:fg'])
+      expect(rep.restoredFocus).toBe(true)
+    })
+
+    it('판단 표: 시작 때 앞 창이 없으면 none, 같으면 keep, 다르거나 읽지 못하면(null) restore', () => {
+      expect(focusReturn(null, 'a')).toBe('none')
+      expect(focusReturn(null, null)).toBe('none')
+      expect(focusReturn('a', 'a')).toBe('keep')
+      expect(focusReturn('a', 'b')).toBe('restore')
+      expect(focusReturn('a', null)).toBe('restore')
+    })
+  })
+
+  it('Sure-Mate 자신의 숨은 창·포커스를 받지 않는 창(바·펼침 창, 조종이 끝난 펫)에는 포커스를 돌려주지 않는다', () => {
+    const own = [
+      { hwnd: '1', visible: false, focusable: true },
+      { hwnd: '2', visible: true, focusable: false },
+      { hwnd: '3', visible: true, focusable: true }
+    ]
+    expect(unfocusableOwnWindow('1', own)).toBe(true)
+    expect(unfocusableOwnWindow('2', own)).toBe(true)
+    // 보이는 설정 창, 다른 앱 창
+    expect(unfocusableOwnWindow('3', own)).toBe(false)
+    expect(unfocusableOwnWindow('99', own)).toBe(false)
+  })
+
+  it('옮겨지지 않은 창(blocked)은 계획의 관리자 권한 여부를 결과에 싣는다(알림이 까닭을 고른다, A-M3)', async () => {
+    const w = world({ a: win({ ignoreMove: true }), b: win({ ignoreMove: true }) })
+    const rep = await createRestoreRunner(w.ports).run(plan([step('a', { elevated: null }), step('b', { elevated: false })]))
+    expect(rep.outcomes.map((o) => [o.result, o.elevated])).toEqual([
+      ['blocked', null],
+      ['blocked', false]
+    ])
   })
 })

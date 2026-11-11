@@ -233,6 +233,7 @@ export function Button({
   kind = 'secondary',
   onClick,
   disabled,
+  busy,
   children,
   label,
   ref
@@ -240,6 +241,11 @@ export function Button({
   kind?: 'primary' | 'secondary' | 'danger'
   onClick(): void
   disabled?: boolean
+  /**
+   * 하던 일이 끝날 때까지 잠시 누를 수 없음: disabled와 같은 모양이지만 aria-disabled라 포커스를 잃지 않고, 눌러도 아무것도 하지 않는다.
+   * 누른 단추를 disabled로 바꾸면 Chromium이 포커스를 빼 키보드 사용자가 자리를 잃는다(§16 키보드만으로 사용)
+   */
+  busy?: boolean
   children: ReactNode
   /** 글자만으로 무엇을 하는지 모를 때(아이콘 단추 등) */
   label?: string
@@ -258,8 +264,9 @@ export function Button({
       type="button"
       aria-label={label}
       disabled={disabled}
-      onClick={onClick}
-      className={`h-8 shrink-0 rounded-control px-3 text-small whitespace-nowrap transition-colors duration-(--dur-hover) disabled:cursor-not-allowed disabled:opacity-45 ${look}`}
+      aria-disabled={busy || undefined}
+      onClick={busy ? undefined : onClick}
+      className={`h-8 shrink-0 rounded-control px-3 text-small whitespace-nowrap transition-colors duration-(--dur-hover) disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 ${look}`}
     >
       {children}
     </button>

@@ -5,6 +5,8 @@ import type { SettingsHotkeyId } from '../../../shared/settings/settings-snapsho
 /**
  * 단축키 녹화 칸(설계 문서 §6). 칸에 포커스가 오면 모든 전역 단축키를 잠시 풀고(main), 떠나면 되살린다.
  * 조합을 누르면 main이 검사(막힘·경고·다른 앱이 씀·겹침)하고, 쓸 수 있으면 바로 바꿔 본다. 실패하면 이전 조합이 그대로다.
+ * main이 30초가 지나 녹화를 끝내면 칸을 닫는다. 바꾸기에 실패하면(main은 바꾸기 전에 녹화를 끝낸다) 칸이 열려 있는 동안
+ * 다시 녹화한다: 단축키가 되살아난 채 칸이 남으면 누른 조합이 거절되지 않고 실행된다
  */
 export function HotkeyRecorder({
   id,
@@ -21,12 +23,32 @@ export function HotkeyRecorder({
   const [held, setHeld] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const busy = useRef(false)
+  /** 칸이 화면에 있는 동안 true(닫힌 뒤 도착한 검사 결과로 다시 녹화하지 않게) */
+  const open = useRef(false)
+  const done = useRef(onDone)
+  useEffect(() => {
+    done.current = onDone
+  })
 
   useEffect(() => {
+    open.current = true
     box.current?.focus()
+    // main이 스스로 녹화를 끝냈다(30초): 칸을 닫는다. 검사·바꾸기 중이면 그 결과가 정한다(실패하면 다시 녹화)
+    const off = api.onHotkeyRecordEnded(() => {
+      if (!busy.current) done.current(null)
+    })
     // 녹화가 어떻게 끝나든(창을 떠남·화면이 바뀜) 단축키를 되살린다. main도 창이 닫히거나 30초가 지나면 되살린다
-    return () => api.hotkeyRecord(false)
+    return () => {
+      open.current = false
+      off()
+      api.hotkeyRecord(false)
+    }
   }, [api])
+
+  /** 칸이 열려 있고 포커스가 있으면 녹화를 이어 간다(main이 끝냈을 수 있다: 바꾸기 실패, 검사하는 동안 30초). 녹화 중이면 그대로 */
+  const rearm = (): void => {
+    if (open.current && document.activeElement === box.current) api.hotkeyRecord(true)
+  }
 
   const onKeyDown = async (e: React.KeyboardEvent): Promise<void> => {
     e.preventDefault()
@@ -51,12 +73,16 @@ export function HotkeyRecorder({
     if (check.level === 'block' || check.level === 'in-use' || check.level === 'same-as-other') {
       setProblem(`${r.acc}: ${check.reason ?? '쓸 수 없는 조합이에요'}`)
       busy.current = false
+      rearm()
       return
     }
     const set = await api.hotkeySet(id, r.acc)
     busy.current = false
     if (set.ok) onDone({ acc: set.acc ?? r.acc, warning: set.warning })
-    else setProblem(`${r.acc}: ${set.reason}`)
+    else {
+      setProblem(`${r.acc}: ${set.reason}`)
+      rearm()
+    }
   }
 
   return (

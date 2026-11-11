@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { isImeComposing } from '../../../shared/ime'
 import { withObjectParticle } from '../../../shared/josa'
-import { restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../../shared/workspace/messages'
+import { restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from '../../../shared/workspace/messages'
 import { type SavedLayout, type Workspace, WORKSPACE_LIMITS } from '../../../shared/workspace/types'
 import type { WorkspaceEditResult, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceView } from '../../../shared/workspace/workspace-ipc'
 import { ChevronLeftIcon, ChevronRightIcon, MonitorIcon, TriangleAlertIcon } from '../design/icons'
@@ -10,7 +10,7 @@ import { HotkeyRecorder } from './HotkeyRecorder'
 import { monitorLabel } from './monitor-preview'
 import { MonitorPreview } from './MonitorPreview'
 import { useSettingsCtx } from './use-settings'
-import { draftFromWorkspace, type DraftField, fieldEdit, firstLayout, nextMonitor, rebaseDraft, ruleCaption, type WorkspaceDraft } from './workspace-editor-state'
+import { createFieldCommits, draftFromWorkspace, type DraftField, type FieldCommits, firstLayout, nextMonitor, ruleCaption, type WorkspaceDraft } from './workspace-editor-state'
 
 /**
  * 워크스페이스 탭 문구(design:ux-copy, 해요체). 알림과 같은 문구는 shared/workspace/messages.ts를 쓴다.
@@ -54,8 +54,7 @@ const COPY = {
   /** 오른쪽 열(폭 256)에서 뜻 단위로 줄을 바꾼다 */
   recaptureHelp: ['다시 저장하면 창 목록을', '지금 열린 창으로 바꿔요.', '이름·별칭·단축키는 그대로예요.'],
   previewTitle: '미리 보기',
-  recaptured: (r: Extract<WorkspaceSaveResult, { ok: true }>): string =>
-    r.skipped.minimized > 0 ? `창 ${r.windows}개 배치로 다시 저장했어요 · 최소화된 창 ${r.skipped.minimized}개는 빼고 저장` : `창 ${r.windows}개 배치로 다시 저장했어요`,
+  recaptured: (r: Extract<WorkspaceSaveResult, { ok: true }>): string => [`창 ${r.windows}개 배치로 다시 저장했어요`, ...skippedParts(r.skipped)].join(' · '),
   otherConfigLine: '다른 모니터 구성에서 저장한 배치예요. 불러올 때 주 모니터로 모을지 물어봐요.',
   include: (app: string, title: string): string => `불러올 때 포함: ${app}${title ? `, ${title}` : ''}`,
   maximized: '최대화',
@@ -193,8 +192,9 @@ export function WorkspaceTab(): React.JSX.Element {
     )
   }
 
+  // 저장하는 동안은 busy(aria-disabled): disabled로 바꾸면 포커스를 잃어 저장하지 못했을 때 키보드 자리가 사라진다(A-M8)
   const saveButton = (
-    <Button ref={saveRef} kind="primary" disabled={!data.canControl || saving} onClick={() => void saveNew()}>
+    <Button ref={saveRef} kind="primary" disabled={!data.canControl} busy={saving} onClick={() => void saveNew()}>
       {saving ? COPY.saving : COPY.saveNow}
     </Button>
   )
@@ -308,7 +308,7 @@ const keyOf = (f: DraftField): string => (f.kind === 'rule' ? `rule:${f.id}` : f
 
 /**
  * 워크스페이스 하나. 칸을 저장할 때마다 그 칸만 적은 값으로 편집 값을 만들어(fieldEdit) 차례로 보낸다(앞 저장의 답을 받은 뒤에
- * 다음 편집 값을 만든다: 서로 덮지 않게). 다른 곳에서 바뀌면(item) 손대지 않은 칸만 새 값을 따른다(rebaseDraft).
+ * 다음 편집 값을 만든다: 서로 덮지 않게, createFieldCommits). 다른 곳에서 바뀌면(item) 손대지 않은 칸만 새 값을 따른다(rebaseDraft).
  */
 function WorkspaceDetail({
   item,
@@ -343,7 +343,6 @@ function WorkspaceDetail({
     const rules = firstLayout(item.workspace)?.windows ?? []
     return (rules.find((r) => r.enabled) ?? rules[0])?.id ?? null
   })
-  const queue = useRef<Promise<void>>(Promise.resolve())
   const backRef = useRef<HTMLButtonElement>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const ids = useId()
@@ -358,12 +357,24 @@ function WorkspaceDetail({
   }
   const setError = (f: DraftField, list: string[] | null): void => setErrors((e) => ({ ...e, [keyOf(f)]: list && list.length ? list : undefined }))
 
-  // 다른 곳에서 바뀜(팔레트·바 저장, 단축키, 다시 저장): 손대지 않은 칸만 새 값을 따른다
+  /**
+   * 칸마다 그 자리 저장(차례로). 보낼 때의 칸 글을 기억해, 답이 오기 전에 그 칸을 또 바꿨으면 새 글을 남긴다(A-I2).
+   * 처음 쓸 때(이벤트·effect에서) 만들어 계속 쓴다: 포트는 ref와 바뀌지 않는 setState만 쓴다
+   */
+  const commitsRef = useRef<FieldCommits | null>(null)
+  const commits = (): FieldCommits =>
+    (commitsRef.current ??= createFieldCommits({
+      saved: () => savedRef.current,
+      draft: () => draftRef.current,
+      putSaved,
+      putDraft,
+      send: (id, edit) => track(() => api.editWorkspace(id, edit).catch((): WorkspaceEditResult => ({ ok: false, errors: [COPY.saveFailed] }))),
+      setError
+    }))
+
+  // 다른 곳에서 바뀜(팔레트·바 저장, 단축키, 다시 저장, 이 화면 저장의 알림): 손대지 않은 칸만 새 값을 따른다
   useEffect(() => {
-    const prev = savedRef.current
-    if (item.workspace === prev) return
-    putDraft((d) => rebaseDraft(prev, item.workspace, d))
-    putSaved(item.workspace)
+    commits().external(item.workspace)
   }, [item.workspace])
 
   // 처음 포커스: main이 열었으면(팔레트 Ctrl+Enter, 지금 배치 저장) 이름 칸을 통째로 골라 두고, 목록에서 열었으면 목록 단추
@@ -382,26 +393,7 @@ function WorkspaceDetail({
   }, [rules, active])
 
   /** 그 칸을 그 자리에서 저장한다(차례로). 저장된 값과 같으면 보내지 않고 칸을 다듬은 값으로 맞춘다 */
-  const commit = (field: DraftField): void => {
-    const run = queue.current.then(async () => {
-      const ws = savedRef.current
-      const edit = fieldEdit(ws, draftRef.current, field)
-      if (!edit) {
-        putDraft((d) => rebaseDraft(ws, ws, d, field))
-        setError(field, null)
-        return
-      }
-      const r = await track(() => api.editWorkspace(ws.id, edit).catch((): WorkspaceEditResult => ({ ok: false, errors: [COPY.saveFailed] })))
-      if (r.ok) {
-        const prev = savedRef.current
-        putDraft((d) => rebaseDraft(prev, r.workspace, d, field))
-        putSaved(r.workspace)
-        setError(field, null)
-      } else setError(field, r.errors)
-    })
-    // 한 저장이 던져도 다음 저장은 이어서 보낸다
-    queue.current = run.catch(() => undefined)
-  }
+  const commit = (field: DraftField): void => commits().commit(field)
 
   const setRule = (id: string, patch: Partial<WorkspaceDraft['rules'][number]>): void =>
     putDraft((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
@@ -410,7 +402,7 @@ function WorkspaceDetail({
     setAction('restore')
     setActionNotice(null)
     // 칸을 떠나며 보낸 저장(포함 여부 등)이 끝난 뒤에 불러온다
-    await queue.current
+    await commits().idle()
     const r = await api.runWorkspace(savedRef.current.id).catch((): WorkspaceRunResult => ({ ok: false, reason: 'invalid' }))
     setAction(null)
     setActionNotice(runNotice(savedRef.current.name, r))
@@ -419,7 +411,7 @@ function WorkspaceDetail({
   const recapture = async (): Promise<void> => {
     setAction('recapture')
     setActionNotice(null)
-    await queue.current
+    await commits().idle()
     const r = await track(() =>
       api.recaptureWorkspace(savedRef.current.id).catch((): WorkspaceSaveResult => ({ ok: false, reason: 'save-failed', message: WORKSPACE_NOTES.saveFailed }))
     )
@@ -487,11 +479,12 @@ function WorkspaceDetail({
                 </div>
               </div>
             ) : null}
+            {/* 하는 동안은 busy(aria-disabled): 누른 단추가 포커스를 잃지 않는다(A-M8) */}
             <div className="flex flex-wrap gap-2 @min-[600px]:flex-col">
-              <Button kind="primary" disabled={!canControl || busy} onClick={() => void restore()}>
+              <Button kind="primary" disabled={!canControl} busy={busy} onClick={() => void restore()}>
                 {action === 'restore' ? COPY.restoring : COPY.restore}
               </Button>
-              <Button disabled={!canControl || busy} onClick={() => void recapture()}>
+              <Button disabled={!canControl} busy={busy} onClick={() => void recapture()}>
                 {action === 'recapture' ? COPY.saving : COPY.recapture}
               </Button>
             </div>
@@ -570,7 +563,7 @@ function WorkspaceDetail({
                 <RemoveButton
                   describedBy={f.descId}
                   onRemove={async () => {
-                    await queue.current
+                    await commits().idle()
                     const ok = await api.removeWorkspace(savedRef.current.id).catch(() => false)
                     if (ok) onRemoved(savedRef.current.name)
                     return ok

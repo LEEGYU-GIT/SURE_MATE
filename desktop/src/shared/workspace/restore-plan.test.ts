@@ -68,6 +68,11 @@ describe('planRestore 같은 구성', () => {
     const unknown = [...now.slice(0, 2), live('m', 'notepad.exe', '메모 - Windows 메모장', { elevated: null })]
     expect(ready(planRestore({ ...base, windows: unknown, selfElevated: false })).steps).toHaveLength(3)
   })
+  it('옮길 창마다 관리자 권한 여부(모르면 null)를 함께 넘긴다(옮기지 못했을 때 까닭을 고르는 데 쓴다, A-M3)', () => {
+    const w = [live('b', 'EXCEL.EXE', '예산.xlsx - Excel', { elevated: null }), now[1], live('m', 'notepad.exe', '메모 - Windows 메모장', { elevated: true })]
+    const p = ready(planRestore({ ...base, windows: w, selfElevated: true }))
+    expect(Object.fromEntries(p.steps.map((s) => [s.hwnd, s.elevated]))).toEqual({ b: null, c: false, m: true })
+  })
   it('꺼진 규칙은 total에서 제외', () => {
     const workspace = ws((w) => { Object.values(w.layouts)[0].windows[0].enabled = false })
     const p = ready(planRestore({ ...base, workspace }))

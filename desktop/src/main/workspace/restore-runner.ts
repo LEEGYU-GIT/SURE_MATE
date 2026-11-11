@@ -33,6 +33,32 @@ const UNMOVED_PX = 2
 
 type State = NonNullable<ReturnType<RestorePorts['state']>>
 
+/**
+ * 끝에 시작 때 앞 창으로 포커스를 돌려줄지(A-M4). 실행하는 동안 앞 창이 바뀌었을 때만 돌려준다: SetForegroundWindow는 그 창을
+ * z-순서 맨 위로 올리므로, 바뀌지 않았는데 돌려주면 방금 맞춘 z-순서(raise 순서)가 흐트러진다.
+ * none: 시작 때 앞 창이 없었다, keep: 그대로라 돌려주지 않는다, restore: 돌려준다(끝의 앞 창을 읽지 못한 null도 바뀐 것으로 본다)
+ */
+export function focusReturn(remembered: string | null, now: string | null): 'none' | 'keep' | 'restore' {
+  if (remembered === null) return 'none'
+  return now === remembered ? 'keep' : 'restore'
+}
+
+/** Sure-Mate 자신의 창 하나(HWND는 10진 문자열) */
+export interface OwnWindowState {
+  hwnd: string
+  visible: boolean
+  focusable: boolean
+}
+
+/**
+ * 포커스를 돌려주면 안 되는 Sure-Mate 자신의 창인지: 숨은 창(키를 누른 채 팔레트에서 불러오는 동안 숨은 팔레트가 키 입력을 받는다)과
+ * 포커스를 받지 않는 창(바·펼침 창, 조종이 끝난 펫 창). Sure-Mate 창이 앞일 때 조종을 시작하면 돌아갈 창이 없어(control.prev null)
+ * 불러오기가 시작 때 앞 창으로 펫 창을 기억할 수 있다
+ */
+export function unfocusableOwnWindow(hwnd: string, own: readonly OwnWindowState[]): boolean {
+  return own.some((w) => w.hwnd === hwnd && (!w.visible || !w.focusable))
+}
+
 export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Promise<RestoreReport> } {
   const T = RESTORE_TIMING
 
@@ -127,12 +153,26 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
           r = { ...r, result: 'failed' }
         }
       }
-      outcomes.push({ ruleId: step.ruleId, app: step.app, result: r.result, ...(r.diff !== undefined ? { diff: r.diff } : {}) })
+      outcomes.push({
+        ruleId: step.ruleId,
+        app: step.app,
+        result: r.result,
+        ...(r.diff !== undefined ? { diff: r.diff } : {}),
+        // 옮겨지지 않은 창: 관리자 권한인지(UIPI) 알림이 까닭을 고른다(A-M3)
+        ...(r.result === 'blocked' ? { elevated: step.elevated } : {})
+      })
     }
 
-    // 최소화 해제·최대화가 다른 창을 활성화할 수 있으므로 시작 때 창으로 한 번 되돌린다.
-    let restoredFocus = false
-    if (remembered) {
+    // 최소화 해제(activate)·최대화가 다른 창을 활성화했을 때만 시작 때 창으로 한 번 되돌린다(A-M4)
+    let now: string | null
+    try {
+      now = p.foreground()
+    } catch {
+      now = null
+    }
+    const focus = focusReturn(remembered, now)
+    let restoredFocus = focus === 'keep'
+    if (focus === 'restore' && remembered !== null) {
       try {
         restoredFocus = p.setForeground(remembered)
       } catch {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { restoreSummary, saveSummary, WORKSPACE_NOTES } from './messages'
+import { restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from './messages'
 import type { RestoreReport, WindowOutcome } from './restore-result'
 
 const o = (app: string, result: WindowOutcome['result']): WindowOutcome => ({ ruleId: app, app, result })
@@ -36,6 +36,15 @@ describe('restoreSummary', () => {
     const r = report([o('F', 'timeout'), o('O', 'off'), o('H', 'hung'), o('B', 'blocked'), o('M', 'gone')], 5)
     expect(restoreSummary('N', r)).toBe('N · 창 5개 중 0개 배치 · M 못 찾음 · 관리자 권한 창이라 건너뜀: B · H 응답 없음 · O 위치가 조금 다름 · F 옮기지 못함')
   })
+  it('옮겨지지 않은 창(blocked)은 관리자 권한인지 모를 때만 관리자 권한 창으로, 아니라고 알면 옮기지 못함으로 알린다(A-M3)', () => {
+    const blocked = (app: string, elevated: boolean | null): WindowOutcome => ({ ...o(app, 'blocked'), elevated })
+    expect(restoreSummary('N', report([blocked('Excel', false)], 1))).toBe('N · 창 1개 중 0개 배치 · Excel 옮기지 못함')
+    // 나도 관리자 권한이라 옮기려 한 관리자 권한 창이 움직이지 않았다: UIPI가 까닭이 아니다
+    expect(restoreSummary('N', report([blocked('Visual Studio', true)], 1))).toBe('N · 창 1개 중 0개 배치 · Visual Studio 옮기지 못함')
+    expect(restoreSummary('N', report([blocked('보안 앱', null)], 1))).toBe('N · 창 1개 중 0개 배치 · 관리자 권한 창이라 건너뜀: 보안 앱')
+    const mixed = report([o('F', 'failed'), blocked('Excel', false), blocked('보안 앱', null), o('Visual Studio', 'elevated')], 4)
+    expect(restoreSummary('N', mixed)).toBe('N · 창 4개 중 0개 배치 · 관리자 권한 창이라 건너뜀: 보안 앱·Visual Studio · F·Excel 옮기지 못함')
+  })
 })
 
 describe('saveSummary / notes', () => {
@@ -43,6 +52,15 @@ describe('saveSummary / notes', () => {
   it('최소화한 창 안내', () => {
     expect(saveSummary({ name: '배치 1', windows: 5, skipped: { ...NONE, minimized: 2 } })).toBe('배치 1 · 창 5개 배치를 저장했어요 · 최소화된 창 2개는 빼고 저장')
     expect(saveSummary({ name: '배치 1', windows: 5, skipped: NONE })).toBe('배치 1 · 창 5개 배치를 저장했어요')
+  })
+  it('40개를 넘어 빼고 저장한 창이 있으면 그 수를 알린다(최소화한 창과 같은 꼴, A-M9)', () => {
+    expect(saveSummary({ name: '배치 1', windows: 40, skipped: { ...NONE, overLimit: 3 } })).toBe('배치 1 · 창 40개 배치를 저장했어요 · 40개를 넘는 창 3개는 빼고 저장')
+    expect(saveSummary({ name: '배치 1', windows: 40, skipped: { ...NONE, minimized: 2, overLimit: 1 }, renameHint: true })).toBe(
+      '배치 1 · 창 40개 배치를 저장했어요 · 최소화된 창 2개는 빼고 저장 · 40개를 넘는 창 1개는 빼고 저장 · 이름·단축키는 설정에서 바꿀 수 있어요'
+    )
+    // 설정 창의 다시 저장 결과도 같은 조각을 붙인다
+    expect(skippedParts({ ...NONE, minimized: 1, overLimit: 2 })).toEqual(['최소화된 창 1개는 빼고 저장', '40개를 넘는 창 2개는 빼고 저장'])
+    expect(skippedParts({ ...NONE, excluded: 3, offscreen: 1 })).toEqual([])
   })
   it('이름을 붙이지 않고 저장했으면(배치 N) 이름을 바꾸는 곳을 알린다: 설정 창(팔레트 @가 아님)', () => {
     expect(saveSummary({ name: '배치 2', windows: 3, skipped: NONE, renameHint: true })).toBe('배치 2 · 창 3개 배치를 저장했어요 · 이름·단축키는 설정에서 바꿀 수 있어요')

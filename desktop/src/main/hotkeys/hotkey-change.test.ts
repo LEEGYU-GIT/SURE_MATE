@@ -296,6 +296,62 @@ describe('녹화와 트레이 "단축키 일시 중지"는 따로 기록한다(M
     expect(t.calls.resume).toBe(1)
   })
 
+  it('(A-M6) 되살린 뒤에는(멈춤·바꾸기·30초) 설정 창이 등록 상태를 다시 그리게 알린다. 되살리지 않았으면(트레이 일시 중지) 알리지 않는다', async () => {
+    const resumed: HotkeyId[][] = []
+    const t = rec({ failResume: true })
+    const changer = createHotkeyChanger({
+      manager: { rebind: () => ({ ok: true }), unbind: () => {}, suspendAll: () => {}, resumeAll: () => ({ failed: ['workspace:ws-1'] }), current: () => undefined, ids: () => [] },
+      probe: () => true,
+      save: async () => {},
+      timers: globalTimers(),
+      log: () => {},
+      userSuspended: () => t.state.userSuspended,
+      resumed: (failed) => void resumed.push(failed)
+    })
+    changer.startRecording()
+    changer.stopRecording()
+    changer.startRecording()
+    await changer.set('palette', 'Ctrl+Shift+K')
+    changer.startRecording()
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(resumed).toEqual([['workspace:ws-1'], ['workspace:ws-1'], ['workspace:ws-1']])
+    t.state.userSuspended = true
+    changer.startRecording()
+    changer.stopRecording()
+    expect(resumed).toHaveLength(3)
+  })
+
+  it('(13b) main이 30초가 지나 녹화를 끝내면 녹화 칸을 닫으라고 알린다(트레이 일시 중지 중이어도). 설정 창이 끝낸 녹화(멈춤·바꾸기)는 알리지 않는다', async () => {
+    const state = { userSuspended: false }
+    let ended = 0
+    const changer = createHotkeyChanger({
+      manager: { rebind: () => ({ ok: true }), unbind: () => {}, suspendAll: () => {}, resumeAll: () => ({ failed: [] }), current: () => undefined, ids: () => [] },
+      probe: () => true,
+      save: async () => {},
+      timers: globalTimers(),
+      log: () => {},
+      userSuspended: () => state.userSuspended,
+      recordingEnded: () => void ended++
+    })
+    changer.startRecording()
+    changer.stopRecording()
+    changer.startRecording()
+    await changer.set('palette', 'Ctrl+Shift+K')
+    expect(ended).toBe(0)
+    changer.startRecording()
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(ended).toBe(1)
+    expect(changer.recording()).toBe(false)
+    state.userSuspended = true
+    changer.startRecording()
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(ended).toBe(2)
+    // dispose(앱 끝내기)는 알리지 않는다
+    changer.startRecording()
+    changer.dispose()
+    expect(ended).toBe(2)
+  })
+
   it('되살리지 못한 단축키가 있으면 이름으로 한 번 알리고, 로그에는 id만 남긴다', () => {
     const t = rec({ failResume: true })
     t.changer.startRecording()

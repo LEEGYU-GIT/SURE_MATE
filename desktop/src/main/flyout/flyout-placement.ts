@@ -14,10 +14,15 @@ type Size = { width: number; height: number }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
 
+/** 그 작업 영역에서 카드가 쓸 수 있는 높이: 최대 560, 낮으면 위아래 가장자리 8 DIP를 뺀 높이(메뉴는 이 높이에 들어가는 행만 보인다) */
+export function cardMaxHeight(workArea: Rect): number {
+  return Math.min(FLYOUT_MAX_HEIGHT, workArea.height - 2 * FLYOUT_SCREEN_MARGIN)
+}
+
 function fitSize(size: Size, workArea: Rect): Size {
   return {
     width: Math.min(size.width, workArea.width - 2 * FLYOUT_SCREEN_MARGIN),
-    height: Math.min(size.height, FLYOUT_MAX_HEIGHT, workArea.height - 2 * FLYOUT_SCREEN_MARGIN)
+    height: Math.min(size.height, cardMaxHeight(workArea))
   }
 }
 

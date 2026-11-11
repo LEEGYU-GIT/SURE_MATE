@@ -68,4 +68,27 @@ describe('assignWindows', () => {
     const m = assignWindows([rule('a', 0, { exe: 'a.exe', titleIncludes: 'SUREMATE' })], [lw('1', 'a.exe', 'suremate-ws-a')])
     expect(ids(m)).toEqual({ a: '1' })
   })
+
+  describe('제목 조각이 다른 창 제목의 일부일 때(A-M2)', () => {
+    // 'A.xlsx'는 'BA.xlsx - Excel'에도 들어 있다. 위에 있던(order 0) A 규칙이 B 창을 가져가면 B 창이 A 자리로 옮겨진다
+    const ra = rule('ra', 0, { exe: 'EXCEL.EXE', className: 'XLMAIN', titleIncludes: 'A.xlsx' }, 'A.xlsx - Excel')
+    const rb = rule('rb', 1, { exe: 'EXCEL.EXE', className: 'XLMAIN', titleIncludes: 'BA.xlsx' }, 'BA.xlsx - Excel')
+
+    it('A를 닫았으면 BA 창은 BA 규칙에만 짝짓고 A는 못 찾음', () => {
+      const m = assignWindows([ra, rb], [lw('2', 'EXCEL.EXE', 'BA.xlsx - Excel', 'XLMAIN')])
+      expect(ids(m)).toEqual({ rb: '2' })
+    })
+
+    it('저장한 제목과 같은 창을 모든 규칙에 먼저 짝짓는다(z-순서가 앞이어도 다른 규칙의 같은 제목 창을 가져가지 않는다)', () => {
+      const m = assignWindows([ra, rb], [lw('2', 'EXCEL.EXE', 'BA.xlsx - Excel', 'XLMAIN'), lw('1', 'EXCEL.EXE', 'A.xlsx - Excel', 'XLMAIN')])
+      expect(ids(m)).toEqual({ ra: '1', rb: '2' })
+    })
+
+    it('제목이 바뀌어 저장한 제목과 같은 창이 없으면 긴 조각의 규칙부터 짝짓는다', () => {
+      const ws = [lw('2', 'EXCEL.EXE', 'BA.xlsx [호환 모드] - Excel', 'XLMAIN'), lw('1', 'EXCEL.EXE', 'A.xlsx [호환 모드] - Excel', 'XLMAIN')]
+      expect(ids(assignWindows([ra, rb], ws))).toEqual({ ra: '1', rb: '2' })
+      // A를 닫았고 BA 제목도 바뀌었다
+      expect(ids(assignWindows([ra, rb], [ws[0]]))).toEqual({ rb: '2' })
+    })
+  })
 })

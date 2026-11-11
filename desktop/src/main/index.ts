@@ -218,8 +218,8 @@ const changerProxy: HotkeyChanger = {
 const settingsService = createSettingsService({
   current: () => settings,
   change: changeSettings,
-  // 실제로 등록된 조합(못 잡았으면 설정 값과 등록 못 함). 조종 단축키를 비웠으면 acc null
-  hotkeys: () => hotkeyStatuses(settings, (id) => hotkeys?.current(id)),
+  // 실제로 등록된 조합(못 잡았으면 설정 값과 등록 못 함, 되살리지 못했으면 그 조합으로 등록 못 함). 조종 단축키를 비웠으면 acc null
+  hotkeys: () => hotkeyStatuses(settings, (id) => hotkeys?.current(id), (id) => hotkeys?.isRegistered(id) ?? false),
   displays: () => {
     const primary = screen.getPrimaryDisplay().id
     return screen.getAllDisplays().map((d) => ({ id: String(d.id), label: `${d.label || '모니터'} · ${d.size.width}×${d.size.height}`, primary: d.id === primary }))
@@ -230,6 +230,24 @@ const settingsService = createSettingsService({
   log
 })
 settingsService.onChanged((s) => sendToSettings(IPC.settingsChanged, s))
+
+/** 열린 설정 창의 워크스페이스 탭이 새 목록(단축키 등록 상태 포함)을 그리게 한다. 서비스가 없거나 창이 닫혀 있으면 아무것도 하지 않는다 */
+function pushWorkspaceView(svc: ReturnType<typeof createWorkspaceRuntime> | null = workspaceSvc): void {
+  if (!svc || settingsContentsId() === null) return
+  void svc
+    .listView()
+    .then((v) => sendToSettings(IPC.workspaceChanged, v))
+    .catch((e) => log('workspace.pushError', { error: errorText(e) }))
+}
+
+/**
+ * 단축키를 되살린 뒤(녹화가 끝남·트레이 일시 중지 끄기): 설정 창의 '쓰는 중'·'등록 못 함'을 다시 그리게 한다(A-M6).
+ * 되살리지 못한 단축키는 조합을 기억하지만 등록되지 않았다(HotkeyManager.isRegistered)
+ */
+function hotkeysResumed(): void {
+  settingsService.changed()
+  pushWorkspaceView()
+}
 
 /** 설정 창을 부모로 둔 대화상자(창이 닫혀 있으면 부모 없이) */
 async function openDialog(o: Electron.OpenDialogOptions): Promise<string | null> {
@@ -362,7 +380,7 @@ function startBar(): void {
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
     lookupClipboard: () => (wikiCard ? wikiCard.lookupClipboard() : Promise.resolve()),
-    workspaceMenu: async () => workspaceMenuContent(workspaceSvc ? await workspaceSvc.list() : [], monitorFingerprint(getMonitors()), nativeStatus().ok),
+    workspaceMenu: async (maxHeight) => workspaceMenuContent(workspaceSvc ? await workspaceSvc.list() : [], monitorFingerprint(getMonitors()), nativeStatus().ok, maxHeight),
     // 메뉴는 이미 닫혔고 포커스는 원래 창에 있다. 알림(이름 포함)·바쁨·Win32 불가는 서비스가 처리한다
     onWorkspaceAction: async (a) => {
       if (a.type === 'workspace-edit') {
@@ -537,6 +555,9 @@ async function startShell(): Promise<void> {
     log,
     userSuspended: () => suspended,
     warn,
+    resumed: hotkeysResumed,
+    // 30초가 지나 녹화를 끝냈으면 설정 창의 녹화 칸을 닫는다(되살린 단축키를 누르면 실행되므로)
+    recordingEnded: () => sendToSettings(IPC.settingsHotkeyRecordEnded),
     workspaces: workspaceHotkeys ?? undefined
   })
 
@@ -569,6 +590,7 @@ async function startShell(): Promise<void> {
       else if (!hotkeyChanger?.recording()) {
         const { failed } = manager.resumeAll()
         if (failed.length) warn(resumeFailedNotice(failed, workspaceHotkeys?.name))
+        hotkeysResumed()
       }
       return suspended
     },
@@ -745,8 +767,11 @@ if (!app.requestSingleInstanceLock()) {
     const workspaceService = createWorkspaceRuntime({
       userData,
       reportErrors: (errors) => reportFileErrors('워크스페이스', 'workspaces.loadErrors', errors),
-      // 설정 창의 '쓰는 중'·'등록 못 함'(단축키 관리자는 startShell에서 생긴다)
-      hotkeyBound: (id) => hotkeys?.current(workspaceHotkeyId(id))
+      // 설정 창의 '쓰는 중'·'등록 못 함'(단축키 관리자는 startShell에서 생긴다). 되살리지 못한 조합은 등록 못 함(A-M6)
+      hotkeyBound: (id) => {
+        const hid = workspaceHotkeyId(id)
+        return hotkeys?.isRegistered(hid) ? hotkeys.current(hid) : undefined
+      }
     })
     const workspaceCmds = createWorkspaceCommands({
       service: workspaceService,
@@ -758,13 +783,7 @@ if (!app.requestSingleInstanceLock()) {
     })
     workspaceCommands = workspaceCmds
     // 열린 설정 창의 워크스페이스 탭이 어디서 바뀐 것이든(팔레트·바 저장, 단축키, 편집, 지우기) 새 목록을 그리게 한다
-    workspaceService.onChange(() => {
-      if (settingsContentsId() === null) return
-      void workspaceService
-        .listView()
-        .then((v) => sendToSettings(IPC.workspaceChanged, v))
-        .catch((e) => log('workspace.pushError', { error: errorText(e) }))
-    })
+    workspaceService.onChange(() => pushWorkspaceView(workspaceService))
     // 말하듯 입력(설계 §13): 단어 목록(기본본 + 사용자 intents.json), 기억한 문장, 사용 기록은 모두 이 PC에만 저장한다
     const intentCache = createIntentCache(userData, builtinIntents, (errors) => reportFileErrors('말하듯 입력 단어 목록', 'intents.loadErrors', errors))
     // 단어 목록 파일 열기: 팔레트 명령(cmd.open-intents)과 설정 창 말하듯 입력 탭이 같은 흐름(없으면 만들고 열기, 못 열면 폴더와 알림)

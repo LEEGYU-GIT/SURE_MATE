@@ -40,9 +40,11 @@ export function MenuSeparator(): React.JSX.Element {
 
 /**
  * 메뉴 한 행. 펼침 창은 포커스를 받지 않으므로 tabIndex -1(마우스만).
- * 설명이 있는 행은 두 줄(위아래 여백 8, 높이 52), 없는 행은 한 줄(높이 32).
- * 주황은 "지금 가명 처리가 꺼져 있음"에만 쓴다(바의 "끔" 표시·상태 줄·확인 화면과 같은 뜻): 위험한 값(tone 'warn')이
- * 지금 값일 때만 체크·설명·옅은 바탕이 주황이 되고, 고르지 않은 끔 행은 설명 글로만 알린다.
+ * 설명이 있는 행은 두 줄(위아래 여백 8, 높이 52), 없는 행은 한 줄(높이 32). 제목은 한 줄이고 넘치면 말줄임으로 줄인다
+ * (워크스페이스 이름이 두 줄이 되면 메뉴가 길어져 아래 행이 잘린다. 화면 읽기 프로그램은 DOM의 전체 이름을 읽는다).
+ * 주황(--warn)은 §14-4의 "주의"에 쓴다: 지금 가명 처리가 꺼져 있음(바의 "끔" 표시·상태 줄·확인 화면과 같은 뜻)과
+ * 다른 모니터 구성에서 저장한 워크스페이스. 고르는 행은 위험한 값(tone 'warn')이 지금 값일 때만 체크·설명·옅은 바탕이
+ * 주황이 되고 고르지 않은 끔 행은 설명 글로만 알린다. 고르는 행이 아닌 warn 행(다른 모니터 구성)은 설명 글만 주황이다.
  * 옅은 주황 바탕은 8/12/14%까지만 써서 주황 설명 글이 흰 화면 위에서도 4.5:1 이상이다.
  */
 export function MenuRowButton({ row, icon, onAction }: { row: MenuRow; icon?: ReactNode; onAction(a: FlyoutAction): void }): React.JSX.Element {
@@ -82,7 +84,7 @@ export function MenuRowButton({ row, icon, onAction }: { row: MenuRow; icon?: Re
       <span aria-hidden="true" className="grid h-5 place-items-center">
         {lead}
       </span>
-      <span id={`${id}-title`} className={`min-w-0 text-body leading-5 break-keep ${off ? 'text-fg-2' : 'text-fg'} ${row.checked ? 'font-semibold' : ''}`}>
+      <span id={`${id}-title`} className={`min-w-0 truncate text-body leading-5 ${off ? 'text-fg-2' : 'text-fg'} ${row.checked ? 'font-semibold' : ''}`}>
         {row.title}
       </span>
       {row.detail ? (

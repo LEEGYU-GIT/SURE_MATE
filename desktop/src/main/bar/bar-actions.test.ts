@@ -154,6 +154,37 @@ describe('createFlyoutActions: 펼침 창 메뉴 행', () => {
     expect(JSON.stringify(t.log.mock.calls)).not.toContain('ws-qa')
   })
 
+  it('(A-I1) 워크스페이스 행은 불러오기·저장이 끝나기를 기다리지 않는다: 메뉴를 닫고 시작한 뒤 바로 처리했다고 답해 펼침 창의 다른 단추가 막히지 않는다', async () => {
+    const t = makeFlyout()
+    // 불러오기(2~10초)나 다른 모니터 구성 질문이 아직 끝나지 않았다
+    let finish: (v: boolean) => void = () => {}
+    t.d.workspaceAction.mockImplementationOnce(async (a: { type: string }) => {
+      t.calls.push(`workspace ${a.type}`)
+      return new Promise<boolean>((resolve) => (finish = resolve))
+    })
+    let answered: boolean | null = null
+    const run = t.actions.run({ type: 'workspace-run', id: 'ws-qa' }).then((v) => (answered = v))
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(answered).toBe(true)
+    expect(t.calls).toEqual(['close select', 'workspace workspace-run'])
+    expect(t.log).toHaveBeenCalledWith('flyout.action', { type: 'workspace-run' })
+    // 그동안 다른 메뉴 동작도 처리한다
+    expect(await t.actions.run({ type: 'set-masking', mode: 'restore' })).toBe(true)
+    finish(true)
+    await run
+    expect(t.notify).not.toHaveBeenCalled()
+  })
+
+  it('(A-I1) 기다리지 않은 워크스페이스 동작이 실패하면 오류 코드만 기록하고 알린다(처리하지 못한 거부가 남지 않는다)', async () => {
+    const t = makeFlyout()
+    t.d.workspaceAction.mockRejectedValueOnce(Object.assign(new Error('handoff failed: 가상자동차'), { code: 'EPERM' }))
+    expect(await t.actions.run({ type: 'workspace-save' })).toBe(true)
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(t.log).toHaveBeenCalledWith('flyout.action.failed', { type: 'workspace-save', error: 'EPERM' })
+    expect(t.notify).toHaveBeenCalledWith(BAR_ACTION_FAILED)
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain('가상자동차')
+  })
+
   it('가명 처리 모드: 저장(설정·트레이·바 갱신) 뒤 메뉴를 닫는다', async () => {
     const t = makeFlyout()
     expect(await t.actions.run({ type: 'set-masking', mode: 'off' })).toBe(true)

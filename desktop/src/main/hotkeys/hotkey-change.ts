@@ -3,7 +3,7 @@ import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult } from '../../shared
 import { WORKSPACE_NOTES } from '../../shared/workspace/messages'
 import type { Timers } from '../timers'
 import { acceleratorKeyCode, checkAccelerator } from './accelerator-rules'
-import { type HotkeyId, type HotkeyManager, isWorkspaceHotkey, type WorkspaceHotkeyId, workspaceIdOf } from './hotkey-manager'
+import { type HotkeyId, type HotkeyManager, isWorkspaceHotkey, type WorkspaceHotkeyId, workspaceHotkeyId, workspaceIdOf } from './hotkey-manager'
 
 /** 녹화가 이만큼 이어지면(창을 떠났거나 잊음) 저절로 멈추고 단축키를 되살린다 */
 export const RECORD_TIMEOUT_MS = 30000
@@ -40,6 +40,11 @@ export interface WorkspaceHotkeySide {
   /** workspaces.json에 저장한다. false면 저장하지 못함 */
   save(workspaceId: string, acc: string | null): Promise<boolean>
   name: WorkspaceName
+  /**
+   * workspaces.json에 저장된 워크스페이스 단축키([워크스페이스 id, 조합]). 시작할 때 다른 앱이 잡아 등록하지 못한 조합도 들어 있어
+   * 겹침 검사가 함께 본다(A-M7)
+   */
+  saved?(): Iterable<readonly [string, string]>
 }
 
 export interface HotkeyChangerDeps {
@@ -54,6 +59,16 @@ export interface HotkeyChangerDeps {
   userSuspended?(): boolean
   /** 녹화를 끝내며 다시 등록하지 못한 단축키 알림(트레이) */
   warn?(message: string): void
+  /**
+   * 녹화를 끝내며 단축키를 되살린 뒤(되살리지 못한 id와 함께). 설정 창이 '쓰는 중'·'등록 못 함'을 다시 그리게 알린다(A-M6).
+   * 트레이에서 일시 중지해 되살리지 않았으면 부르지 않는다
+   */
+  resumed?(failed: HotkeyId[]): void
+  /**
+   * main이 스스로 녹화를 끝냈다(30초). 설정 창은 녹화 칸을 닫는다: 칸이 남아 포커스를 쥐고 있으면 되살린 단축키를 누를 때
+   * 거절되지 않고 실행된다. 설정 창이 끝낸 녹화(멈춤·바꾸기)와 dispose에는 부르지 않는다
+   */
+  recordingEnded?(): void
   /** 워크스페이스 단축키. 없으면 workspace:<id>는 모두 없는 워크스페이스로 거절한다 */
   workspaces?: WorkspaceHotkeySide
 }
@@ -92,9 +107,19 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     // 녹화와 트레이 일시 중지는 따로 기록한다: 일시 중지 중이면 그것을 끌 때 되살린다
     if (d.userSuspended?.()) return
     const { failed } = d.manager.resumeAll()
+    d.resumed?.(failed)
     if (!failed.length) return
     d.log('hotkey.resume.failed', { ids: failed })
     d.warn?.(resumeFailedNotice(failed, d.workspaces?.name))
+  }
+
+  /** workspaces.json에 저장했지만 지금 조합이 없는(등록하지 못한) 워크스페이스 단축키 중 같은 조합(A-M7) */
+  const savedOther = (id: HotkeyId, acc: string): HotkeyId | undefined => {
+    for (const [workspaceId, saved] of d.workspaces?.saved?.() ?? []) {
+      const other = workspaceHotkeyId(workspaceId)
+      if (other !== id && same(saved, acc)) return other
+    }
+    return undefined
   }
 
   const check = (id: HotkeyId, acc: string): HotkeyCheck => {
@@ -102,8 +127,9 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     if (acceleratorKeyCode(acc) === null) return { level: 'block', reason: UNKNOWN_KEY }
     const rule = checkAccelerator(acc)
     if (rule.level === 'block') return { level: 'block', reason: rule.reason }
-    // 등록된 모든 단축키(팔레트·용어 찾기·조종·워크스페이스)와 견준다. 보조키 순서·대소문자는 따지지 않는다
-    const other = d.manager.ids().find((o) => o !== id && same(d.manager.current(o), acc))
+    // 등록된 모든 단축키(팔레트·용어 찾기·조종·워크스페이스)와, 저장했지만 등록하지 못한 워크스페이스 단축키와 견준다.
+    // 보조키 순서·대소문자는 따지지 않는다
+    const other = d.manager.ids().find((o) => o !== id && same(d.manager.current(o), acc)) ?? savedOther(id, acc)
     if (other) return { level: 'same-as-other', reason: `${name(other)} 단축키와 같은 조합이에요` }
     if (same(d.manager.current(id), acc)) return { level: 'ok' }
     if (!d.probe(acc)) return { level: 'in-use', reason: IN_USE }
@@ -139,6 +165,7 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
         timer = null
         d.log('hotkey.record.timeout', {})
         stopRecording()
+        d.recordingEnded?.()
       }, RECORD_TIMEOUT_MS)
     },
     stopRecording,

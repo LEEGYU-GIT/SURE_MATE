@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { applyWorkspaceEdit } from '../../../shared/workspace/edit'
+import { applyWorkspaceEdit, type WorkspaceEdit } from '../../../shared/workspace/edit'
 import { monitorKey, toSavedMonitor } from '../../../shared/workspace/monitors'
 import { L, P } from '../../../shared/workspace/test-monitors'
 import { testWorkspace } from '../../../shared/workspace/test-workspaces'
 import type { Workspace } from '../../../shared/workspace/types'
-import { parseWorkspaceEdit } from '../../../shared/workspace/workspace-ipc'
+import { parseWorkspaceEdit, type WorkspaceEditResult } from '../../../shared/workspace/workspace-ipc'
 import {
+  createFieldCommits,
   draftFromWorkspace,
   draftToEdit,
   fieldEdit,
+  fieldKey,
+  type FieldCommits,
   isDraftDirty,
   nextMonitor,
   rebaseDraft,
@@ -146,5 +149,206 @@ describe('저장·바뀜 뒤 초안 맞추기(rebaseDraft)', () => {
     const recaptured: Workspace = { ...ws, layouts: { [Object.keys(ws.layouts)[0]]: { ...Object.values(ws.layouts)[0], windows: Object.values(ws.layouts)[0].windows.map((r, i) => ({ ...r, id: `n${i}` })) } } }
     const d = withRule(draftFromWorkspace(ws), 'r1', { enabled: false })
     expect(rebaseDraft(ws, recaptured, d).rules).toEqual(draftFromWorkspace(recaptured).rules)
+  })
+})
+
+const applied = (w: Workspace, edit: ReturnType<typeof fieldEdit>): Workspace => {
+  const r = applyWorkspaceEdit(w, edit!, [], NOW)
+  if (!r.ok) throw new Error(r.errors.join(', '))
+  return r.workspace
+}
+
+describe('(A-I2) 저장을 보낸 칸을 답이 오기 전에 또 바꾸면 새 값을 남긴다', () => {
+  const include = { kind: 'rule', id: 'r1', prop: 'enabled' } as const
+  const monitor = { kind: 'rule', id: 'r1', prop: 'monitor' } as const
+
+  it('(a) 체크 상자: 끄고 바로 다시 켜면 켠 값이 남고, 다음 저장이 켠 값을 보낸다', () => {
+    const sent = withRule(draftFromWorkspace(ws), 'r1', { enabled: false })
+    const s1 = applied(ws, fieldEdit(ws, sent, include))
+    const now = withRule(sent, 'r1', { enabled: true })
+    const after = rebaseDraft(ws, s1, now, include, { sent })
+    expect(after.rules[0].enabled).toBe(true)
+    expect(fieldEdit(s1, after, include)?.rules[0].enabled).toBe(true)
+  })
+
+  it('(b) 대상 모니터 단추: 두 번 빨리 누르면 두 번 바뀐 모니터(모니터 2대면 처음 모니터)가 남고 다음 저장이 보낸다', () => {
+    const monitors = Object.values(ws.layouts)[0].monitors
+    const click = (d: WorkspaceDraft): WorkspaceDraft => withRule(d, 'r1', { monitor: nextMonitor(d.rules[0].monitor, monitors) })
+    const sent = click(draftFromWorkspace(ws))
+    const s1 = applied(ws, fieldEdit(ws, sent, monitor))
+    const now = click(sent)
+    expect(now.rules[0].monitor).toBe(KP)
+    const after = rebaseDraft(ws, s1, now, monitor, { sent })
+    expect(after.rules[0].monitor).toBe(KP)
+    expect(fieldEdit(s1, after, monitor)?.rules[0].monitor).toBe(KP)
+  })
+
+  it('(c) 이름: Enter로 저장한 뒤 이어서 친 글은 답이 와도 그대로 둔다(한글 조합 중인 글을 바꾸지 않는다)', () => {
+    const sent = { ...draftFromWorkspace(ws), name: '회의' }
+    const s1 = applied(ws, fieldEdit(ws, sent, { kind: 'name' }))
+    const typing = { ...sent, name: '회의 모ㄷ' }
+    expect(rebaseDraft(ws, s1, typing, { kind: 'name' }, { sent }).name).toBe('회의 모ㄷ')
+  })
+
+  it('보낸 뒤 그대로인 칸은 저장된(다듬은) 값으로 바꾼다', () => {
+    const sent = { ...draftFromWorkspace(ws), name: '  회의 모드 ' }
+    const s1 = applied(ws, fieldEdit(ws, sent, { kind: 'name' }))
+    expect(rebaseDraft(ws, s1, sent, { kind: 'name' }, { sent }).name).toBe('회의 모드')
+  })
+
+  it('저장을 보냈거나 기다리는 칸은 다른 곳에서 바뀐 값이 와도 칸의 글을 그대로 둔다(그 저장의 답이 맞춘다)', () => {
+    const s1 = applied(ws, fieldEdit(ws, withRule(draftFromWorkspace(ws), 'r1', { enabled: false }), include))
+    // 끄고 다시 켰다: 저장된 처음 값(켬)과 같아 보여도 손댄 칸이다
+    const now = draftFromWorkspace(ws)
+    expect(rebaseDraft(ws, s1, now, undefined, { pending: new Set([fieldKey(include)]) }).rules[0].enabled).toBe(true)
+    expect(rebaseDraft(ws, s1, now).rules[0].enabled).toBe(false)
+  })
+})
+
+interface EditorFlow {
+  commits: FieldCommits
+  sent: WorkspaceEdit[]
+  flush(): Promise<void>
+  draft(): WorkspaceDraft
+  main(): Workspace
+  type(update: (d: WorkspaceDraft) => WorkspaceDraft): void
+  reply(): Promise<void>
+  push(): Promise<void>
+}
+
+/**
+ * 설정 창 칸 저장의 흐름 전체(WorkspaceDetail과 같은 연결). main은 applyWorkspaceEdit로 저장하고, 답(invoke 응답)과
+ * 바뀐 목록 알림(workspace:changed)을 따로 보낸다. 시험이 둘의 도착 순서를 정한다
+ */
+function editorFlow(start: Workspace): EditorFlow {
+  let saved = start
+  let draft = draftFromWorkspace(start)
+  let main = start
+  const replies: (() => void)[] = []
+  const pushes: Workspace[] = []
+  const sent: WorkspaceEdit[] = []
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  }
+  const commits = createFieldCommits({
+    saved: () => saved,
+    draft: () => draft,
+    putSaved: (w) => void (saved = w),
+    putDraft: (update) => void (draft = update(draft)),
+    send: (_id, edit) =>
+      new Promise<WorkspaceEditResult>((resolve) => {
+        sent.push(edit)
+        const r = applyWorkspaceEdit(main, edit, [], NOW)
+        if (r.ok) {
+          main = r.workspace
+          pushes.push(r.workspace)
+        }
+        replies.push(() => resolve(r))
+      }),
+    setError: () => {}
+  })
+  return {
+    commits,
+    sent,
+    flush,
+    draft: () => draft,
+    main: () => main,
+    type: (update: (d: WorkspaceDraft) => WorkspaceDraft): void => void (draft = update(draft)),
+    /** 기다리던 답 하나 */
+    reply: async (): Promise<void> => {
+      replies.shift()?.()
+      await flush()
+    },
+    /** 바뀐 목록 알림 하나(설정 창의 새 목록, 같은 내용의 다른 객체) */
+    push: async (): Promise<void> => {
+      const next = pushes.shift()
+      if (next) commits.external(structuredClone(next))
+      await flush()
+    }
+  }
+}
+
+describe('(A-I2) 그 자리 저장의 흐름: 답과 바뀐 목록 알림이 어느 순서로 와도 마지막으로 바꾼 값이 저장된다', () => {
+  const include = { kind: 'rule', id: 'r1', prop: 'enabled' } as const
+  const monitor = { kind: 'rule', id: 'r1', prop: 'monitor' } as const
+  const enabledOf = (w: Workspace): boolean => Object.values(w.layouts)[0].windows[0].enabled
+
+  for (const order of ['reply-first', 'push-first'] as const) {
+    const answer = async (t: EditorFlow): Promise<void> => {
+      if (order === 'reply-first') {
+        await t.reply()
+        await t.push()
+      } else {
+        await t.push()
+        await t.reply()
+      }
+    }
+
+    it(`(a) 체크 상자를 끄고 바로 다시 켜면 켬으로 저장된다(${order})`, async () => {
+      const t = editorFlow(ws)
+      t.type((d) => withRule(d, 'r1', { enabled: false }))
+      t.commits.commit(include)
+      await t.flush()
+      t.type((d) => withRule(d, 'r1', { enabled: true }))
+      t.commits.commit(include)
+      await answer(t)
+      expect(t.draft().rules[0].enabled).toBe(true)
+      await answer(t)
+      await t.commits.idle()
+      expect(t.sent.map((e) => e.rules[0].enabled)).toEqual([false, true])
+      expect(enabledOf(t.main())).toBe(true)
+      expect(t.draft().rules[0].enabled).toBe(true)
+    })
+
+    it(`(b) 모니터 단추를 두 번 빨리 누르면 두 번 바뀐 모니터로 저장된다(${order})`, async () => {
+      const t = editorFlow(ws)
+      const monitors = Object.values(ws.layouts)[0].monitors
+      const click = (): void => {
+        t.type((d) => withRule(d, 'r1', { monitor: nextMonitor(d.rules[0].monitor, monitors) }))
+        t.commits.commit(monitor)
+      }
+      click()
+      await t.flush()
+      click()
+      await answer(t)
+      await answer(t)
+      await t.commits.idle()
+      expect(Object.values(t.main().layouts)[0].windows[0].target.monitor).toBe(KP)
+      expect(t.draft().rules[0].monitor).toBe(KP)
+    })
+
+    it(`(c) 이름을 Enter로 저장하고 이어서 치는 글은 답이 와도 그대로이고, 다음 Enter가 저장한다(${order})`, async () => {
+      const t = editorFlow(ws)
+      t.type((d) => ({ ...d, name: '회의' }))
+      t.commits.commit({ kind: 'name' })
+      await t.flush()
+      t.type((d) => ({ ...d, name: '회의 모ㄷ' }))
+      await answer(t)
+      expect(t.draft().name).toBe('회의 모ㄷ')
+      t.type((d) => ({ ...d, name: '회의 모드' }))
+      t.commits.commit({ kind: 'name' })
+      await t.flush()
+      await answer(t)
+      await t.commits.idle()
+      expect(t.main().name).toBe('회의 모드')
+      expect(t.draft().name).toBe('회의 모드')
+    })
+  }
+
+  it('보낸 값과 같아 보내지 않는 칸은 다듬은 값으로 맞추고, 저장 실패는 칸의 글을 그대로 둔다', async () => {
+    const t = editorFlow(ws)
+    t.type((d) => ({ ...d, name: '  QA 모드 ' }))
+    t.commits.commit({ kind: 'name' })
+    await t.commits.idle()
+    expect(t.sent).toEqual([])
+    expect(t.draft().name).toBe('QA 모드')
+    // 이름을 비우면 main이 거절한다(오류 문구는 칸 아래, 글은 그대로)
+    t.type((d) => ({ ...d, name: '' }))
+    t.commits.commit({ kind: 'name' })
+    await t.flush()
+    await t.reply()
+    await t.commits.idle()
+    expect(t.draft().name).toBe('')
+    expect(t.main().name).toBe('QA 모드')
   })
 })

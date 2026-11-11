@@ -31,6 +31,14 @@ export function settingsWindowOptions(preload: string, route: SettingsRoute): Br
 }
 
 /**
+ * 화면(index.html)의 <title>Sure-Mate</title>가 창 제목을 바꾸지 않게 한다. 작업 표시줄·Alt+Tab에 "Sure-Mate 설정"·
+ * "Sure-Mate 시작하기"(경로를 바꿀 때 setTitle)가 그대로 보인다. 설정 창과 첫 실행 안내는 같은 창이라 한 번 걸면 된다
+ */
+export function keepWindowTitle(w: { on(event: 'page-title-updated', listener: (e: { preventDefault(): void }) => void): unknown }): void {
+  w.on('page-title-updated', (e) => e.preventDefault())
+}
+
+/**
  * 설정 창을 열 때 할 일. 열린 창은 다시 쓴다: 경로가 바뀌면(첫 실행 안내 ↔ 설정) 크기를 바꿔 다시 읽고, 같은 설정 창이면
  * 다시 읽지 않고 탭만 바꾸라고 알린다(다시 읽으면 녹화 중인 단축키·아직 저장하지 않은 입력이 사라진다).
  * 아직 읽는 중인 창은 알림을 받을 화면이 없을 수 있어 탭을 붙여 다시 읽는다(잃을 것이 없다).

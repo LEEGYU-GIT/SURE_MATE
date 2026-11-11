@@ -33,6 +33,8 @@ export function createWorkspaceHotkeys(d: WorkspaceHotkeysDeps): WorkspaceHotkey
   const handled = new Set<string>()
   /** 마지막으로 본 이름(겹침·알림 문구용) */
   let names = new Map<string, string>()
+  /** workspaces.json에 저장된 조합(워크스페이스 id → 조합). 등록하지 못한 조합도 겹침 검사가 본다(A-M7) */
+  let savedHotkeys = new Map<string, string>()
 
   const handler =
     (id: string) =>
@@ -53,6 +55,7 @@ export function createWorkspaceHotkeys(d: WorkspaceHotkeysDeps): WorkspaceHotkey
   return {
     sync(list) {
       names = new Map(list.map((w) => [w.id, w.name]))
+      savedHotkeys = new Map(list.flatMap((w) => (w.hotkey ? [[w.id, w.hotkey] as const] : [])))
       const wanted = new Map(list.flatMap((w) => (w.hotkey ? [[workspaceHotkeyId(w.id), w.hotkey] as const] : [])))
       // 먼저 지운 워크스페이스·비운 단축키·바뀐 조합을 모두 푼다(바뀐 조합끼리 서로 막지 않게)
       for (const hid of d.manager.ids()) {
@@ -86,8 +89,18 @@ export function createWorkspaceHotkeys(d: WorkspaceHotkeysDeps): WorkspaceHotkey
       return true
     },
 
-    save: (id, acc) => d.service.setHotkey(id, acc),
+    async save(id, acc) {
+      const ok = await d.service.setHotkey(id, acc)
+      // 목록이 바뀌어 다시 맞추기(sync) 전에도 겹침 검사가 저장한 조합을 보게
+      if (ok) {
+        if (acc === null) savedHotkeys.delete(id)
+        else savedHotkeys.set(id, acc)
+      }
+      return ok
+    },
 
-    name: (id) => names.get(id) ?? null
+    name: (id) => names.get(id) ?? null,
+
+    saved: () => savedHotkeys.entries()
   }
 }

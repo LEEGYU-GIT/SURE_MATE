@@ -101,6 +101,46 @@ it('캐시는 수정 시각·크기가 같으면 다시 읽지 않는다', async
   expect((await cache.get())[0].name).toBe('two')
 })
 
+type Loaded = Awaited<ReturnType<typeof loadWorkspaces>>
+
+/** 첫 읽기를 release()까지 멈추고 미리 읽어 둔 값(before)을 돌려주는 읽기. 다음 읽기부터는 파일을 그대로 읽는다 */
+function gatedLoad(before: Loaded): { load: (d: string) => Promise<Loaded>; release: () => void; calls: () => number } {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  let calls = 0
+  const load = async (d: string): Promise<Loaded> => {
+    if (++calls > 1) return loadWorkspaces(d)
+    await gate
+    return before
+  }
+  return { load, release: () => release(), calls: () => calls }
+}
+
+it('get이 읽는 사이 save가 끝나면 읽은(저장 전) 목록을 캐시에 두지 않는다(A-M5)', async () => {
+  await saveWorkspaces(dir, [mk('a', 'one')])
+  const g = gatedLoad(await loadWorkspaces(dir))
+  const cache = createWorkspaceCache(dir, () => undefined, g.load)
+  const reading = cache.get()
+  await cache.save([mk('a', 'two')])
+  g.release()
+  // 먼저 시작한 읽기는 저장 전 목록을 돌려줘도 되지만, 그 뒤의 get은 저장한 목록이다
+  expect((await reading)[0].name).toBe('one')
+  expect((await cache.get())[0].name).toBe('two')
+})
+
+it('읽는 사이 다른 프로그램이 파일을 바꾸면 읽기 전 서명으로 캐시에 둬 다음 get이 다시 읽는다(B-M5)', async () => {
+  await saveWorkspaces(dir, [mk('a', 'one')])
+  const g = gatedLoad(await loadWorkspaces(dir))
+  const cache = createWorkspaceCache(dir, () => undefined, g.load)
+  const reading = cache.get()
+  // 메모장으로 고쳐 저장했다(크기가 달라 서명이 바뀐다)
+  await saveWorkspaces(dir, [mk('a', 'two (메모장)')])
+  g.release()
+  expect((await reading)[0].name).toBe('one')
+  expect((await cache.get())[0].name).toBe('two (메모장)')
+  expect(g.calls()).toBe(2)
+})
+
 it('캐시 save 뒤에는 저장한 목록을 돌려준다', async () => {
   const cache = createWorkspaceCache(dir, () => undefined)
   const list = [mk('a', 'x')]

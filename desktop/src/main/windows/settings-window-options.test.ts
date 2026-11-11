@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planSettingsOpen, settingsWindowOptions } from './settings-window-options'
+import { keepWindowTitle, planSettingsOpen, settingsWindowOptions } from './settings-window-options'
 
 it('설정 창: 일반 창(포커스·작업 표시줄), 어두운 제목 줄, 처음엔 숨김, 크기 880×640(최소 720×520)', () => {
   const o = settingsWindowOptions('preload.js', '/settings')
@@ -24,6 +24,14 @@ it('설정 창: 일반 창(포커스·작업 표시줄), 어두운 제목 줄, �
 it('온보딩: 같은 창 모양에 크기만 640×560 고정', () => {
   const o = settingsWindowOptions('preload.js', '/onboarding')
   expect(o).toMatchObject({ width: 640, height: 560, resizable: false, maximizable: false, title: 'Sure-Mate 시작하기' })
+})
+
+it('(13b) 화면의 <title>(Sure-Mate)이 창 제목(Sure-Mate 설정·시작하기)을 바꾸지 않게 page-title-updated를 막는다', () => {
+  const listeners = new Map<string, (e: { preventDefault(): void }) => void>()
+  keepWindowTitle({ on: (event, listener) => void listeners.set(event, listener) })
+  let prevented = 0
+  listeners.get('page-title-updated')?.({ preventDefault: () => void prevented++ })
+  expect(prevented).toBe(1)
 })
 
 describe('설정 창을 탭과 함께 열기(펫 메뉴 "펫 설정" → 말랑 메이트 탭)', () => {

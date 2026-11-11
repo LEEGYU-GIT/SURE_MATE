@@ -24,6 +24,11 @@ const settings: SettingsApi = {
   },
   hotkeyCheck: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeyCheck, id, acc),
   hotkeyRecord: (on) => ipcRenderer.send(IPC.settingsHotkeyRecord, on),
+  onHotkeyRecordEnded: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.settingsHotkeyRecordEnded, listener)
+    return () => ipcRenderer.removeListener(IPC.settingsHotkeyRecordEnded, listener)
+  },
   hotkeySet: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeySet, id, acc),
   openFile: (which) => ipcRenderer.send(IPC.settingsOpenFile, which),
   openOnboarding: () => ipcRenderer.send(IPC.settingsOpenOnboarding),

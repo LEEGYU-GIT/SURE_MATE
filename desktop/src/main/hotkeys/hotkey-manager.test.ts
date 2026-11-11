@@ -211,3 +211,28 @@ it('일시 중지 중에 묶으면 등록해 보기만 하고(다른 앱이 쓰�
   expect(m.bind('workspace:ws-3', 'Ctrl+Alt+3', () => {})).toEqual({ ok: true })
   expect(b.registered.has('Ctrl+Alt+3')).toBe(true)
 })
+
+it('(A-M6) isRegistered: 되살리지 못한 단축키는 조합을 기억해도(current) 등록되지 않은 것이다. 일시 중지 중은 등록된 것으로 본다', () => {
+  const b = new FakeBackend()
+  const m = new HotkeyManager(b)
+  m.bind('palette', 'Alt+`', () => {})
+  m.bind('workspace:ws-a', 'Ctrl+Alt+1', () => {})
+  expect(m.isRegistered('workspace:ws-a')).toBe(true)
+  m.suspendAll()
+  // 녹화 중(되살릴 때 다시 등록한다)
+  expect(m.isRegistered('workspace:ws-a')).toBe(true)
+  b.taken.add('Ctrl+Alt+1')
+  expect(m.resumeAll()).toEqual({ failed: ['workspace:ws-a'] })
+  expect(m.current('workspace:ws-a')).toBe('Ctrl+Alt+1')
+  expect(m.isRegistered('workspace:ws-a')).toBe(false)
+  expect(m.isRegistered('palette')).toBe(true)
+  // 다음 되살리기에 다시 잡으면 등록된 것
+  b.taken.delete('Ctrl+Alt+1')
+  m.suspendAll()
+  expect(m.resumeAll()).toEqual({ failed: [] })
+  expect(m.isRegistered('workspace:ws-a')).toBe(true)
+  // 조합이 없는 단축키·모르는 id
+  m.bind('pet-control', null, () => {})
+  expect(m.isRegistered('pet-control')).toBe(false)
+  expect(m.isRegistered('lookup')).toBe(false)
+})

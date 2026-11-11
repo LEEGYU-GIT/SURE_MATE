@@ -131,6 +131,8 @@ export const IPC = {
   settingsHotkeyCheck: 'settings:hotkey-check',
   /** 설정 창 → main(send): 단축키 녹화 시작·끝(녹화 중에는 모든 단축키를 잠시 푼다) */
   settingsHotkeyRecord: 'settings:hotkey-record',
+  /** main → 설정 창: main이 스스로 녹화를 끝냈다(30초). 녹화 칸을 닫는다 */
+  settingsHotkeyRecordEnded: 'settings:hotkey-record-ended',
   settingsHotkeySet: 'settings:hotkey-set',
   /** 설정 창 → main(send): settings.json·로그 폴더를 기본 프로그램으로 */
   settingsOpenFile: 'settings:open-file',
@@ -313,6 +315,8 @@ export interface SettingsApi {
   onShowTab(cb: (tab: SettingsTabId, ws: string | null) => void): () => void
   hotkeyCheck(id: SettingsHotkeyId, acc: string): Promise<HotkeyCheck>
   hotkeyRecord(on: boolean): void
+  /** main이 스스로 녹화를 끝냈다(30초가 지나 단축키를 되살림). 녹화 칸을 닫는다. 돌려받은 함수로 그만 듣는다 */
+  onHotkeyRecordEnded(cb: () => void): () => void
   /** acc null은 단축키 비우기(조종 단축키만, 나머지는 main이 거절) */
   hotkeySet(id: SettingsHotkeyId, acc: string | null): Promise<HotkeySetResult>
   openFile(which: 'settings' | 'logs'): void

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import builtinGlossary from '../../../../resources/glossary.json'
 import builtinIntents from '../../../../resources/intents.json'
 import builtinPrompts from '../../../../resources/prompts.json'
-import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
+import { cardMaxHeight, edgeCardRect, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
 import { barRect, barSize, DEFAULT_BAR_RATIO, handleRect, itemOffsets } from '../../../shared/bar/bar-layout'
 import type { BarEdge } from '../../../shared/bar/bar-settings'
 import type { FlyoutContent, FlyoutMessage, FlyoutPad, WikiCardView } from '../../../shared/flyout/flyout-content'
+import { workspaceMenuRowsThatFit } from '../../../shared/flyout/workspace-menu-fit'
 import { parseGlossaryPack } from '../../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/glossary/wiki-lookup'
@@ -293,16 +294,20 @@ const WS_MENU: Extract<FlyoutContent, { kind: 'workspace-menu' }> = {
   canSave: true,
   more: 0
 }
-const WS_MENU_MORE: Extract<FlyoutContent, { kind: 'workspace-menu' }> = {
-  kind: 'workspace-menu',
-  workspaces: [
-    ...Array.from({ length: 6 }, (_, i) => ({ id: `ws-${i}`, name: ['QA 모드', '회의', '코드 리뷰', '시험 결과 정리', '보고서 작성', '시뮬레이터 점검'][i], windows: 2 + (i % 3), otherConfig: false })),
-    { id: 'ws-long', name: 'XY방산 HIL 벤치 시험 결과 비교와 보고서 초안 작성', windows: 5, otherConfig: false },
-    { id: 'ws-dock', name: '외부 모니터 발표', windows: 2, otherConfig: true }
-  ],
-  canSave: true,
-  more: 3
+/** 최근 8개(긴 이름 하나, 다른 구성 하나). 그 밖에 3개가 더 있다 */
+const WS_MENU_MANY: Extract<FlyoutContent, { kind: 'workspace-menu' }>['workspaces'] = [
+  ...Array.from({ length: 6 }, (_, i) => ({ id: `ws-${i}`, name: ['QA 모드', '회의', '코드 리뷰', '시험 결과 정리', '보고서 작성', '시뮬레이터 점검'][i], windows: 2 + (i % 3), otherConfig: false })),
+  { id: 'ws-long', name: 'XY방산 HIL 벤치 시험 결과 비교와 보고서 초안 작성', windows: 5, otherConfig: false },
+  { id: 'ws-dock', name: '외부 모니터 발표', windows: 2, otherConfig: true }
+]
+
+/** main(workspaceMenuContent)처럼 장면 작업 영역에서 카드 높이에 들어가는 행만 보이고 나머지는 '외 N개'로 센다 */
+function fitWorkspaceMenu(canSave: boolean, beyond: number): Extract<FlyoutContent, { kind: 'workspace-menu' }> {
+  const shown = workspaceMenuRowsThatFit({ maxHeight: cardMaxHeight(WORK_AREA), canSave, max: WS_MENU_MANY.length })
+  return { kind: 'workspace-menu', workspaces: WS_MENU_MANY.slice(0, shown), canSave, more: WS_MENU_MANY.length - shown + beyond }
 }
+const WS_MENU_MORE = fitWorkspaceMenu(true, 3)
+const WS_MENU_MORE_BLOCKED = fitWorkspaceMenu(false, 3)
 
 function flyoutScene(id: string, title: string, bar: BarViewState | null, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
   const driver = createFlyoutDriver(bar, anchor, content)
@@ -1208,7 +1213,14 @@ export const SCENES: Scene[] = [
   flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(저장한 배치 3개, 하나는 다른 모니터 구성)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU),
   flyoutScene('flyout-workspaces-empty', '펼침 창: 워크스페이스(저장한 배치 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: true, more: 0 }),
   flyoutScene('flyout-workspaces-blocked', '펼침 창: 워크스페이스(보안 프로그램이 막아 저장 행을 쓸 수 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { ...WS_MENU, canSave: false }),
-  flyoutScene('flyout-workspaces-more', '펼침 창: 워크스페이스(8개 + 외 3개 더, 긴 이름은 줄임)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU_MORE),
+  flyoutScene('flyout-workspaces-more', '펼침 창: 워크스페이스(8개 + 외 3개 더, 긴 이름은 한 줄로 줄임)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU_MORE),
+  flyoutScene(
+    'flyout-workspaces-more-blocked',
+    '펼침 창: 워크스페이스(저장할 수 없어 저장 행이 두 줄, 카드 높이에 맞춰 7개 + 외 4개 더)',
+    EDGE_RIGHT,
+    { itemId: 'workspace' },
+    WS_MENU_MORE_BLOCKED
+  ),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
   ...CARD_SCENES,

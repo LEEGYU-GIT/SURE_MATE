@@ -77,7 +77,7 @@ function setup(o: { taken?: string[]; list?: Workspace[]; beforeRun?: () => Prom
     log,
     workspaces: hotkeys
   })
-  return { manager, registered, hotkeys, changer, state, runs, saved, logs, registers: () => registers }
+  return { manager, registered, taken, hotkeys, changer, state, runs, saved, logs, registers: () => registers }
 }
 
 describe('sync: 워크스페이스 목록에 맞춰 단축키를 등록·해제한다', () => {
@@ -248,6 +248,25 @@ describe('설정 창에서 바꾸기(단축키 바꾸기 set, id workspace:<id>)
     expect(await t.changer.set('pet-control', 'Alt+Ctrl+2')).toMatchObject({ ok: false, reason: expect.stringContaining('가상자동차 보고') })
     expect(t.manager.current('pet-control')).toBe('Ctrl+Alt+P')
     expect(t.manager.current('palette')).toBe('Alt+`')
+  })
+
+  it('(A-M7) workspaces.json에 저장했지만 등록하지 못한 워크스페이스 단축키와 같은 조합도 겹침이다(그사이 다른 앱이 놓아 비어 있어도)', async () => {
+    const t = setup({ taken: ['Ctrl+Alt+9'], list: [ws('ws-1', 'QA 모드', 'Ctrl+Alt+9'), ws('ws-2', '가상자동차 보고')] })
+    expect(t.hotkeys.sync(t.state.list).failed).toEqual([{ id: 'ws-1', hotkey: 'Ctrl+Alt+9' }])
+    // 시작할 때 잡고 있던 다른 앱이 그 조합을 놓았다
+    t.taken.delete('Ctrl+Alt+9')
+    const same = { level: 'same-as-other', reason: '‘QA 모드’ 워크스페이스 단축키와 같은 조합이에요' }
+    expect(t.changer.check('lookup', 'Ctrl+Alt+9')).toEqual(same)
+    expect(t.changer.check('workspace:ws-2', 'alt+ctrl+9')).toEqual(same)
+    expect(await t.changer.set('pet-control', 'Ctrl+Alt+9')).toEqual({ ok: false, reason: same.reason })
+    expect(t.manager.current('pet-control')).toBe('Ctrl+Alt+P')
+    // 그 워크스페이스가 자기 조합으로 다시 정하는 것은 겹침이 아니다(이제 등록된다)
+    expect(t.changer.check('workspace:ws-1', 'Ctrl+Alt+9')).toEqual({ level: 'ok' })
+    expect(await t.changer.set('workspace:ws-1', 'Ctrl+Alt+9')).toEqual({ ok: true, acc: 'Ctrl+Alt+9' })
+    expect(t.registered.has('Ctrl+Alt+9')).toBe(true)
+    // 비운 조합은 더 이상 겹침이 아니다(저장한 즉시)
+    expect(await t.changer.set('workspace:ws-1', null)).toEqual({ ok: true, acc: null })
+    expect(t.changer.check('lookup', 'Ctrl+Alt+9').level).not.toBe('same-as-other')
   })
 
   it('비우면(null) 풀고 단축키 없음으로 저장한다. 처리기는 남아 다시 정할 수 있다', async () => {

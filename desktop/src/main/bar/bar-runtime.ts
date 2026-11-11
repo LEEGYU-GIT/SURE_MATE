@@ -3,8 +3,9 @@ import type { BarItem } from '../../shared/bar/bar-items'
 import type { BarShape } from '../../shared/bar/bar-settings'
 import type { ShownPayload } from '../../shared/ipc-channels'
 import type { MaskingMode } from '../../shared/types'
-import type { FlyoutAction, MenuContent } from '../../shared/flyout/flyout-content'
+import { FLYOUT_MAX_HEIGHT, type FlyoutAction, type MenuContent } from '../../shared/flyout/flyout-content'
 import { createFlyoutController, type FlyoutController } from '../flyout/flyout-controller'
+import { cardMaxHeight } from '../flyout/flyout-placement'
 import type { OverlayIpc } from '../ipc'
 import { getMonitors } from '../native/coords'
 import { mouseButtonDown as readMouseButtons } from '../native/input'
@@ -39,9 +40,12 @@ export interface BarRuntimeOptions {
   copyWiki(id: string): Promise<boolean>
   /** 위키 카드 [클립보드 글로 찾기](WikiCard.lookupClipboard) */
   lookupClipboard(): Promise<void>
-  /** 워크스페이스 메뉴의 내용(파일 캐시를 읽는다) */
-  workspaceMenu(): Promise<Extract<MenuContent, { kind: 'workspace-menu' }>>
-  /** 워크스페이스 메뉴 행 동작(불러오기·저장·모두 보기). 메뉴는 이미 닫혀 있다 */
+  /**
+   * 워크스페이스 메뉴의 내용(파일 캐시를 읽는다). maxHeight는 바가 있는 모니터에서 카드가 쓸 수 있는 높이(DIP):
+   * 메뉴는 스크롤하지 않으므로 그 높이에 들어가는 행만 보인다
+   */
+  workspaceMenu(maxHeight: number): Promise<Extract<MenuContent, { kind: 'workspace-menu' }>>
+  /** 워크스페이스 메뉴 행 동작(불러오기·저장·모두 보기). 메뉴는 이미 닫혀 있고, 펼침 창은 끝나기를 기다리지 않는다 */
   onWorkspaceAction(a: Extract<FlyoutAction, { type: 'workspace-run' | 'workspace-save' | 'workspace-edit' }>): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
@@ -153,9 +157,12 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       isKnown: (id) => bar.hasItem(id),
       togglePalette: o.togglePalette,
       openPalette: o.showPalette,
-      // 워크스페이스 메뉴는 저장 파일 캐시를 읽어 만든다(비동기)
-      toggleMenu: async (kind, itemId) =>
-        flyout.toggleMenu(kind === 'masking-menu' ? { kind, mode: o.inputs().maskingMode } : await o.workspaceMenu(), itemId),
+      // 워크스페이스 메뉴는 저장 파일 캐시를 읽어 만든다(비동기). 바가 있는 모니터에서 카드가 쓸 수 있는 높이에 들어가는 행만(13b)
+      toggleMenu: async (kind, itemId) => {
+        if (kind === 'masking-menu') return flyout.toggleMenu({ kind, mode: o.inputs().maskingMode }, itemId)
+        const workArea = bar.anchor(itemId)?.workArea
+        flyout.toggleMenu(await o.workspaceMenu(workArea ? cardMaxHeight(workArea) : FLYOUT_MAX_HEIGHT), itemId)
+      },
       runPrompt: o.runPrompt,
       setBusy: (id) => bar.setBusy(id),
       togglePet: o.togglePet,

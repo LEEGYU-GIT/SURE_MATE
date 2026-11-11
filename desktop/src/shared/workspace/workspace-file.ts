@@ -1,3 +1,4 @@
+import { compactOf } from '../search/ranker'
 import type { Rect } from '../types'
 import { type MonitorRoleName, type SavedLayout, type SavedMonitor, type WindowRule, type Workspace, WORKSPACE_LIMITS as L, WORKSPACES_FORMAT } from './types'
 
@@ -165,8 +166,11 @@ export function parseWorkspaces(raw: unknown): { workspaces: Workspace[]; errors
   return { workspaces, errors }
 }
 
-/** '배치 1'부터 쓰지 않은 가장 작은 번호 */
+/**
+ * '배치 1'부터 쓰지 않은 가장 작은 번호. 편집의 이름 겹침 검사(applyWorkspaceEdit)와 같은 compactOf로 견준다:
+ * '배치1'이 있으면 '배치 1'도 쓴 이름이다(겹친 이름을 만들지 않게)
+ */
 export function nextWorkspaceName(existing: Pick<Workspace, 'name'>[]): string {
-  const used = new Set(existing.map((w) => w.name))
-  for (let n = 1; ; n++) if (!used.has(`배치 ${n}`)) return `배치 ${n}`
+  const used = new Set(existing.map((w) => compactOf(w.name)))
+  for (let n = 1; ; n++) if (!used.has(compactOf(`배치 ${n}`))) return `배치 ${n}`
 }

@@ -73,30 +73,44 @@ function deepFreeze<T>(v: T): T {
 /**
  * 수정 시각·크기가 바뀔 때만 다시 읽는다. 오류는 다시 읽을 때마다 한 번 알린다. save 뒤에는 저장한 목록을 돌려준다.
  * get이 주는 목록은 얼려 둔 것이고(고치면 TypeError), save는 넘긴 목록의 사본을 얼려 둔다(부른 쪽이 나중에 고쳐도 그대로).
+ * 읽은 목록은 읽기 전에 잰 서명으로 둔다: 읽는 사이 파일이 바뀌었으면 다음 get이 서명이 달라 다시 읽는다(B-M5).
+ * get은 save와 차례를 맞추지 않으므로, 읽는 동안 save·invalidate가 있었으면(세대가 바뀜) 읽은 목록을 캐시에 두지 않는다(A-M5).
  */
 export function createWorkspaceCache(
   dir: string,
-  onErrors: (errors: string[]) => void
+  onErrors: (errors: string[]) => void,
+  /** 파일 읽기(시험은 읽는 도중을 멈춰 보려고 바꾼다) */
+  load: (dir: string) => Promise<LoadedWorkspaces> = loadWorkspaces
 ): { get(): Promise<Workspace[]>; save(list: Workspace[]): Promise<void>; invalidate(): void } {
   const path = join(dir, WORKSPACES_FILE)
   let cached: { sig: string; value: Workspace[] } | null = null
+  /** save·invalidate마다 늘린다. get은 읽기를 시작할 때와 같은 세대일 때만 읽은 목록을 캐시에 둔다 */
+  let generation = 0
   return {
     async get() {
+      const gen = generation
       const sig = await signature(path)
       if (cached && cached.sig === sig) return cached.value
-      const r = await loadWorkspaces(dir)
+      const r = await load(dir)
       if (r.errors.length) onErrors(r.errors)
       const value = deepFreeze(r.workspaces)
-      cached = { sig: await signature(path), value }
+      if (gen === generation) cached = { sig, value }
       return value
     },
     async save(list) {
+      generation++
       cached = null
       const value = deepFreeze(structuredClone(list))
-      await saveWorkspaces(dir, value)
-      cached = { sig: await signature(path), value }
+      try {
+        await saveWorkspaces(dir, value)
+        cached = { sig: await signature(path), value }
+      } finally {
+        // 저장하는 동안 시작한 get도 캐시를 바꾸지 않게(저장 전 파일을 읽었을 수 있다)
+        generation++
+      }
     },
     invalidate() {
+      generation++
       cached = null
     }
   }

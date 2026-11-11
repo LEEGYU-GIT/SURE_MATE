@@ -112,7 +112,10 @@ export interface FlyoutActionDeps {
   openPalette(p: ShownPayload): void
   /** 위키 카드 [클립보드 글로 찾기]: 클립보드 글로 다시 찾아 새 카드를 띄운다 */
   lookupClipboard(): Promise<void>
-  /** 워크스페이스 메뉴 행: 불러오기·지금 배치 저장·모두 보기(메뉴를 닫은 뒤 부른다) */
+  /**
+   * 워크스페이스 메뉴 행: 불러오기·지금 배치 저장·모두 보기(메뉴를 닫은 뒤 부르고 끝나기를 기다리지 않는다).
+   * 결과 알림(이름 포함)·바쁨·Win32 불가는 워크스페이스 서비스가 알린다
+   */
   workspaceAction(a: Extract<FlyoutAction, { type: 'workspace-run' | 'workspace-save' | 'workspace-edit' }>): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
@@ -131,6 +134,12 @@ function actionLog(a: FlyoutAction): Record<string, unknown> {
  * 카드를 닫은 뒤 팔레트를 연다. [클립보드 글로 찾기]는 새 카드가 지금 카드를 바꾼다.
  */
 export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction): Promise<boolean> } {
+  /** 실패하면 던지지 않고 오류 코드만 기록하고 알린다(메뉴는 이미 닫혔다) */
+  const failed = (a: FlyoutAction, e: unknown): void => {
+    d.log('flyout.action.failed', { type: a.type, error: errorCode(e) })
+    d.notify(BAR_ACTION_FAILED)
+  }
+
   const handle = async (a: FlyoutAction): Promise<boolean> => {
     switch (a.type) {
       case 'set-masking':
@@ -175,9 +184,12 @@ export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction)
       case 'workspace-run':
       case 'workspace-save':
       case 'workspace-edit':
-        // 닫은 뒤 실행한다: 바를 눌러도 포커스는 원래 창에 있어 저장·불러오기 대상에 Sure-Mate 창이 없다
+        // 닫은 뒤 실행한다: 바를 눌러도 포커스는 원래 창에 있어 저장·불러오기 대상에 Sure-Mate 창이 없다.
+        // 끝나기를 기다리지 않는다(A-I1): 불러오기(2~10초)나 다른 모니터 구성 질문이 끝날 때까지 답하지 않으면
+        // 펼침 창이 그동안 위키 카드 단추·가명 처리·바 메뉴 누름을 알림 없이 버린다
         d.close('select')
-        return d.workspaceAction(a)
+        void d.workspaceAction(a).catch((e: unknown) => failed(a, e))
+        return true
     }
   }
 
@@ -188,8 +200,7 @@ export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction)
         if (handled) d.log('flyout.action', actionLog(a))
         return handled
       } catch (e) {
-        d.log('flyout.action.failed', { type: a.type, error: errorCode(e) })
-        d.notify(BAR_ACTION_FAILED)
+        failed(a, e)
         d.close('error')
         return false
       }

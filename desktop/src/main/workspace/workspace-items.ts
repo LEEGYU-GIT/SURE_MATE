@@ -1,4 +1,5 @@
-import type { FlyoutContent } from '../../shared/flyout/flyout-content'
+import { FLYOUT_MAX_HEIGHT, type FlyoutContent } from '../../shared/flyout/flyout-content'
+import { workspaceMenuRowsThatFit } from '../../shared/flyout/workspace-menu-fit'
 import type { PaletteItem } from '../../shared/types'
 import type { Workspace } from '../../shared/workspace/types'
 import { parseWorkspaceId, WORKSPACE_EDIT_PREFIX, WORKSPACE_ITEM_PREFIX as ITEM_PREFIX, type WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
@@ -22,14 +23,23 @@ function layoutInfo(ws: Workspace, fingerprint: string): { windows: number; othe
   return { windows: layout ? layout.windows.filter((r) => r.enabled).length : 0, otherConfig: !own }
 }
 
-/** 바 워크스페이스 메뉴의 내용: 최근에 바꾼 순서의 앞 WORKSPACE_MENU_MAX개와 나머지 수 */
-export function workspaceMenuContent(list: readonly Workspace[], fingerprint: string, canSave: boolean): Extract<FlyoutContent, { kind: 'workspace-menu' }> {
+/**
+ * 바 워크스페이스 메뉴의 내용: 최근에 바꾼 순서의 앞 WORKSPACE_MENU_MAX개와 나머지 수. maxHeight는 바가 있는 모니터에서 카드가
+ * 쓸 수 있는 높이(cardMaxHeight)로, 메뉴가 스크롤하지 않으므로 그 높이에 들어가는 행만 보이고 나머지도 more로 센다(13b)
+ */
+export function workspaceMenuContent(
+  list: readonly Workspace[],
+  fingerprint: string,
+  canSave: boolean,
+  maxHeight: number = FLYOUT_MAX_HEIGHT
+): Extract<FlyoutContent, { kind: 'workspace-menu' }> {
   const sorted = [...list].sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
+  const shown = workspaceMenuRowsThatFit({ maxHeight, canSave, max: WORKSPACE_MENU_MAX })
   return {
     kind: 'workspace-menu',
-    workspaces: sorted.slice(0, WORKSPACE_MENU_MAX).map((ws) => ({ id: ws.id, name: ws.name, ...layoutInfo(ws, fingerprint) })),
+    workspaces: sorted.slice(0, shown).map((ws) => ({ id: ws.id, name: ws.name, ...layoutInfo(ws, fingerprint) })),
     canSave,
-    more: Math.max(0, sorted.length - WORKSPACE_MENU_MAX)
+    more: Math.max(0, sorted.length - shown)
   }
 }
 

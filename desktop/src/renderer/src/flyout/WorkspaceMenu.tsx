@@ -14,12 +14,14 @@ const ICONS: Record<'workspace-run' | 'workspace-save' | 'workspace-edit', React
 /**
  * 바의 워크스페이스 단추를 누르면 뜨는 메뉴: 저장한 배치(불러오기) | 지금 배치 저장 | 모두 보기·편집.
  * 다른 모니터 구성에서 저장한 배치는 설명에 글로 적고 주황으로도 알린다. Win32를 못 쓰면 저장 행은 글로 까닭을 적고 쓸 수 없다.
- * 목록이 비면 머리 아래에 안내를 두고 저장·편집 두 행만 남긴다.
+ * 저장한 배치는 main이 카드 높이에 들어가는 만큼만 보내고(나머지는 "외 N개"), 이름은 한 줄로 줄인다(행 높이 52 그대로).
+ * 저장한 배치가 하나도 없으면 머리 아래에 안내를 두고 저장·편집 두 행만 남긴다.
  */
 export function WorkspaceMenu({ content, onAction }: { content: Extract<FlyoutContent, { kind: 'workspace-menu' }>; onAction(a: FlyoutAction): void }): React.JSX.Element {
   const emptyId = useId()
   const rows = workspaceMenuRows(content)
-  const empty = content.workspaces.length === 0
+  // 행이 하나도 들어가지 않는 낮은 화면(모두 "외 N개")은 빈 목록이 아니다
+  const empty = content.workspaces.length === 0 && content.more === 0
   const saved = rows.slice(0, content.workspaces.length)
   const commands = rows.slice(content.workspaces.length)
   return (

@@ -14,6 +14,8 @@ export interface RestoreStep {
   target: Rect
   dpi: number
   state: WindowState
+  /** 창이 관리자 권한인지(모르면 null). 창이 옮겨지지 않았을 때 알림이 까닭(UIPI인지)을 고른다 */
+  elevated: boolean | null
 }
 
 export type PlanSkip = { ruleId: string; app: string; reason: 'missing' | 'elevated' }
@@ -72,7 +74,8 @@ export function planRestore(o: {
       hwnd: w.hwnd,
       target,
       dpi: Math.round(mon.scaleFactor * 96),
-      state: rule.target.state
+      state: rule.target.state,
+      elevated: w.elevated
     })
   }
   steps.sort((a, b) => rules.find((r) => r.id === b.ruleId)!.order - rules.find((r) => r.id === a.ruleId)!.order)

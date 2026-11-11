@@ -39,9 +39,9 @@ function cleanAliases(raw: string[]): string[] {
 }
 
 /**
- * 편집을 적용한 새 워크스페이스(원본은 바꾸지 않는다). 이름은 앞뒤 공백을 빼고 1~40자이고 다른 워크스페이스 이름과
- * compactOf가 같으면 안 된다. 규칙은 첫 배치에서 id로 찾아 포함 여부·제목 조건(빈 글이면 삭제)·대상 모니터(그 배치의
- * 모니터 키만)를 바꾸고, 모르는 id는 무시한다. 오류가 있으면 모두 돌려준다.
+ * 편집을 적용한 새 워크스페이스(원본은 바꾸지 않는다). 이름은 앞뒤 공백을 빼고 1~40자이고, 이름을 바꿀 때만 다른
+ * 워크스페이스 이름과 compactOf가 같은지 본다(이미 겹친 이름이라도 다른 칸의 저장을 막지 않게). 규칙은 첫 배치에서 id로 찾아
+ * 포함 여부·제목 조건(빈 글이면 삭제)·대상 모니터(그 배치의 모니터 키만)를 바꾸고, 모르는 id는 무시한다. 오류가 있으면 모두 돌려준다.
  */
 export function applyWorkspaceEdit(
   ws: Workspace,
@@ -53,7 +53,7 @@ export function applyWorkspaceEdit(
   const name = edit.name.trim()
   if (!name) errors.push(EDIT_ERRORS.nameEmpty)
   else if (name.length > L.name) errors.push(EDIT_ERRORS.nameLong)
-  else if (others.some((o) => o.id !== ws.id && compactOf(o.name) === compactOf(name))) errors.push(EDIT_ERRORS.nameTaken)
+  else if (name !== ws.name && others.some((o) => o.id !== ws.id && compactOf(o.name) === compactOf(name))) errors.push(EDIT_ERRORS.nameTaken)
 
   const aliases = cleanAliases(edit.aliases)
   if (aliases.length > L.aliases || aliases.some((a) => a.length > L.alias)) errors.push(EDIT_ERRORS.aliases)

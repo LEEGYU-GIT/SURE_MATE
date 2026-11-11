@@ -16,7 +16,7 @@ import {
   showWindowNormal
 } from '../native/windows'
 import { notify } from '../notify'
-import { createRestoreRunner } from './restore-runner'
+import { createRestoreRunner, type OwnWindowState, unfocusableOwnWindow } from './restore-runner'
 import { createWorkspaceService, type WorkspaceService } from './workspace-service'
 import { createWorkspaceCache } from './workspace-store'
 
@@ -36,16 +36,15 @@ async function confirmGather(o: { savedMonitors: number; currentMonitors: number
 }
 
 /**
- * Sure-Mate 자신의 숨은 창인지. 키를 누른 채 팔레트에서 불러오면 팔레트를 둔 채 실행하는데, 그사이 팔레트가 포커스를 잃어
- * 숨으면 실행기가 끝에 그 창을 앞으로 가져와 보이지 않는 창이 키 입력을 받게 된다. 그런 창으로는 포커스를 돌려주지 않는다.
+ * Sure-Mate 자신의 창들(포커스를 돌려줄 수 있는지 판단용, unfocusableOwnWindow). 읽지 못하면 빈 목록(다른 앱 창처럼 돌려준다)
  */
-function ownHiddenWindow(hwnd: string): boolean {
+function ownWindows(): OwnWindowState[] {
   try {
-    return BrowserWindow.getAllWindows().some(
-      (w) => !w.isDestroyed() && !w.isVisible() && w.getNativeWindowHandle().readBigUInt64LE(0).toString() === hwnd
-    )
+    return BrowserWindow.getAllWindows()
+      .filter((w) => !w.isDestroyed())
+      .map((w) => ({ hwnd: w.getNativeWindowHandle().readBigUInt64LE(0).toString(), visible: w.isVisible(), focusable: w.isFocusable() }))
   } catch {
-    return false
+    return []
   }
 }
 
@@ -74,7 +73,8 @@ export function createWorkspaceRuntime(o: {
     raise: raiseWindow,
     toPhysical,
     foreground: getForegroundWindow,
-    setForeground: (hwnd) => !ownHiddenWindow(hwnd) && setForeground(hwnd),
+    // 숨은 창·포커스를 받지 않는 Sure-Mate 창(바·펼침 창, 조종이 끝난 펫)으로는 포커스를 돌려주지 않는다
+    setForeground: (hwnd) => !unfocusableOwnWindow(hwnd, ownWindows()) && setForeground(hwnd),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: Date.now
   })

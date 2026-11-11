@@ -114,8 +114,18 @@ export class HotkeyManager {
     return { failed }
   }
 
+  /** 그 단축키의 조합. 되살리지 못해 등록되지 않은 조합도 돌려준다(등록됐는지는 isRegistered) */
   current(id: HotkeyId): string | undefined {
     return this.entries.get(id)?.acc
+  }
+
+  /**
+   * 그 단축키가 지금 실제로 등록돼 있는지(설정 창의 '쓰는 중'·'등록 못 함', A-M6). 일시 중지 중(녹화·트레이)은 되살릴 때 다시
+   * 등록하므로 등록된 것으로 본다. 되살리지 못한 단축키는 current가 조합을 돌려줘도 false
+   */
+  isRegistered(id: HotkeyId): boolean {
+    const entry = this.entries.get(id)
+    return entry !== undefined && (entry.active || this.suspended)
   }
 
   /** 지금 조합이 있는 단축키(일시 중지 중인 것 포함, 처리기만 둔 것은 빼고). 겹침 검사가 모두를 본다 */

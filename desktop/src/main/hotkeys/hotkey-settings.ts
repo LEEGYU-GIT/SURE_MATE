@@ -19,11 +19,18 @@ export function withHotkeySetting(s: Settings, id: HotkeyId, acc: string | null)
   return { ...s, hotkeys: { ...s.hotkeys, [id]: acc } }
 }
 
-/** 설정 창의 단축키 상태: 등록됐으면 그 조합, 못 잡았으면 설정 값과 등록 못 함(조종 단축키를 비웠으면 acc null) */
-export function hotkeyStatuses(s: Settings, current: (id: HotkeyId) => string | undefined): SettingsSnapshot['hotkeys'] {
+/**
+ * 설정 창의 단축키 상태: 등록됐으면 그 조합, 못 잡았으면 설정 값과 등록 못 함(조종 단축키를 비웠으면 acc null).
+ * registered를 주면 조합을 기억해도 되살리지 못해 등록되지 않은 단축키는 그 조합으로 등록 못 함이다(HotkeyManager.isRegistered, A-M6)
+ */
+export function hotkeyStatuses(
+  s: Settings,
+  current: (id: HotkeyId) => string | undefined,
+  registered: (id: HotkeyId) => boolean = () => true
+): SettingsSnapshot['hotkeys'] {
   const status = (id: HotkeyId): { acc: string | null; registered: boolean } => {
     const bound = current(id)
-    return { acc: bound ?? hotkeySetting(s, id), registered: bound !== undefined }
+    return { acc: bound ?? hotkeySetting(s, id), registered: bound !== undefined && registered(id) }
   }
   return { palette: status('palette'), lookup: status('lookup'), 'pet-control': status('pet-control') }
 }

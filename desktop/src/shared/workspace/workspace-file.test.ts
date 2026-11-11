@@ -109,3 +109,8 @@ it('nextWorkspaceName', () => {
   expect(nextWorkspaceName([])).toBe('배치 1')
   expect(nextWorkspaceName([{ name: '배치 1' }, { name: '배치 3' }])).toBe('배치 2')
 })
+
+it('nextWorkspaceName: 공백·대소문자만 다른 이름도 쓴 이름으로 본다(편집의 이름 겹침 검사와 같은 compactOf, A-M1)', () => {
+  expect(nextWorkspaceName([{ name: '배치1' }])).toBe('배치 2')
+  expect(nextWorkspaceName([{ name: ' 배치  1 ' }, { name: '배치2' }, { name: '배치-3' }])).toBe('배치 4')
+})

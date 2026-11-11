@@ -4,7 +4,7 @@ import { IPC } from '../../shared/ipc-channels'
 import type { SettingsTabId } from '../../shared/settings/settings-route'
 import { log } from '../log'
 import { loadRoute } from './overlay-window'
-import { planSettingsOpen, settingsWindowOptions, type SettingsRoute } from './settings-window-options'
+import { keepWindowTitle, planSettingsOpen, settingsWindowOptions, type SettingsRoute } from './settings-window-options'
 
 export type { SettingsRoute, SettingsTabId }
 
@@ -58,6 +58,8 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
   const w = new BrowserWindow(settingsWindowOptions(join(__dirname, '../preload/index.js'), next))
   // 메뉴 막대를 없앤다(Alt를 눌러 단축키를 녹화할 때 기본 메뉴가 나오지 않게)
   w.removeMenu()
+  // 화면의 <title>이 창 제목(Sure-Mate 설정·시작하기)을 덮지 않게(작업 표시줄·Alt+Tab)
+  keepWindowTitle(w)
   win = w
   loadRoute(w, plan.kind === 'create' ? plan.hash : next)
   w.once('ready-to-show', () => {

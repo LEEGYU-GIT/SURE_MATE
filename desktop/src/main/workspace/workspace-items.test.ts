@@ -162,6 +162,19 @@ describe('workspaceMenuContent: 바 펼침 창 메뉴 내용', () => {
     expect(list.map((w) => w.id)).toEqual(ids)
   })
 
+  it('(13b) 카드가 쓸 수 있는 높이에 들어가는 행만 보이고 나머지는 more로 센다(저장·모두 보기 행이 잘리지 않게)', () => {
+    // 저장할 수 없으면 저장 행이 두 줄 설명으로 커져 560에 7개
+    expect(workspaceMenuContent(many(10), FP, false)).toMatchObject({ more: 3 })
+    expect(workspaceMenuContent(many(10), FP, false).workspaces.map((w) => w.id)).toEqual(['ws-9', 'ws-8', 'ws-7', 'ws-6', 'ws-5', 'ws-4', 'ws-3'])
+    // 1280×720 125%(카드 최대 512)
+    const small = workspaceMenuContent(many(8), FP, true, 512)
+    expect(small.workspaces).toHaveLength(7)
+    expect(small.more).toBe(1)
+    expect(workspaceMenuContent(many(3), FP, true, 512)).toMatchObject({ more: 0 })
+    // 행이 하나도 들어가지 않으면 모두 more(빈 목록과 다르다)
+    expect(workspaceMenuContent(many(2), FP, true, 150)).toMatchObject({ workspaces: [], more: 2 })
+  })
+
   it('창 수는 켜진 창만, otherConfig는 지금 지문의 배치가 없을 때', () => {
     const ws = testWorkspace()
     expect(workspaceMenuContent([ws], FP, true).workspaces).toEqual([{ id: 'ws-qa', name: 'QA 모드', windows: 3, otherConfig: false }])

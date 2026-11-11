@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from './flyout-placement'
+import { cardMaxHeight, edgeCardRect, flyoutCardRect, flyoutWindowRect } from './flyout-placement'
 
 const WA = { x: 0, y: 0, width: 1920, height: 1040 }
 const bar = { x: 1864, y: 292, width: 56, height: 456 }
@@ -40,6 +40,15 @@ describe('flyoutCardRect', () => {
   it('위쪽에서도 가장자리 8 DIP 안쪽', () => {
     const top = { ...item, y: 0 }
     expect(flyoutCardRect({ size: { width: 120, height: 24 }, anchor: top, bar, edge: 'right', workArea: WA, align: 'center' }).y).toBe(8)
+  })
+})
+
+describe('cardMaxHeight: 카드가 쓸 수 있는 높이(메뉴 행 수를 정한다)', () => {
+  it('최대 560, 작업 영역이 낮으면 위아래 가장자리 8 DIP를 뺀 높이', () => {
+    expect(cardMaxHeight(WA)).toBe(560)
+    expect(cardMaxHeight({ x: 0, y: 0, width: 1024, height: 528 })).toBe(512)
+    // flyoutCardRect도 같은 높이까지만 쓴다
+    expect(flyoutCardRect({ size: { width: 272, height: 544 }, anchor: item, bar, edge: 'right', workArea: { ...WA, height: 528 }, align: 'top' }).height).toBe(512)
   })
 })
 
