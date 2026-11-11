@@ -323,3 +323,156 @@ function ForegroundIsPetWindow([double]$scale) {
   $id = [int][W]::Pid($h)
   return (@(AppProcs | Where-Object { $_.Id -eq $id }).Count -gt 0)
 }
+
+# ---- M7 워크스페이스·말하듯 입력(t21·t22) ----
+# 새 Win32 선언(M7W)은 따로 컴파일한다. 컴파일에 실패해도 위의 도우미(t5~t20)는 그대로 동작하고, 아래 M7 도우미만 까닭과 함께 멈춘다
+Add-Type -AssemblyName System.Drawing
+$script:m7TypeError = $null
+try {
+  Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class M7W {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION u; }
+  [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+  // 글자 하나를 KEYEVENTF_UNICODE(0x4)로 누르고 뗀다(VK_PACKET이라 한글 IME 조합을 거치지 않는다). 보낸 입력 수(2면 성공)
+  public static uint UnicodeChar(char c) {
+    INPUT[] a = new INPUT[2];
+    a[0].type = 1; a[0].u.ki.wScan = c; a[0].u.ki.dwFlags = 0x0004;
+    a[1].type = 1; a[1].u.ki.wScan = c; a[1].u.ki.dwFlags = 0x0006;
+    return SendInput(2, a, Marshal.SizeOf(typeof(INPUT)));
+  }
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT value, int size);
+  [DllImport("user32.dll", SetLastError = true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct MONITORINFOEX { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFOEX info);
+  [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
+  public delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, IntPtr rect, IntPtr data);
+  [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc proc, IntPtr data);
+  public class Display { public string Device; public bool Primary; public int X; public int Y; public int Width; public int Height; public int WorkX; public int WorkY; public int WorkWidth; public int WorkHeight; public uint Dpi; }
+  // 모니터마다 영역·작업 영역(부른 스레드의 DPI 인식 기준 좌표)과 유효 DPI(읽지 못하면 96)
+  public static List<Display> Displays() {
+    List<Display> list = new List<Display>();
+    MonitorEnumProc proc = delegate (IntPtr m, IntPtr hdc, IntPtr rect, IntPtr data) {
+      MONITORINFOEX info = new MONITORINFOEX();
+      info.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX));
+      if (!GetMonitorInfo(m, ref info)) return true;
+      uint dx = 96, dy = 96;
+      try { if (GetDpiForMonitor(m, 0, out dx, out dy) != 0) dx = 96; } catch (Exception) { dx = 96; }
+      Display d = new Display();
+      d.Device = info.szDevice;
+      d.Primary = (info.dwFlags & 1) != 0;
+      d.X = info.rcMonitor.Left; d.Y = info.rcMonitor.Top;
+      d.Width = info.rcMonitor.Right - info.rcMonitor.Left; d.Height = info.rcMonitor.Bottom - info.rcMonitor.Top;
+      d.WorkX = info.rcWork.Left; d.WorkY = info.rcWork.Top;
+      d.WorkWidth = info.rcWork.Right - info.rcWork.Left; d.WorkHeight = info.rcWork.Bottom - info.rcWork.Top;
+      d.Dpi = dx;
+      list.Add(d);
+      return true;
+    };
+    EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, proc, IntPtr.Zero);
+    GC.KeepAlive(proc);
+    return list;
+  }
+}
+'@
+} catch { $script:m7TypeError = "$_" }
+function M7Ready { if ($script:m7TypeError) { throw "M7 도우미(M7W)를 컴파일하지 못했다: $script:m7TypeError" } }
+
+# 배율이 다른 모니터에서도 창 좌표·모니터 영역을 물리 픽셀로 읽도록 이 스레드를 모니터별 DPI 인식 v2(-4)로 바꾼다.
+# 스크립트 시작 직후(시험 창을 만들거나 Screen을 읽기 전에) 부른다. 이 파일을 불러올 때 프로세스를 시스템 DPI 인식으로 정했으므로
+# (프로세스의 DPI 인식은 한 번만 정할 수 있다) SetProcessDpiAwarenessContext(-4)는 대개 실패하고 SetThreadDpiAwarenessContext(-4)로 바꾼다.
+# 돌려주는 값: 'per-monitor-v2 (process)' · 'per-monitor-v2 (thread)' · 'system'(바꾸지 못함: 배율이 다른 모니터의 좌표가 어긋날 수 있다)
+function DpiAware {
+  M7Ready
+  try { if ([M7W]::SetProcessDpiAwarenessContext([IntPtr]::new(-4))) { return 'per-monitor-v2 (process)' } } catch { }
+  try { if ([M7W]::SetThreadDpiAwarenessContext([IntPtr]::new(-4)) -ne [IntPtr]::Zero) { return 'per-monitor-v2 (thread)' } } catch { }
+  return 'system'
+}
+# 창을 물리 좌표(창 사각형: 보이지 않는 크기 조절 테두리 포함)로 옮긴다. SetWindowPos라 z-순서와 활성 창은 그대로다.
+# 폼 또는 HWND(IntPtr)를 받는다. 최대화·최소화한 창은 먼저 SetFormState로 보통 상태로 둔다
+function MoveForm($form, [int]$x, [int]$y, [int]$w, [int]$h) {
+  M7Ready
+  $hw = if ($form -is [IntPtr]) { $form } else { $form.Handle }
+  if (-not [M7W]::SetWindowPos($hw, [IntPtr]::Zero, $x, $y, $w, $h, 0x0014)) { throw "MoveForm: SetWindowPos 실패(오류 $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+  Pump 200
+}
+# 시험 창(제목, 물리 좌표 x·y·너비·높이). StartPosition Manual, 시스템 메뉴 없음(ControlBox 끔: Alt 단독 입력의 메뉴 모드 방지).
+# WinForms가 배율에 맞춰 크기를 바꿀 수 있으므로 보인 뒤 MoveForm으로 다시 놓는다. 앞 창이 되는지는 Windows 포커스 규칙을 따르므로
+# 앞 창이 필요하면 부르는 쪽이 Alt 누름과 SetForegroundWindow로 가져온다(NewTestForm과 같은 방법)
+function NewWinForm([string]$title, [int]$x, [int]$y, [int]$w, [int]$h) {
+  M7Ready
+  $f = New-Object System.Windows.Forms.Form
+  $f.Text = $title; $f.ControlBox = $false; $f.StartPosition = 'Manual'
+  $f.Location = New-Object System.Drawing.Point $x, $y
+  $f.Size = New-Object System.Drawing.Size $w, $h
+  $f.Show(); Pump 200
+  MoveForm $f $x $y $w $h
+  return $f
+}
+# 창의 보이는 테두리(DWMWA_EXTENDED_FRAME_BOUNDS, 물리 픽셀). 앱이 창을 읽을 때(native/windows.ts frameRect)와 같은 기준이다.
+# 폼 또는 HWND(IntPtr)를 받는다. 읽지 못하면 $null
+function FrameOf($form) {
+  M7Ready
+  $hw = if ($form -is [IntPtr]) { $form } else { $form.Handle }
+  $rc = New-Object 'M7W+RECT'
+  if ([M7W]::DwmGetWindowAttribute($hw, 9, [ref]$rc, 16) -ne 0) { return $null }
+  [pscustomobject]@{ x = $rc.Left; y = $rc.Top; width = $rc.Right - $rc.Left; height = $rc.Bottom - $rc.Top }
+}
+# 폼 상태를 바꾼다('Normal' · 'Minimized' · 'Maximized', WinForms WindowState). 최소화·최대화 움직임이 끝나도록 0.4초 기다린다
+function SetFormState($form, [ValidateSet('Normal', 'Minimized', 'Maximized')][string]$state) {
+  $form.WindowState = [System.Windows.Forms.FormWindowState]$state
+  Pump 400
+}
+# 글자만 입력한다: 글자마다 SendInput KEYEVENTF_UNICODE(누름·뗌), 30ms 간격. 한글과 Shift가 필요한 기호(@ 등)도 그대로 들어가며
+# IME 조합을 거치지 않는다(한글 IME로 직접 치는 확인은 사람이 한다). Enter·Esc·화살표 같은 명령 키는 Key·TapHuman·ExtTapHuman(스캔 코드)으로 보낸다.
+# 앞 창이 관리자 권한 창이면 SendInput이 막혀(UIPI) 예외를 낸다
+function TypeUnicode([string]$s) {
+  M7Ready
+  foreach ($ch in $s.ToCharArray()) {
+    if ([M7W]::UnicodeChar($ch) -ne 2) { throw "TypeUnicode: SendInput이 글자를 보내지 못했다(오류 $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+    Pump 30
+  }
+}
+# 모니터마다 영역·작업 영역과 배율(유효 DPI ÷ 96). 좌표는 부른 스레드의 DPI 인식을 따른다(DpiAware 뒤면 물리 픽셀). 주 모니터가 맨 앞이다
+function ScreensInfo {
+  M7Ready
+  @([M7W]::Displays() | Sort-Object { -not $_.Primary } | ForEach-Object {
+      [pscustomobject]@{
+        device = $_.Device
+        primary = $_.Primary
+        bounds = [pscustomobject]@{ x = $_.X; y = $_.Y; width = $_.Width; height = $_.Height }
+        work = [pscustomobject]@{ x = $_.WorkX; y = $_.WorkY; width = $_.WorkWidth; height = $_.WorkHeight }
+        dpi = [int]$_.Dpi
+        scale = [Math]::Round($_.Dpi / 96.0, 2)
+      }
+    })
+}
+# 사람 손 타이밍 키(t18·t20 안의 같은 이름 함수와 같은 동작). 보조키를 누른 채 키를 누르고, 보조키는 lateMs 늦게 뗀다
+function HoldCombo([string]$acc, [int]$lateMs) {
+  $t = $acc.ToLower().Split('+'); $mods = @($t[0..($t.Count - 2)] | ForEach-Object { VkOf $_ })
+  foreach ($m in $mods) { Key $m; Pump 40 }
+  Tap (VkOf $t[-1]); Pump $lateMs
+  foreach ($m in $mods[($mods.Count - 1)..0]) { Key $m -Up; Pump 20 }
+}
+# 키를 0.09초 눌렀다 뗀다(스캔 코드 포함)
+function TapHuman([byte]$vk) { Key $vk; Pump 90; Key $vk -Up }
+# 확장 키(방향키·Home·End)를 0.09초 눌렀다 뗀다. 확장 플래그가 있어야 KeyboardEvent.code가 ArrowDown·End 등이 된다
+function ExtTapHuman([byte]$vk) { ExtKey $vk; Pump 90; ExtKey $vk -Up }
+# 팔레트 단축키를 사람처럼 눌러(보조키 0.3초 늦게 떼기) 팔레트를 연다. 이번 palette.show 줄(mode search)을 돌려주고 3초 안에 열리지 않으면 $null.
+# 열린 뒤 0.4초 기다린다: 항목과 말하듯 입력 문맥(단어 목록·기억한 문장·사용 기록)이 오기 전에 글을 치면 지난 목록으로 찾는다.
+# 팔레트가 이미 열려 있으면 단축키가 팔레트를 닫으므로 닫힌 상태에서 부른다
+function PaletteOpen([string]$combo) {
+  $mark = LogMark
+  HoldCombo $combo 300
+  $show = WaitLog $mark 'palette.show' { $_.mode -eq 'search' } 3000
+  if ($show) { Pump 400 }
+  return $show
+}
