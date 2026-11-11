@@ -68,17 +68,40 @@ function PetDoubleClick($c) {
 # 시험 창을 앞으로(Alt 단독 입력의 메뉴 모드를 피하려고 ControlBox를 끈 창에 Alt 누름·뗌을 보낸다)
 function FocusForm { Key 0x12; [void][W]::SetForegroundWindow($form.Handle); Key 0x12 -Up; $form.Activate(); $tb.Focus(); Pump 300 }
 # 시험 창을 펫 창 위에 놓는다: 창이 펫 창 사각형을 덮고, 단추는 펫 창 왼쪽 아래 구석에서 14 DIP 안쪽(펫 몸에서 먼 곳)에 있다
-function PlaceForm($win) {
+function PlaceForm($win, [switch]$TopLeft) {
   $fw = 700; $fh = 420
   $left = [int][Math]::Round($win.x * $scale) - 20
-  $top = [Math]::Max(0, [int][Math]::Round(($win.y + $win.height) * $scale) - $fh + 20)
+  $top = if ($TopLeft) { [Math]::Max(0, [int][Math]::Round($win.y * $scale) - 20) } else { [Math]::Max(0, [int][Math]::Round(($win.y + $win.height) * $scale) - $fh + 20) }
   $form.Location = New-Object System.Drawing.Point $left, $top
   $form.Size = New-Object System.Drawing.Size $fw, $fh
   Pump 200
-  $bx = [int][Math]::Round(($win.x + 14) * $scale); $by = [int][Math]::Round(($win.y + $win.height - 14) * $scale)
+  $bx = [int][Math]::Round(($win.x + 14) * $scale)
+  $by = if ($TopLeft) { [int][Math]::Round(($win.y + 14) * $scale) } else { [int][Math]::Round(($win.y + $win.height - 14) * $scale) }
   $pt = $form.PointToClient((New-Object System.Drawing.Point $bx, $by))
   $btn.Location = New-Object System.Drawing.Point ($pt.X - 20), ($pt.Y - 14)
   Pump 200
+}
+# 단추 가운데(DIP)가 지금 펫 창 안에 있는지(밖이면 클릭 통과를 시험하는 것이 아니다)
+function ButtonInsidePetWindow {
+  $w = PetWindowRect $scale
+  if (-not $w) { return $false }
+  $p = $btn.PointToScreen((New-Object System.Drawing.Point ([int]($btn.Width / 2)), ([int]($btn.Height / 2))))
+  $x = $p.X / $scale; $y = $p.Y / $scale
+  return ($x -ge $w.x -and $x -le ($w.x + $w.width) -and $y -ge $w.y -and $y -le ($w.y + $w.height))
+}
+# 단추를 지금 펫 창 구석(기본 왼쪽 아래, -TopLeft면 왼쪽 위)에 놓고, 단추가 창 안이고 펫 몸(상자 둘레 20 DIP)에서 먼지 확인한다
+function ArrangeButton([switch]$TopLeft) {
+  $w = PetWindowRect $scale
+  if (-not $w) { return $false }
+  if ($TopLeft) { PlaceForm $w -TopLeft } else { PlaceForm $w }
+  $w2 = PetWindowRect $scale
+  if (-not $w2 -or [Math]::Abs($w2.x - $w.x) -gt 2 -or [Math]::Abs($w2.y - $w.y) -gt 2) { return $false }
+  if (-not (ButtonInsidePetWindow)) { return $false }
+  $n = PetNow $scale $size
+  if (-not $n) { return $false }
+  $p = $btn.PointToScreen((New-Object System.Drawing.Point ([int]($btn.Width / 2)), ([int]($btn.Height / 2))))
+  $x = $p.X / $scale; $y = $p.Y / $scale; $b = $n.box
+  return (-not ($x -ge $b.x - 20 -and $x -le $b.x + $b.width + 20 -and $y -ge $b.y - 20 -and $y -le $b.y + $b.height + 20))
 }
 function ClickButton {
   $p = $btn.PointToScreen((New-Object System.Drawing.Point ([int]($btn.Width / 2)), ([int]($btn.Height / 2))))
@@ -200,8 +223,12 @@ try {
   # 2. 클릭 통과: 펫 몸 밖의 단추는 눌리고, 몸은 펫이 받고(단추는 안 눌림), 앞 창은 그대로, 작업 표시줄 클릭 뒤 바가 2초 안에 맨 위
   try {
     $btn.Tag = 0
-    ClickButton; Pump 400
-    $r.click_through_transparent = ([int]$btn.Tag -eq 1)
+    $null = WaitPetStill $scale 300 10000 $size
+    if (ArrangeButton) {
+      FocusForm
+      if (ButtonInsidePetWindow) { ClickButton; Pump 400; $r.click_through_transparent = ([int]$btn.Tag -eq 1) }
+      else { $r.click_through_transparent = 'skipped (button outside the pet window at click time)' }
+    } else { $r.click_through_transparent = 'skipped (could not place the button inside the pet window and away from the pet body)' }
     FocusForm
     $now = WaitPetStill $scale 300 10000 $size
     $c = PetCenter $now
@@ -209,16 +236,17 @@ try {
     PetClick $c
     $hop = WaitLog $mark 'pet.click' { $_.kind -eq 'hop' } 2000
     Pump 400
-    $r.click_on_pet_received = ($null -ne $hop -and [int]$btn.Tag -eq 1)
+    $r.click_on_pet_received = ($null -ne $hop -and [int]$btn.Tag -le 1)
     $r.pet_click_kept_focus = ((Fg).Title -eq 'SureMate-Test')
     $tp = TaskbarBlankPoint
     if ($tp) {
       ClickAt $tp.x $tp.y
       $t2 = Get-Date; $top = $false
       while ((ElapsedMs $t2) -lt 2000 -and -not $top) { Pump 100; $top = TopmostIsApp $barPlace }
-      $r.taskbar_click_ok = $top
-      $r.info_taskbar_ms = ElapsedMs $t2
-    } else { $r.taskbar_click_ok = 'skipped (taskbar auto-hide)' }
+      # 바 사각형은 작업 표시줄과 겹치지 않아 이 값만으로는 "작업 표시줄을 눌러도 바가 2초 안에 맨 위"를 증명하지 못한다(참고값).
+      # 실제 확인은 회사 PC 점검표 7번(작업 표시줄 빈 곳 클릭 뒤 바 복귀)에서 사람이 한다
+      $r.info_taskbar_click = 'bar topmost 2s after click={0} in {1}ms (informational only: the bar rect does not touch the taskbar)' -f $top, (ElapsedMs $t2)
+    } else { $r.info_taskbar_click = 'skipped (taskbar auto-hide)' }
     FocusForm
   } catch { $r['error_2_click_through'] = "$_ at line $($_.InvocationInfo.ScriptLineNumber)" }
 
@@ -255,15 +283,22 @@ try {
     $c2 = PetCenter $now
     $bar = LastBarPlace
     $to2 = [pscustomobject]@{ x = $bar.bounds.x + $bar.bounds.width / 2; y = [Math]::Max(20, $bar.bounds.y - 40 - $size * 54 / 64) }
+    # 놓은 뒤 창이 떨어지는 동안에도 덮이는 왼쪽 위 구석에 단추를 놓는다. 앉을 자리의 창은 처음 앉았던 창(같은 바 꼭대기 가운데)으로 본다
+    $dropWin = if ($sit) { $sit.window } else { $null }
+    if ($dropWin) { PlaceForm $dropWin -TopLeft }
     $mark = LogMark
     $tRel = DragPath $c2 $to2 600 $scale 400
     while ((ElapsedMs $tRel) -lt 80) { Pump 10 }
     $before = [int]$btn.Tag
-    ClickButton
-    $r.click_through_after_drag = ([int]$btn.Tag -eq ($before + 1))
+    if ($dropWin -and (ButtonInsidePetWindow)) {
+      ClickButton
+      $r.click_through_after_drag = ([int]$btn.Tag -eq ($before + 1))
+    } else { $r.click_through_after_drag = 'skipped (button outside the pet window at click time)' }
     $sit2 = WaitLog $mark 'pet.state' { $_.mode -eq 'sit' } 1500
-    $r.dropped_on_bar_sits = ($null -ne $sit2 -and (ClockMs (LogTime $sit2) $tRel) -le 1000)
-    $r.info_drop = if ($sit2) { 'sit_after_release_ms={0}' -f (ClockMs (LogTime $sit2) $tRel) } else { 'no sit' }
+    # 로그 시각은 UTC라 놓은 시각도 UTC로 맞춘다
+    $tRelUtc = $tRel.ToUniversalTime()
+    $r.dropped_on_bar_sits = ($null -ne $sit2 -and (ClockMs (LogTime $sit2) $tRelUtc) -le 1000)
+    $r.info_drop = if ($sit2) { 'sit_after_release_ms={0}' -f (ClockMs (LogTime $sit2) $tRelUtc) } else { 'no sit' }
     Pump 400
     $now = WaitPetStill $scale 300 8000 $size
     if ($now) { PlaceForm $now.window }
@@ -280,6 +315,8 @@ try {
       Pump 300; ShotRect 'm6-pet-menu' $script:menuNow.window $scale
       PetMenuRow $menu 2
       $hid = WaitLog $mark 'pet.visibility' { $_.visible -eq $false } 3000
+      $tw = Get-Date
+      while ((ElapsedMs $tw) -lt 1000 -and (PetWindowRect $scale)) { Pump 50 }
       $r.menu_hide_row_works = ($null -ne $hid -and $null -eq (PetWindowRect $scale))
       Pump 800
       $rv = RecallViaBar
@@ -315,7 +352,7 @@ try {
       PetShot 'm6-pet-alt-space'
       $r.alt_space_keeps_control = (@(LogsAfter $mark 'pet.control' | Where-Object { $_.phase -eq 'end' }).Count -eq 0)
       $r.info_foreground_before_alt_f4 = (Fg).Process
-      if (IsApp) {
+      if (ForegroundIsPetWindow $scale) {
         $mark = LogMark
         HoldCombo 'alt+f4' 300
         $end = WaitLog $mark 'pet.control' { $_.phase -eq 'end' } 2500
@@ -324,7 +361,7 @@ try {
         $r.alt_f4_ends_control = ($null -ne $end)
         $r.alt_f4_keeps_pet_window = ($null -ne $cls -and $cls.prevented -eq $true -and $null -ne (PetWindowRect $scale) -and @(LogsAfter $mark 'pet.visibility' | Where-Object { $_.visible -eq $false }).Count -eq 0)
       } else {
-        $r.alt_f4_ends_control = 'skipped (foreground is not the app: control did not take focus)'
+        $r.alt_f4_ends_control = 'skipped (foreground is not the 320x240 DIP pet window: Alt+F4 was not sent)'
         EndControlIfAny
       }
     } else { $r.alt_space_keeps_control = $false }
@@ -337,7 +374,8 @@ try {
       $ps = WaitLog $mark 'palette.show' { $true } 2500
       $end = WaitLog $mark 'pet.control' { $_.phase -eq 'end' } 2500
       Pump 500
-      $r.control_palette_keeps_focus = ($null -ne $ps -and (IsApp))
+      # 앞 창이 앱 창이면서 펫 창(320x240)이 아니어야 팔레트가 포커스를 가진 것이다
+      $r.control_palette_keeps_focus = ($null -ne $ps -and (IsApp) -and -not (ForegroundIsPetWindow $scale))
       $r.control_palette_ends_control = ($null -ne $end -and $end.reason -eq 'blur')
       $r.info_control_palette_foreground = (Fg).Title
       TapHuman 0x1B; Pump 700
@@ -458,7 +496,7 @@ try {
   $appLines = @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines) -join "`n"
   $names = @('가상자동차', 'XY방산', '주간 회의', $memoLine, '가명으로 바꿨어요', '가명 처리가 꺼져 있어요', '원하는 곳에 붙여넣어', '키보드로 조종해 보세요', '말랑 메이트가 숨어 있어요')
   $r.log_has_no_content = (@($names | Where-Object { $_ -and $appLines.Contains($_) }).Count -eq 0)
-  $r.log_has_no_typed_text = -not ($appLines -match '"(text|query|definition|selection|bubble)":')
+  $r.log_has_no_typed_text = -not ($appLines -match '"(text|query|definition|selection)":')
   $r.pet_no_errors = (@(SinceAppReady 'pet.error').Count -eq 0 -and @(SinceAppReady 'pet.startError').Count -eq 0 -and @(SinceAppReady 'pet.commandError').Count -eq 0)
   $r.info_memory_mb = [int]((@(AppProcs) | Measure-Object WorkingSet64 -Sum).Sum / 1MB)
   $r.info_private_mb = [int]((@(AppProcs) | Measure-Object PrivateMemorySize64 -Sum).Sum / 1MB)

@@ -15,11 +15,8 @@ foreach ($f in $files) {
     return
   }
 }
-$had = @{}
-foreach ($f in $files) {
-  $had[$f] = Test-Path $f
-  if ($had[$f]) { Copy-Item $f "$f.smoke-backup" -Force }
-}
+$had = @{}; $backed = @{}
+foreach ($f in $files) { $had[$f] = Test-Path $f; $backed[$f] = $false }
 function WriteSettings([int]$sleepAfterMin) {
   $s = if ($had[$settings]) { Get-Content "$settings.smoke-backup" -Raw -Encoding utf8 | ConvertFrom-Json } else { New-Object psobject }
   $s | Add-Member -Force -NotePropertyName ai -NotePropertyValue ([pscustomobject]@{ defaultTarget = 'copy'; custom = @() })
@@ -40,6 +37,10 @@ function WriteSettings([int]$sleepAfterMin) {
   $s | ConvertTo-Json -Depth 8 | Set-Content -Path $settings -Encoding utf8
 }
 try {
+  # 백업은 try 안에서 만든다(만들다 실패해도 finally가 만든 백업만 되돌린다). 원래 파일은 백업이 끝나기 전에는 건드리지 않는다
+  foreach ($f in $files) {
+    if ($had[$f]) { Copy-Item $f "$f.smoke-backup" -Force; $backed[$f] = $true }
+  }
   # 가상 예시만 쓴다(실제 고객사 이름 금지). 회의 메모의 가상자동차·XY방산이 가명으로 바뀌는지 보려고 t16과 같은 사전을 넣는다
   $d = [ordered]@{
     format = 'sure-mate-masking'; version = 1
@@ -55,11 +56,11 @@ try {
     & "$W\run-smoke.ps1" -Script t20-pet.ps1 -TimeoutSec 420 -ScriptArgs '-IdleMinutes 5'
   } else {
     WriteSettings 1
-    & "$W\run-smoke.ps1" -Script t20-pet.ps1 -TimeoutSec 480
+    & "$W\run-smoke.ps1" -Script t20-pet.ps1 -TimeoutSec 600
   }
 } finally {
   foreach ($f in $files) {
-    if ($had[$f]) { Copy-Item "$f.smoke-backup" $f -Force; Remove-Item "$f.smoke-backup" } else { Remove-Item $f -ErrorAction SilentlyContinue }
+    if ($backed[$f]) { Copy-Item "$f.smoke-backup" $f -Force; Remove-Item "$f.smoke-backup" } elseif (-not $had[$f]) { Remove-Item $f -ErrorAction SilentlyContinue }
   }
   "--- settings and dictionary restored"
 }

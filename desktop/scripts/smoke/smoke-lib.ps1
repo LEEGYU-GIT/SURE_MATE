@@ -212,6 +212,7 @@ function LastPet([string]$mode = '') {
 }
 # 펫 몸 상자(box)의 가운데(DIP)
 function PetCenter($pet) {
+  if (-not $pet -or -not $pet.box) { throw '펫 자리를 알 수 없다(보이지 않거나, 움직이는 중이라 로그에 없는 자리여서 어림하지 않았다)' }
   [pscustomobject]@{ x = $pet.box.x + $pet.box.width / 2; y = $pet.box.y + $pet.box.height / 2 }
 }
 # 지금 화면에 보이는 펫 창(320x240 DIP)의 사각형(DIP). 숨었으면 $null. 펫 창은 크기가 고정이라 크기로 찾는다
@@ -230,7 +231,7 @@ function PetWindowRect([double]$scale) {
   return $null
 }
 # 펫의 지금 자리. 창 사각형이 마지막 pet.state의 window와 같으면 그 줄의 box(정확), 아니면 창 아래 가운데로 어림한다
-# (어림은 창이 화면 가장자리에 눌리지 않은 자리에서만 맞는다). 보이지 않으면 $null
+# (창이 화면 가장자리에 닿으면 어림하지 않는다). 보이지 않거나 알 수 없으면 $null
 function PetNow([double]$scale, [int]$size = 56) {
   $win = PetWindowRect $scale
   if (-not $win) { return $null }
@@ -238,7 +239,13 @@ function PetNow([double]$scale, [int]$size = 56) {
   $exact = $false
   $box = $null
   if ($last -and $last.window -and [Math]::Abs($last.window.x - $win.x) -le 2 -and [Math]::Abs($last.window.y - $win.y) -le 2) { $box = $last.box; $exact = $true }
-  if (-not $box) { $box = [pscustomobject]@{ x = $win.x + $win.width / 2 - $size / 2; y = $win.y + $win.height - $size; width = $size; height = $size } }
+  if (-not $box) {
+    # 로그에 없는 자리는 창이 화면 가장자리에 눌리지 않았을 때만 어림한다(눌린 창은 펫이 창 가운데가 아니라 약 130 DIP 어긋난다)
+    $sc = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $touch = ($win.x * $scale -lt $sc.Left + 3 -or ($win.x + $win.width) * $scale -gt $sc.Right - 3 -or $win.y * $scale -lt $sc.Top + 3 -or ($win.y + $win.height) * $scale -gt $sc.Bottom - 3)
+    if ($touch) { return $null }
+    $box = [pscustomobject]@{ x = $win.x + $win.width / 2 - $size / 2; y = $win.y + $win.height - $size; width = $size; height = $size }
+  }
   [pscustomobject]@{ box = $box; window = $win; exact = $exact }
 }
 # 펫 창이 stableMs 동안 움직이지 않을 때까지 기다려 지금 자리를 돌려준다(시간 안에 안 서면 $null)
@@ -306,4 +313,13 @@ function CpuSeconds {
   $sum = 0.0
   foreach ($p in (AppProcs)) { try { $sum += $p.TotalProcessorTime.TotalSeconds } catch { } }
   return $sum
+}
+# 앞 창이 펫 창(320x240 DIP, 앱 프로세스)인지. 조종 중 포커스를 가져간 펫 창과 팔레트 같은 다른 앱 창을 구분한다
+function ForegroundIsPetWindow([double]$scale) {
+  $h = [W]::GetForegroundWindow()
+  $r = New-Object 'W+RECT'
+  if (-not [W]::GetWindowRect($h, [ref]$r)) { return $false }
+  if ([Math]::Abs(($r.Right - $r.Left) - 320 * $scale) -gt 3 -or [Math]::Abs(($r.Bottom - $r.Top) - 240 * $scale) -gt 3) { return $false }
+  $id = [int][W]::Pid($h)
+  return (@(AppProcs | Where-Object { $_.Id -eq $id }).Count -gt 0)
 }
