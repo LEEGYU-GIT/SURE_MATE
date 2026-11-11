@@ -12,7 +12,7 @@ import {
   petBox,
   petWindowRect
 } from '../../shared/pet/pet-frame'
-import { jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
+import { dropOnLedge, jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
 import {
   BUBBLE_MS,
   REACTION_MS,
@@ -1007,6 +1007,13 @@ export function createPetController(d: PetControllerDeps): PetController {
       hold(c, t)
       const v = throwVelocity(samples, t)
       samples = []
+      // 바 꼭대기 바로 아래에서 느리게 놓았으면(들린 몸이 바 위에 겹쳐 그려진다) 꼭대기에 앉는다(I2)
+      const seat = dropOnLedge({ x: foot.x, y: foot.y, vx: v.vx, vy: v.vy }, world!, size())
+      if (seat) {
+        foot = seat
+        enterSit()
+        return
+      }
       enterAir(v, 'surprised')
       return
     }

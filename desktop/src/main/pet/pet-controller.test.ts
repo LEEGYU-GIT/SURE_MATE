@@ -971,6 +971,53 @@ describe('잡아 던지기', () => {
     expect(states(t)).toEqual(['held', 'sit'])
   })
 
+  it('(I2) 발이 바 꼭대기 아래 1·10·20 DIP에서 멈춘 채 놓아도(들린 몸은 바 위에 겹쳐 그려진다) 바로 꼭대기에 앉는다', () => {
+    for (const below of [1, 10, 20]) {
+      const t = make()
+      t.c.start()
+      pickUp(t)
+      t.env.cursor = { x: 1892, y: 292 + below - (54 / 64) * 56 }
+      vi.advanceTimersByTime(200)
+      t.c.press(false)
+      expect(mode(t)).toBe('sit')
+      expect(foot(t)).toEqual({ x: 1892, y: 292 })
+      expect(states(t)).toEqual(['held', 'sit'])
+      vi.advanceTimersByTime(1000)
+      expect(mode(t)).toBe('sit')
+    }
+  })
+
+  it('(I2) 40 DIP 아래에서 놓으면 그대로 떨어져 바 옆면에 밀려나 바닥에 선다', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    t.env.cursor = { x: 1892, y: 292 + 40 - (54 / 64) * 56 }
+    vi.advanceTimersByTime(200)
+    t.c.press(false)
+    expect(mode(t)).toBe('air')
+    untilMode(t, 'idle', 5000)
+    expect(foot(t)).toEqual({ x: 1836, y: 1040 })
+  })
+
+  it('(I2) 꼭대기 바로 아래라도 빠르게 던지면(300 DIP/초 이상) 앉지 않고 그대로 날아간다', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    const lift = (54 / 64) * 56
+    t.env.cursor = { x: 1892, y: 292 - 50 - lift }
+    vi.advanceTimersByTime(200)
+    for (let i = 1; i <= 6; i++) {
+      t.env.cursor = { x: 1892, y: 292 - 50 + 10 * i - lift }
+      vi.advanceTimersByTime(10)
+    }
+    t.c.press(false)
+    expect(foot(t)).toEqual({ x: 1892, y: 302 })
+    expect(mode(t)).toBe('air')
+    expect(t.c.status().velocity.vy).toBeGreaterThan(300)
+    untilMode(t, 'idle', 5000)
+    expect(foot(t)).toEqual({ x: 1836, y: 1040 })
+  })
+
   it('꼭대기에서 집어 들면 바 방문으로 친다(45초 동안 다시 가지 않는다)', () => {
     const t = make()
     t.c.start()
