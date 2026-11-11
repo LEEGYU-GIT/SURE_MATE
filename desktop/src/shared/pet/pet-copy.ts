@@ -104,6 +104,9 @@ export const PET_CONTROL_GUIDE = `키보드로 조종해 보세요. ${PET_CONTRO
 /** 숨긴 펫을 다시 부르는 곳(메뉴 "숨기기"의 설명, 팔레트 숨김 알림과 같은 말) */
 export const PET_RECALL_HINT = '바의 펫 단추나 트레이에서 다시 불러요'
 
+/** 펫 창 화면(렌더러)이 다시 불러온 뒤에도 또 멈췄을 때 알림(한 번). 펫은 앱을 다시 켤 때까지 숨긴다 */
+export const PET_CRASH_NOTICE = '말랑 메이트 화면에 문제가 생겨 숨겼어요. 앱을 다시 켜면 다시 나와요.'
+
 /** 숨긴 펫에 조종 단축키를 눌렀을 때 알림(누를 때마다 한 번) */
 export const PET_HIDDEN_NOTICE = '말랑 메이트가 숨어 있어요. 트레이나 바의 펫 단추로 불러 주세요.'
 

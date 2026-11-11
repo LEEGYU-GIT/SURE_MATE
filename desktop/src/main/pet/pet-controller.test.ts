@@ -3367,6 +3367,91 @@ describe('조종 모드(설계 §14-2 "펫 창이 키보드를 받는다")', () 
   })
 })
 
+describe('(Task 9 #1) 동작 고리가 도는 동안의 바깥 변화는 프레임이 그린다(펫 이동 30fps 이하)', () => {
+  it('오르는 중 바를 끌어도(세계 변화가 프레임 사이에 34ms마다) 창은 프레임에서만 옮긴다: 1초에 30번 이하, 간격 34ms 이상', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'climb')
+    vi.advanceTimersByTime(PET_LOOP.frameMs / 2)
+    const start = Date.now()
+    for (let i = 1; i <= 29; i++) {
+      t.env.bar = { rect: { ...RIGHT_BAR.rect, y: RIGHT_BAR.rect.y - i }, edge: 'right' }
+      t.c.worldChanged()
+      vi.advanceTimersByTime(PET_LOOP.frameMs)
+    }
+    expect(mode(t)).toBe('climb')
+    const moves = t.boundsAt.filter((at) => at >= start)
+    expect(moves.length).toBeGreaterThanOrEqual(25)
+    expect(moves.length).toBeLessThanOrEqual(30)
+    for (let i = 1; i < moves.length; i++) expect(moves[i] - moves[i - 1]).toBeGreaterThanOrEqual(PET_LOOP.frameMs)
+  })
+
+  it('고리가 멈추는 반응은 같은 호출 안에서 보낸다(오르는 중 반응: 오르기가 멈춘다)', () => {
+    const t = make()
+    t.c.start()
+    untilMode(t, 'climb')
+    t.window.send.mockClear()
+    t.c.react(WARN)
+    expect(t.window.send).toHaveBeenCalledTimes(1)
+    expect(t.window.send.mock.lastCall![0].look).toMatchObject({ pose: 'climb', face: 'worried' })
+  })
+})
+
+describe('(Task 9 #6) 펫 창의 렌더러가 죽었을 때(rendererGone)', () => {
+  it('조종을 끝내고(포커스 복귀 없음, 기록 blur) 커서가 몸 위여도 클릭 통과로 되돌린다', () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = '4242'
+    t.c.startControl()
+    t.env.cursor = bodyPoint(t)
+    vi.advanceTimersByTime(PET_LOOP.hitFarMs)
+    expect(lastIgnore(t)).toBe(false)
+    t.c.rendererGone()
+    expect(t.c.controlling()).toBe(false)
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+    expect(controls(t).at(-1)).toEqual({ phase: 'end', reason: 'blur' })
+    expect(lastIgnore(t)).toBe(true)
+  })
+
+  it('보낸 값을 잊어 화면 상태가 그대로여도 다시 보낸다(다시 불러온 렌더러가 받는다)', () => {
+    const t = make({ bar: null })
+    t.c.start()
+    vi.advanceTimersByTime(1000)
+    const last = t.window.send.mock.lastCall![0]
+    t.window.send.mockClear()
+    t.c.rendererGone()
+    expect(t.window.send).toHaveBeenCalledTimes(1)
+    expect(t.window.send.mock.lastCall![0]).toEqual(last)
+  })
+
+  it('들린 채 죽으면 놓아 떨어뜨린다(커서에 붙어 남지 않는다)', () => {
+    const t = make()
+    t.c.start()
+    pickUp(t)
+    t.env.cursor = { x: 900, y: 600 }
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    t.c.rendererGone()
+    expect(mode(t)).toBe('air')
+    expect(lastIgnore(t)).toBe(true)
+    untilMode(t, 'idle', 5000)
+    expect(foot(t)).toEqual({ x: 900, y: 1040 })
+  })
+
+  it('숨긴 동안과 dispose 뒤에는 아무것도 하지 않는다', () => {
+    const t = make()
+    t.c.start()
+    t.c.setFullscreen(true)
+    const calls = t.window.setIgnoreMouse.mock.calls.length
+    t.c.rendererGone()
+    expect(t.window.setIgnoreMouse.mock.calls.length).toBe(calls)
+    expect(vi.getTimerCount()).toBe(0)
+    t.c.setFullscreen(false)
+    t.c.dispose()
+    t.c.rendererGone()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe('(M4) 팔레트 명령의 재우기·깨우기(§16 키보드만으로 사용)', () => {
   it('putToSleep: 가만히 있으면 그 자리에서 존다(메뉴 "재우기"와 같다). 이미 자고 있으면 true', () => {
     const t = make()

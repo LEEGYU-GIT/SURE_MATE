@@ -100,6 +100,11 @@ export interface PetController {
   putToSleep(): boolean
   /** 팔레트 명령 "깨우기": 자고 있으면 깨운다(바닥은 가만히, 꼭대기는 앉기). 깨어 있으면 할 일 없이 true, 숨김이면 false */
   wakeUp(): boolean
+  /**
+   * 펫 창의 렌더러가 죽었다(M6 최종 검토 Task 9 #6). 죽은 화면은 뗌·키·blur를 보내지 못하므로 조종을 끝내고
+   * (포커스는 돌리지 않는다), 누름·들림을 놓고, 클릭 통과로 되돌린다. 다시 불러온 렌더러가 지금 화면 상태를 받도록 보낸 값을 잊는다
+   */
+  rendererGone(): void
   controlling(): boolean
   status(): PetStatus
   view(): PetView | null
@@ -598,7 +603,11 @@ export function createPetController(d: PetControllerDeps): PetController {
       mode === 'sit' ||
       (mode === 'climb' && stepUp === null && stepDown === null))
 
-  /** 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다. 저장한 반응은 설 수 있게 되면 여기서 보인다 */
+  /**
+   * 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다. 저장한 반응은 설 수 있게 되면 여기서 보인다.
+   * 동작 고리가 이미 도는 동안에는 그리지 않고 다음 프레임이 그린다: 바 끌기 같은 바깥 변화가 프레임 사이에 창을 한 번 더 옮기면
+   * 펫 이동이 30fps를 넘는다(Task 9 #1). 고리를 멈추거나 새로 시작하는 변화(반응·말풍선 닫힘·메뉴·걷기 시작)는 같은 호출 안에서 그린다
+   */
   function settle(): void {
     if (!shown || disposed) return
     if (pending && canReact()) {
@@ -608,11 +617,10 @@ export function createPetController(d: PetControllerDeps): PetController {
     }
     if (loopNeeded()) {
       stopPoll()
-      if (loopTimer === null) {
-        const t = now()
-        lastFrame = Number.isFinite(t) ? t : null
-        loopTimer = T.setInterval(frame, PET_LOOP.frameMs)
-      }
+      if (loopTimer !== null) return
+      const t = now()
+      lastFrame = Number.isFinite(t) ? t : null
+      loopTimer = T.setInterval(frame, PET_LOOP.frameMs)
     } else {
       stopLoop()
       if (pollTimer === null) schedulePoll()
@@ -1527,6 +1535,8 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (!allFinite(foot.x, foot.y, vx, vy)) toFloorMiddle()
     hitTest(c)
     settle()
+    // 고리가 이어 돌면 settle이 그리지 않으므로 프레임이 그린다(멈췄으면 settle이 이미 그렸다)
+    if (loopTimer !== null) render()
   }
 
   // ---- 세계 변화 ----
@@ -1922,6 +1932,21 @@ export function createPetController(d: PetControllerDeps): PetController {
       retest()
       settle()
       return true
+    },
+    rendererGone() {
+      if (disposed || !shown) return
+      if (control) endControlNow('blur')
+      if (pressed) {
+        pressed = null
+        samples = []
+        if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
+      }
+      // 렌더러가 잰 말풍선 사각형은 버리고(다시 불러온 렌더러가 다시 잰다), 클릭 통과로 되돌린다(캐시와 상관없이)
+      bubbleHit = null
+      sentKey = null
+      ignoring = true
+      d.window.setIgnoreMouse(true)
+      settle()
     },
     controlling: () => control !== null,
     status: () => ({

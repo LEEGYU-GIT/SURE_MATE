@@ -1,10 +1,12 @@
 import type { AppEvents } from '../../shared/app-events'
 import { pickBarDisplay } from '../../shared/bar/bar-layout'
+import { PET_CRASH_NOTICE } from '../../shared/pet/pet-copy'
 import { petWorld, type PetBar, type PetWorld } from '../../shared/pet/pet-world'
 import type { Settings } from '../../shared/settings/settings'
 import type { MonitorInfo } from '../../shared/types'
 import { DISPLAY_SETTLE_MS, type BarController } from '../bar/bar-controller'
 import { createTopmostKeeper } from '../bar/topmost-keeper'
+import { createErrorOnce } from '../error-once'
 import { errorText } from '../error-text'
 import type { PetIpc } from '../ipc'
 import type { Timers } from '../timers'
@@ -49,6 +51,8 @@ export interface PetRuntimeOptions {
   openSettings(): Promise<void>
   /** 설정 pet.visible 저장(메뉴 "숨기기"). 저장 뒤 applySettings가 refresh()를 부른다 */
   setPetVisible(v: boolean): Promise<void>
+  /** Windows 알림(렌더러가 다시 불러온 뒤에도 죽어 펫을 숨길 때 한 번) */
+  notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
 
@@ -144,7 +148,7 @@ export function barWorld(monitors: MonitorInfo[], settings: Settings, bar: BarCo
 /**
  * 말랑 메이트를 앱에 연결한다(설계 §14-2·§5). 판단은 모두 컨트롤러(순수)에 있고 여기는 연결만 한다:
  * 창·세계(바 모니터와 바)·커서·시계를 컨트롤러에 주고, 바 변화(34ms에 한 번 이하)·모니터 변화(200ms 뒤 한 번)·전체 화면·
- * 앱 일·창 이벤트(조종 중 blur, Alt+F4 닫기)를 컨트롤러에 넘긴다. 맨 앞은 바가 보이면 바 런타임이(afterRaise),
+ * 앱 일·창 이벤트(조종 중 blur, Alt+F4 닫기, 조종 시작 뒤 포커스 확인, 렌더러가 죽음)를 컨트롤러에 넘긴다. 맨 앞은 바가 보이면 바 런타임이(afterRaise),
  * 바가 없거나 숨으면 펫이 2초마다 스스로 올린다. 모든 처리기·타이머 콜백은 던지지 않는다(오류는 종류마다 한 번 기록).
  * 만드는 중 실패하면 만든 것을 정리하고 던진다(index.ts가 pet.startError로 기록하고 바·팔레트는 그대로 동작한다).
  */
@@ -170,12 +174,14 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
     }
   }
 
-  /** 오류는 종류마다 처음 한 번만 기록한다(반복되는 일에서 같은 오류가 로그를 채우지 않게) */
-  const reported = new Set<string>()
+  /**
+   * 오류는 종류(곳 + 오류 글)마다 처음 한 번만 기록한다(반복되는 일에서 같은 오류가 로그를 채우지 않게).
+   * 같은 곳의 다른 오류는 따로 한 번 남고, 종류 수에는 한도가 있다(M6 최종 검토 Task 9 #4)
+   */
+  const firstTime = createErrorOnce()
   const report = (where: string, e: unknown): void => {
-    if (reported.has(where)) return
-    reported.add(where)
-    o.log('pet.error', { where, error: errorText(e) })
+    const error = errorText(e)
+    if (firstTime(where, error)) o.log('pet.error', { where, error })
   }
   const guard =
     <A extends unknown[]>(where: string, fn: (...a: A) => void) =>
@@ -325,6 +331,24 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
       if (!disposed && !quitting) o.log('pet.window.closed', {})
       teardown()
     })
+    // 렌더러가 죽으면(Task 9 #6): 클릭 통과로 되돌리고 조종을 끝낸 뒤(포커스 복귀 없음) 한 번만 다시 불러온다.
+    // 다시 불러온 뒤 또 죽으면 다시 부르지 않고 펫을 숨긴 채 둔다(창을 닫아 타이머·구독도 멈춘다). 앱을 다시 켜면 다시 나온다
+    let crashes = 0
+    win.onRenderGone(
+      guard('renderGone', (reason: string) => {
+        if (disposed || crashes >= 2) return
+        crashes += 1
+        controller.rendererGone()
+        o.log('pet.renderGone', { reason, count: crashes })
+        if (crashes === 1) {
+          win.reload()
+          return
+        }
+        o.notify(PET_CRASH_NOTICE)
+        // 창 이벤트 처리 중에 창을 닫지 않고 다음 차례에 정리한다
+        timers.setTimeout(teardown, 0)
+      })
+    )
 
     undo.push(env.appEvents.on(guard('react', (e) => controller.react(e))))
     undo.push(
@@ -368,8 +392,10 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
         controller.refresh()
         syncKeeper()
       }),
+      // 숨긴 펫은 바 변화를 무시한다(숨긴 펫에는 타이머가 없다, Task 9 #3). 다시 표시할 때 새 세계를 읽고,
+      // 디스플레이가 없어 숨은 펫은 모니터 변화(settle → sync)로 다시 나타난다
       worldChanged: () => {
-        if (!disposed) sync.request()
+        if (!disposed && shown) sync.request()
       },
       setFullscreen: guard('fullscreen', (on: boolean) => {
         if (disposed) return

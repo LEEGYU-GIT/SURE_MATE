@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { AppEvent } from '../../shared/app-events'
 import type { BarViewState } from '../../shared/bar/bar-items'
+import { PET_CRASH_NOTICE } from '../../shared/pet/pet-copy'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings/settings'
 import type { MonitorInfo, Rect } from '../../shared/types'
 import { DISPLAY_SETTLE_MS, type BarController } from '../bar/bar-controller'
 import { globalTimers } from '../bar/test-timers'
 import { RAISE_INTERVAL_MS } from '../bar/topmost-keeper'
+import { ERROR_KINDS_MAX } from '../error-once'
 import type { PetWindow } from '../windows/pet-window'
 import { PET_LOOP, type PetWindowPort } from './pet-controller'
 import { barWorld, CONTROL_FOCUS_CHECK_MS, createCoalescer, createPetRuntime, createSettler, type PetRuntimeEnv, type PetRuntimeOptions } from './pet-runtime'
@@ -49,21 +51,29 @@ function fakeBar(o: Partial<FakeBar['s']> = {}): FakeBar {
 }
 
 type PortMocks = { [K in keyof PetWindowPort]: Mock<PetWindowPort[K]> }
-type FakePetWindow = Omit<PetWindow, 'port' | 'recheckSize' | 'raise' | 'destroy' | 'isFocused'> & {
+type FakePetWindow = Omit<PetWindow, 'port' | 'recheckSize' | 'raise' | 'destroy' | 'isFocused' | 'reload'> & {
   port: PortMocks
   recheckSize: Mock<() => void>
   raise: Mock<() => void>
   destroy: Mock<() => void>
   isFocused: Mock<() => boolean>
+  reload: Mock<() => void>
 }
-/** 펫 창(포트·맨 앞 올리기·창 이벤트)의 가짜. blur·close·closed는 창 이벤트를 낸다 */
-type FakeWindow = { w: FakePetWindow; blur(): void; close(): { preventDefault: Mock<() => void> }; closed(): void }
+/** 펫 창(포트·맨 앞 올리기·창 이벤트)의 가짜. blur·close·closed·renderGone은 창 이벤트를 낸다 */
+type FakeWindow = {
+  w: FakePetWindow
+  blur(): void
+  close(): { preventDefault: Mock<() => void> }
+  closed(): void
+  renderGone(reason: string): void
+}
 
 function fakeWindow(): FakeWindow {
   const on = {
     blur: [] as (() => void)[],
     close: [] as ((e: { preventDefault(): void }) => void)[],
-    closed: [] as (() => void)[]
+    closed: [] as (() => void)[],
+    renderGone: [] as ((reason: string) => void)[]
   }
   const w: FakePetWindow = {
     hwnd: '77',
@@ -80,9 +90,11 @@ function fakeWindow(): FakeWindow {
     recheckSize: vi.fn<() => void>(),
     raise: vi.fn<() => void>(),
     isFocused: vi.fn<() => boolean>(() => true),
+    reload: vi.fn<() => void>(),
     onBlur: (cb) => void on.blur.push(cb),
     onClose: (cb) => void on.close.push(cb),
     onClosed: (cb) => void on.closed.push(cb),
+    onRenderGone: (cb) => void on.renderGone.push(cb),
     destroy: vi.fn<() => void>()
   }
   return {
@@ -93,7 +105,8 @@ function fakeWindow(): FakeWindow {
       on.close.forEach((f) => f(e))
       return e
     },
-    closed: () => on.closed.forEach((f) => f())
+    closed: () => on.closed.forEach((f) => f()),
+    renderGone: (reason) => on.renderGone.forEach((f) => f(reason))
   }
 }
 
@@ -162,6 +175,7 @@ type Opts = PetRuntimeOptions & {
   openPalette: Mock<() => void>
   openSettings: Mock<() => Promise<void>>
   setPetVisible: Mock<(v: boolean) => Promise<void>>
+  notify: Mock<(message: string) => void>
   log: Mock<(event: string, data: Record<string, unknown>) => void>
 }
 
@@ -172,6 +186,7 @@ function options(o: { bar?: PetRuntimeOptions['bar']; getSettings?: () => Settin
     openPalette: vi.fn<() => void>(),
     openSettings: vi.fn<() => Promise<void>>(o.openSettings ?? (async () => {})),
     setPetVisible: vi.fn<(v: boolean) => Promise<void>>(async () => {}),
+    notify: vi.fn<(message: string) => void>(),
     log: vi.fn<(event: string, data: Record<string, unknown>) => void>()
   }
 }
@@ -408,6 +423,38 @@ describe('createPetRuntime: 펫 창을 앱에 연결한다', () => {
     rt.dispose()
   })
 
+  it('(Task 9 #3) 숨긴 펫(설정·전체 화면)에는 바 변화가 타이머를 만들지 않는다(다시 표시할 때 새 세계를 읽는다)', () => {
+    const f = fakeEnv()
+    const rt = createPetRuntime(options({ bar: fakeBar().rt }), f.env)
+    rt.setFullscreen(true)
+    expect(rt.controller.status().shown).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+    const spy = vi.spyOn(rt.controller, 'worldChanged')
+    for (let i = 0; i < 5; i++) {
+      rt.worldChanged()
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(17)
+    }
+    expect(spy).not.toHaveBeenCalled()
+    rt.setFullscreen(false)
+    expect(rt.controller.status().shown).toBe(true)
+    rt.dispose()
+  })
+
+  it('(Task 9 #3) 디스플레이가 없어 숨은 펫은 모니터 변화(200ms 뒤 묶어서)로 다시 나타난다. 바 변화는 그동안 무시한다', () => {
+    const monitors: MonitorInfo[] = []
+    const f = fakeEnv({ monitors })
+    const rt = createPetRuntime(options({ bar: fakeBar().rt }), f.env)
+    expect(rt.controller.status().shown).toBe(false)
+    rt.worldChanged()
+    expect(vi.getTimerCount()).toBe(0)
+    monitors.push(MAIN)
+    f.displaysChanged()
+    vi.advanceTimersByTime(DISPLAY_SETTLE_MS + PET_LOOP.frameMs)
+    expect(rt.controller.status().shown).toBe(true)
+    rt.dispose()
+  })
+
   it('모니터 변화: 올 때마다 다음 놓기의 크기 확인을 켜고, 200ms 조용해진 뒤 세계를 한 번 다시 읽는다', () => {
     const f = fakeEnv()
     const rt = createPetRuntime(options({ bar: fakeBar().rt }), f.env)
@@ -570,6 +617,71 @@ describe('createPetRuntime: 펫 창을 앱에 연결한다', () => {
     rt.worldChanged()
     expect(() => vi.advanceTimersByTime(0)).not.toThrow()
     rt.dispose()
+  })
+
+  it('(Task 9 #4) 기록하는 종류는 곳과 오류 글: 같은 곳의 다른 오류는 따로 한 번씩, 종류 수에는 한도가 있다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    let message = 'boom'
+    vi.spyOn(rt.controller, 'react').mockImplementation(() => {
+      throw new Error(message)
+    })
+    const errors = (): unknown[] => o.log.mock.calls.filter(([event]) => event === 'pet.error').map(([, d]) => d)
+    f.emit(UNMASKED)
+    f.emit(UNMASKED)
+    message = 'other'
+    f.emit(UNMASKED)
+    f.emit(UNMASKED)
+    expect(errors()).toEqual([
+      { where: 'react', error: 'boom' },
+      { where: 'react', error: 'other' }
+    ])
+    // 오류 글이 매번 달라도 로그가 끝없이 늘지 않는다
+    for (let i = 0; i < 100; i++) {
+      message = `boom ${i}`
+      f.emit(UNMASKED)
+    }
+    expect(errors().length).toBe(ERROR_KINDS_MAX)
+    rt.dispose()
+  })
+
+  it('(Task 9 #6) 렌더러가 처음 죽으면: 조종을 끝내고(포커스 복귀 없음) 클릭 통과로 되돌린 뒤 한 번 다시 불러오고 한 번 기록한다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    rt.controller.startControl()
+    f.win.renderGone('crashed')
+    expect(rt.controller.controlling()).toBe(false)
+    expect(f.env.restoreFocus).not.toHaveBeenCalled()
+    expect(f.win.w.port.setIgnoreMouse).toHaveBeenLastCalledWith(true)
+    expect(f.win.w.reload).toHaveBeenCalledTimes(1)
+    expect(o.log.mock.calls.filter(([e]) => e === 'pet.renderGone')).toEqual([['pet.renderGone', { reason: 'crashed', count: 1 }]])
+    expect(o.notify).not.toHaveBeenCalled()
+    expect(rt.controller.status().shown).toBe(true)
+    rt.dispose()
+  })
+
+  it('(Task 9 #6) 다시 불러온 뒤 또 죽으면 다시 불러오지 않고 펫을 숨긴 채 두며(창을 닫는다) 한 번 알린다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    f.win.renderGone('crashed')
+    f.win.renderGone('oom')
+    vi.advanceTimersByTime(0)
+    expect(f.win.w.reload).toHaveBeenCalledTimes(1)
+    expect(o.notify.mock.calls).toEqual([[PET_CRASH_NOTICE]])
+    expect(f.win.w.destroy).toHaveBeenCalledTimes(1)
+    expect(rt.controller.status().shown).toBe(false)
+    expect(f.win.w.port.setIgnoreMouse).toHaveBeenLastCalledWith(true)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(f.listeners.size).toBe(0)
+    expect(o.log.mock.calls.filter(([e]) => e === 'pet.renderGone')).toHaveLength(2)
+    // 그 뒤(창을 닫는 중)는 아무것도 하지 않는다
+    f.win.renderGone('crashed')
+    vi.advanceTimersByTime(0)
+    expect(o.notify).toHaveBeenCalledTimes(1)
+    expect(f.win.w.reload).toHaveBeenCalledTimes(1)
   })
 
   it('dispose: 구독·타이머를 모두 풀고 조종 중이면 포커스를 받지 않게 한 뒤 창을 닫는다(두 번 불러도 한 번)', () => {

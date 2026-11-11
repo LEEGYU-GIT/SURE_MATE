@@ -367,6 +367,7 @@ function startPet(): void {
       // 메뉴 "펫 설정": 말랑 메이트 탭으로 연다
       openSettings: async () => openSettings('/settings', { tab: 'pet' }),
       setPetVisible,
+      notify,
       log
     },
     electronPetEnv()
