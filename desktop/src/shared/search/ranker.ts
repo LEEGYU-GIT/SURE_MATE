@@ -58,6 +58,29 @@ export const TYPO_LONG_JAMO = 8
 /** 점수가 나온 단계: 이름(제목·별칭), 자모 오타, 설명 본문 */
 export type RankStage = 'name' | 'typo' | 'body'
 
+/** rankAll의 검색어 하나(말하듯 입력의 변형 검색어). penalty는 점수에서 뺄 값, typo가 false면 자모 오타 단계를 보지 않는다 */
+export interface RankQuery {
+  text: string
+  penalty: number
+  typo: boolean
+}
+
+/** 찾은 문서 하나. title은 점수가 제목에서 나왔는지(별칭·본문에서 나왔거나 지목만 됐으면 false) */
+export interface RankHit {
+  id: string
+  score: number
+  title: boolean
+}
+
+export interface RankOptions {
+  /** 후보 문서에 더할 점수(말하듯 입력의 의도·학습 가산점) */
+  boost?(id: string): number
+  /** 검색어에 맞지 않아도 후보로 넣을 문서 id(0점에서 시작). 색인에 없는 id는 무시 */
+  nominate?: ReadonlySet<string>
+  /** 점수와 제목 일치가 같을 때 큰 쪽을 앞에(최근·자주 쓴 항목, 설계 §9 동점 순서) */
+  prefer?(id: string): number
+}
+
 /** rank 결과에 단계를 붙인 것과, 검색어의 자모 수(오타를 봐줄 거리를 정한 값, 랭커가 세는 그대로) */
 export interface RankedStages {
   jamoLength: number
@@ -186,6 +209,51 @@ function best(doc: IndexedDoc, f: (n: NameKeys, alias: boolean) => number): { sc
   return title >= alias ? { score: title, title: title > 0 } : { score: alias, title: false }
 }
 
+interface Scored {
+  doc: IndexedDoc
+  score: number
+  title: boolean
+  stage: RankStage
+}
+
+/** 검색어 하나로 모든 문서의 점수를 매긴다(0점 포함, 색인 순서). typo가 false면 자모 오타 단계를 건너뛴다 */
+function scoreDocs(index: SearchIndex, q: Query, typo: boolean): Scored[] {
+  const scored: Scored[] = index.docs.map((doc) => ({ doc, stage: 'name', ...best(doc, (n, alias) => scoreName(n, q, alias)) }))
+  if (typo && q.maxTypo > 0 && scored.filter((s) => s.score > SCORE.typo).length < TYPO_GATE) {
+    for (const s of scored) {
+      if (s.score > SCORE.typo) continue
+      const t = best(s.doc, (n) => typoScore(n, q))
+      if (t.score > s.score) Object.assign(s, t, { stage: 'typo' })
+    }
+  }
+  for (const s of scored) {
+    if (s.score === 0 && s.doc.body.includes(q.text)) Object.assign(s, { score: SCORE.body, stage: 'body' })
+  }
+  return scored
+}
+
+/** 정렬할 후보 하나 */
+interface Ranked {
+  doc: IndexedDoc
+  score: number
+  title: boolean
+  prefer: number
+}
+
+/** 같은 점수면 제목에서 맞은 것 → prefer가 큰 것 → 제목이 짧은 것 → 넣은 순서(설계 §9 동점 순서) */
+function byRank(a: Ranked, b: Ranked): number {
+  return (
+    b.score - a.score ||
+    Number(b.title) - Number(a.title) ||
+    b.prefer - a.prefer ||
+    a.doc.titleLength - b.doc.titleLength ||
+    a.doc.order - b.doc.order
+  )
+}
+
+/** 함수가 준 값이 유한수가 아니면 0(정렬이 깨지지 않게) */
+const finite = (n: number | undefined): number => (n !== undefined && Number.isFinite(n) ? n : 0)
+
 /**
  * rank와 같은 결과에, 점수가 나온 단계(이름·별칭 / 자모 오타 / 설명 본문)와 검색어의 자모 수를 붙인다.
  * 거리 2인 오타와 본문 일치는 같은 100점이라 점수만으로는 가릴 수 없다(위키 카드가 맨 위 항목을 고를 때 쓴다).
@@ -193,28 +261,56 @@ function best(doc: IndexedDoc, f: (n: NameKeys, alias: boolean) => number): { sc
 export function rankStages(index: SearchIndex, query: string): RankedStages {
   const q = parseQuery(query)
   if (!q) return { jamoLength: 0, hits: [] }
-  const scored = index.docs.map((doc) => ({ doc, stage: 'name' as RankStage, ...best(doc, (n, alias) => scoreName(n, q, alias)) }))
-  if (q.maxTypo > 0 && scored.filter((s) => s.score > SCORE.typo).length < TYPO_GATE) {
-    for (const s of scored) {
-      if (s.score > SCORE.typo) continue
-      const typo = best(s.doc, (n) => typoScore(n, q))
-      if (typo.score > s.score) Object.assign(s, typo, { stage: 'typo' })
-    }
-  }
-  for (const s of scored) {
-    if (s.score === 0 && s.doc.body.includes(q.text)) Object.assign(s, { score: SCORE.body, stage: 'body' })
-  }
-  const hits = scored
+  const hits = scoreDocs(index, q, true)
     .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score || Number(b.title) - Number(a.title) || a.doc.titleLength - b.doc.titleLength || a.doc.order - b.doc.order)
+    .map((s) => ({ ...s, prefer: 0 }))
+    .sort(byRank)
     .map((s) => ({ id: s.doc.id, score: s.score, stage: s.stage }))
   return { jamoLength: q.jamoLength, hits }
 }
 
 /**
- * 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(0점은 뺀다, 설계 문서 §9).
- * 같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저, 그다음 제목이 짧은 것, 그다음 넣은 순서.
+ * 여러 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(말하듯 입력의 변형 검색어, 설계 §13 7단계).
+ * 검색어마다 rank와 같은 단계로 점수를 매기되 자모 오타 단계는 typo인 검색어만 보고, 점수에서 penalty를 뺀 값 중
+ * 문서마다 가장 높은 것을 쓴다(같으면 penalty가 작은 검색어의 title). 0점 초과이거나 nominate에 있는 문서(맞지 않았으면
+ * 0점에서 시작)에 boost를 더하고 0점 이하는 뺀다. 순서는 점수 → 제목 일치 → prefer → 짧은 제목 → 넣은 순서.
  */
-export function rank(index: SearchIndex, query: string): { id: string; score: number }[] {
-  return rankStages(index, query).hits.map(({ id, score }) => ({ id, score }))
+export function rankAll(index: SearchIndex, queries: RankQuery[], o: RankOptions = {}): RankHit[] {
+  const n = index.docs.length
+  const score: number[] = new Array(n).fill(0)
+  const title: boolean[] = new Array(n).fill(false)
+  const penalty: number[] = new Array(n).fill(Infinity)
+  const matched: boolean[] = new Array(n).fill(false)
+  for (const query of queries) {
+    const q = parseQuery(query.text)
+    if (!q) continue
+    scoreDocs(index, q, query.typo).forEach((s, i) => {
+      if (s.score <= 0) return
+      const v = s.score - query.penalty
+      if (!matched[i] || v > score[i] || (v === score[i] && query.penalty < penalty[i])) {
+        score[i] = v
+        title[i] = s.title
+        penalty[i] = query.penalty
+        matched[i] = true
+      }
+    })
+  }
+  const candidates: Ranked[] = []
+  index.docs.forEach((doc, i) => {
+    const hit = matched[i] && score[i] > 0
+    if (!hit && !o.nominate?.has(doc.id)) return
+    const total = (hit ? score[i] : 0) + finite(o.boost?.(doc.id))
+    if (total <= 0) return
+    candidates.push({ doc, score: total, title: hit && title[i], prefer: finite(o.prefer?.(doc.id)) })
+  })
+  return candidates.sort(byRank).map((s) => ({ id: s.doc.id, score: s.score, title: s.title }))
+}
+
+/**
+ * 검색어로 문서를 점수 매겨 높은 순으로 돌려준다(0점은 뺀다, 설계 문서 §9). rankAll에 검색어 하나(감점 0, 오타 단계 사용).
+ * 같은 점수면 제목에서 맞은 것이 별칭에서 맞은 것보다 먼저, 그다음 prefer가 큰 것, 그다음 제목이 짧은 것, 그다음 넣은 순서.
+ * 결과 모양은 M4 그대로(id·score)다.
+ */
+export function rank(index: SearchIndex, query: string, o: Pick<RankOptions, 'prefer'> = {}): { id: string; score: number }[] {
+  return rankAll(index, [{ text: query, penalty: 0, typo: true }], { prefer: o.prefer }).map(({ id, score }) => ({ id, score }))
 }

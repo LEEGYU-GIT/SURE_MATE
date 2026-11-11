@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { buildSearchIndex, rank, rankStages, TYPO_LONG_JAMO, type SearchDoc } from './ranker'
+import { buildSearchIndex, rank, rankAll, rankStages, TYPO_LONG_JAMO, type RankQuery, type SearchDoc } from './ranker'
 
 const docs: SearchDoc[] = [
   { id: 'dynamic', title: '동적분석', aliases: [] },
@@ -119,5 +119,87 @@ it('rankStages: 점수가 나온 단계(이름·별칭 / 자모 오타 / 설명 
   expect(TYPO_LONG_JAMO).toBe(8)
   for (const q of ['ㅈㅈㅂㅅ', '정적분삭', '종적분삭', '국제', 'mcdc', '검삭']) {
     expect(rank(index, q)).toEqual(rankStages(index, q).hits.map(({ id, score }) => ({ id, score })))
+  }
+})
+
+const rq = (text: string, penalty = 0, typo = true): RankQuery => ({ text, penalty, typo })
+
+it('rankAll: 결과에 점수가 제목에서 나왔는지(title)를 붙인다', () => {
+  const i = buildSearchIndex([
+    { id: 'alias', title: 'X', aliases: ['ABC'] },
+    { id: 'title', title: 'ABC', aliases: [] }
+  ])
+  expect(rankAll(i, [rq('abc')])).toEqual([
+    { id: 'title', score: 1000, title: true },
+    { id: 'alias', score: 950, title: false }
+  ])
+})
+
+it('rankAll: 검색어마다 점수에서 감점을 빼고 문서마다 최고점을 쓴다(동점이면 원형이 이긴다, 설계 §13 5단계)', () => {
+  const i = buildSearchIndex([
+    { id: 'a', title: '정확도', aliases: [] },
+    { id: 'b', title: '정확', aliases: [] }
+  ])
+  expect(rankAll(i, [rq('정확도', 0, true), rq('정확', 1, false)])).toEqual([
+    { id: 'a', score: 1000, title: true },
+    { id: 'b', score: 999, title: true }
+  ])
+  // 감점을 뺀 점수가 같으면 감점이 작은 검색어의 title(검색어 순서와 무관)
+  const x = buildSearchIndex([{ id: 'x', title: 'ABC', aliases: ['XYZ'] }])
+  expect(rankAll(x, [rq('abc', 50), rq('xyz', 0)])).toEqual([{ id: 'x', score: 950, title: false }])
+  // 검색어가 없으면 결과 없음
+  expect(rankAll(i, [])).toEqual([])
+})
+
+it('rankAll: typo가 false인 검색어는 자모 오타 단계를 보지 않는다', () => {
+  const i = buildSearchIndex([{ id: 'search', title: '검색', aliases: [] }])
+  expect(rankAll(i, [rq('검삭', 0, true)])).toEqual([{ id: 'search', score: 200, title: true }])
+  expect(rankAll(i, [rq('검삭', 0, false)])).toEqual([])
+})
+
+it('rankAll: nominate는 검색어에 맞지 않아도 0점에서 시작해 boost를 더한다(모르는 id는 무시, boost가 없으면 0점이라 제외)', () => {
+  const i = buildSearchIndex([
+    { id: 'a', title: '회의록', aliases: [] },
+    { id: 'c', title: '배치 저장', aliases: [] }
+  ])
+  const boost = (id: string): number => (id === 'c' ? 120 : 0)
+  expect(rankAll(i, [rq('회의록')], { nominate: new Set(['c', 'unknown']), boost })).toEqual([
+    { id: 'a', score: 1000, title: true },
+    { id: 'c', score: 120, title: false }
+  ])
+  expect(rankAll(i, [rq('회의록')], { nominate: new Set(['c']) }).map((h) => h.id)).toEqual(['a'])
+  // 검색어 없이 지목만
+  expect(rankAll(i, [], { nominate: new Set(['c']), boost })).toEqual([{ id: 'c', score: 120, title: false }])
+  // 맞은 문서에도 boost를 더한다
+  expect(rankAll(i, [rq('회의록')], { boost: () => 120 })[0]).toEqual({ id: 'a', score: 1120, title: true })
+})
+
+it('rankAll·rank: 같은 점수면 제목 일치 → prefer 큰 쪽 → 짧은 제목 → 넣은 순서(설계 §9 동점 순서)', () => {
+  const i = buildSearchIndex([
+    { id: 'alias', title: '오탐', aliases: ['정적분석'] },
+    { id: 'title', title: '정적분석', aliases: [] },
+    { id: 'title2', title: '정적분석', aliases: [] }
+  ])
+  const prefer = (id: string): number => ({ alias: 9, title2: 5 })[id] ?? 0
+  // 셋 다 초성 일치 750: 제목에서 맞은 둘이 먼저(별칭 쪽 prefer가 더 커도), 그 안에서 prefer 큰 쪽
+  expect(rankAll(i, [rq('ㅈㅈㅂㅅ')], { prefer }).map((h) => h.id)).toEqual(['title2', 'title', 'alias'])
+  expect(rank(i, 'ㅈㅈㅂㅅ', { prefer })).toEqual([
+    { id: 'title2', score: 750 },
+    { id: 'title', score: 750 },
+    { id: 'alias', score: 750 }
+  ])
+  // prefer는 짧은 제목보다 먼저
+  const j = buildSearchIndex([
+    { id: 'long', title: '가나다라', aliases: [] },
+    { id: 'short', title: '가나', aliases: [] }
+  ])
+  expect(rank(j, '가').map((r) => r.id)).toEqual(['short', 'long'])
+  expect(rank(j, '가', { prefer: (id) => (id === 'long' ? 1 : 0) }).map((r) => r.id)).toEqual(['long', 'short'])
+})
+
+it('rank = rankAll(검색어 하나, 감점 0, 오타 단계 사용): M4 결과 그대로', () => {
+  for (const q of ['ㅈㅈㅂㅅ', '정적분삭', '종적분삭', '국제', 'mcdc', 'MC/DC', '검삭', 'c++', '정리', 'rjator', '가', '   ']) {
+    expect(rank(index, q), q).toEqual(rankAll(index, [rq(q)]).map(({ id, score }) => ({ id, score })))
+    expect(rank(index, q), q).toEqual(rankStages(index, q).hits.map(({ id, score }) => ({ id, score })))
   }
 })
