@@ -1048,6 +1048,29 @@ describe('잡아 던지기', () => {
     expect(mode(t)).toBe('air')
   })
 
+  it('(M3) 누르는 중 다시 온 누름(렌더러가 뗌을 놓쳤다)은 무시한다: 클릭 시간을 다시 재지 않고, 들린 펫은 계속 들고 있다', () => {
+    const t = make()
+    t.c.start()
+    t.env.cursor = bodyPoint(t)
+    t.c.press(true)
+    vi.advanceTimersByTime(300)
+    t.c.press(true)
+    vi.advanceTimersByTime(300)
+    t.c.press(false)
+    // 첫 누름부터 600ms(> 500ms)라 클릭(폴짝)이 아니다
+    expect(t.log.mock.calls.filter(([e]) => e === 'pet.click')).toEqual([])
+    expect(look(t).cue).toBeNull()
+
+    pickUp(t)
+    t.c.press(true)
+    t.env.cursor = { x: 900, y: 700 }
+    vi.advanceTimersByTime(PET_LOOP.frameMs)
+    expect(mode(t)).toBe('held')
+    expect(foot(t)).toEqual({ x: 900, y: 747.25 })
+    t.c.press(false)
+    expect(mode(t)).toBe('air')
+  })
+
   it('(Review Focus 4) false 다음 true면 이어서 들고, null이면 press(false)까지 들고 있다', () => {
     const t = make()
     t.c.start()
