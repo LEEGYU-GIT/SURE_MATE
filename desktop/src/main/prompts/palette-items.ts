@@ -19,7 +19,7 @@ const firstLine = (s: string): string => s.split('\n', 1)[0].trim()
 export function buildPaletteItems(
   templates: Template[],
   commands: PaletteItem[],
-  o: { maskingMode: MaskingMode; glossary: GlossaryEntry[]; barShape: BarShape; petVisible: boolean }
+  o: { maskingMode: MaskingMode; glossary: GlossaryEntry[]; barShape: BarShape; petVisible: boolean; petSleeping?: boolean }
 ): PaletteItem[] {
   const fromTemplates = templates.map(
     (t): PaletteItem => ({
@@ -41,5 +41,5 @@ export function buildPaletteItems(
       tags: [...e.tags]
     })
   )
-  return [...fromTemplates, ...maskingCommandItems(o.maskingMode), ...packCommandItems(), ...barCommandItems(o.barShape), ...petCommandItems({ visible: o.petVisible }), ...settingsCommandItems(), ...commands, ...wiki]
+  return [...fromTemplates, ...maskingCommandItems(o.maskingMode), ...packCommandItems(), ...barCommandItems(o.barShape), ...petCommandItems({ visible: o.petVisible, sleeping: o.petSleeping ?? false }), ...settingsCommandItems(), ...commands, ...wiki]
 }

@@ -88,6 +88,8 @@ const petCommands = createPetCommands({
   isVisible: () => settings.pet.visible,
   setVisible: setPetVisible,
   toggleControl: () => petRuntime?.controller.toggleControl(),
+  putToSleep: () => petRuntime?.controller.putToSleep() ?? false,
+  wakeUp: () => petRuntime?.controller.wakeUp() ?? false,
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   hidePaletteAndRefocus,
@@ -695,7 +697,14 @@ if (!app.requestSingleInstanceLock()) {
         glossaryEntries = glossary
         // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
         applySettings(settings)
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape, petVisible: settings.pet.visible })
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, {
+          maskingMode: settings.masking.mode,
+          glossary,
+          barShape: settings.bar.shape,
+          petVisible: settings.pet.visible,
+          // 졸고 있으면 "재우기" 대신 "깨우기"(M4)
+          petSleeping: petRuntime?.controller.status().mode === 'sleep'
+        })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {

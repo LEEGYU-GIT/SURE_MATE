@@ -92,6 +92,14 @@ export interface PetController {
   handOff(): string | null
   /** 조종 키 누름·뗌. 조종 중이 아니면 무시한다 */
   key(k: PetKey, down: boolean): void
+  /**
+   * 팔레트 명령 "재우기"(§16 키보드만으로 사용, M6 최종 검토 M4): 바닥·꼭대기에 있으면(가만히·걷기·앉기) 그 자리에서 존다.
+   * 메뉴 "재우기"와 같다(열린 메뉴는 닫고 메뉴 동안 온 반응은 버린다, 보이던 말풍선은 닫는다). 이미 자고 있으면 true,
+   * 들리거나 날거나 오르는 중·조종 중·숨김이면 false
+   */
+  putToSleep(): boolean
+  /** 팔레트 명령 "깨우기": 자고 있으면 깨운다(바닥은 가만히, 꼭대기는 앉기). 깨어 있으면 할 일 없이 true, 숨김이면 false */
+  wakeUp(): boolean
   controlling(): boolean
   status(): PetStatus
   view(): PetView | null
@@ -1890,6 +1898,30 @@ export function createPetController(d: PetControllerDeps): PetController {
         steer()
       }
       settle()
+    },
+    putToSleep() {
+      if (disposed || !shown || !world) return false
+      if (mode === 'sleep') return true
+      if (control || pressed || !(mode === 'idle' || mode === 'walk' || mode === 'sit')) return false
+      // 고른 일이 이긴다(메뉴 "재우기"와 같다): 메뉴 동안 온 반응은 버리고 보이던 반응·클릭 표시는 끝낸다
+      pending = null
+      closeMenu(false)
+      endReaction()
+      clickFaceUntil = null
+      fallAsleep()
+      retest()
+      settle()
+      return true
+    },
+    wakeUp() {
+      if (disposed || !shown || !world) return false
+      if (mode !== 'sleep') return true
+      closeMenu(false)
+      wake()
+      flushPending()
+      retest()
+      settle()
+      return true
     },
     controlling: () => control !== null,
     status: () => ({
