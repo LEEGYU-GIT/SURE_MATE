@@ -2639,6 +2639,88 @@ describe('오른쪽 클릭 메뉴(설계 §14-2, 닫기는 M5 펼침 메뉴와 �
       rect: { x: 80, y: 29.25, width: 176, height: 136 }
     })
   })
+
+  it('(fix) 몸과 메뉴 사이 틈(약 21 DIP)에서는 클릭을 받고 메뉴가 열려 있다(몸에서 행으로 가는 길·틈 누름). 닫힌 뒤 틈은 통과', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    // 메뉴가 열린 동안 조회는 50ms 이하 간격
+    vi.advanceTimersByTime(FLYOUT_TIMING.dismissPollMs + 1)
+    expect(lastIgnore(t)).toBe(false)
+    const m = menu(t)!
+    const win = t.c.status().window!
+    const bodyTop = Math.min(...hitShape('stand', petBox(foot(t), 56), false).map((r) => r.y))
+    const menuBottom = win.y + m.rect.y + m.rect.height
+    expect(bodyTop - menuBottom).toBeGreaterThan(20)
+    // 몸 가운데에서 곧장 위로, 그리고 첫 행 왼쪽으로 비스듬히
+    for (const x of [960, 880]) {
+      t.env.cursor = { x, y: (menuBottom + bodyTop) / 2 }
+      vi.advanceTimersByTime(FLYOUT_TIMING.dismissPollMs + 1)
+      expect(lastIgnore(t), String(x)).toBe(false)
+    }
+    vi.advanceTimersByTime(FLYOUT_TIMING.menuAwayMs + 100)
+    expect(menu(t)).not.toBeNull() // 틈은 메뉴 안이다
+    t.env.buttons = true
+    vi.advanceTimersByTime(FLYOUT_TIMING.dismissPollMs * 2)
+    expect(menu(t)).not.toBeNull() // 틈에서 누름은 바깥 누름이 아니다
+    t.env.buttons = null
+    t.c.contextMenu()
+    expect(menu(t)).toBeNull()
+    expect(lastIgnore(t)).toBe(true) // 닫힌 뒤 틈은 아래 창으로 통과
+  })
+
+  it('(fix) 메뉴 동안 온 반응은 조종하기를 고르면 키 안내에 밀려 조종이 끝난 뒤 보인다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.react(COPIED)
+    t.c.menuAction('control')
+    expect(bubble(t)).toMatchObject({ text: PET_CONTROL_GUIDE })
+    expect(reacts(t)).toEqual([])
+    vi.advanceTimersByTime(5000)
+    expect(bubble(t)).toBeNull() // 조종 중에는 보이지 않는다
+    t.c.key('end', true)
+    expect(bubble(t)).toMatchObject({ text: COPIED_TEXT })
+    expect(reacts(t)).toEqual([{ kind: 'celebrate', bubble: true }])
+  })
+
+  it('(fix) 조종 중 새 반응이 오면 메뉴 동안 온 옛 반응은 끝낸 뒤에도 보이지 않는다(마지막 하나). 숨기면 버린다', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.react(COPIED)
+    t.c.menuAction('control')
+    t.c.react(WARN)
+    expect(bubble(t)).toMatchObject({ text: WARN_TEXT })
+    vi.advanceTimersByTime(5000)
+    t.c.key('end', true)
+    expect(bubble(t)).toBeNull()
+    expect(reacts(t)).toEqual([{ kind: 'warn', bubble: true }])
+
+    const hidden = make()
+    hidden.c.start()
+    openMenu(hidden)
+    hidden.c.react(COPIED)
+    hidden.c.menuAction('control')
+    hidden.c.setFullscreen(true)
+    hidden.c.setFullscreen(false)
+    expect(bubble(hidden)).toBeNull()
+    expect(reacts(hidden)).toEqual([])
+  })
+
+  it('(fix) 메뉴 동안 온 반응은 재우기를 고르면 버린다(바로 깨지 않는다)', () => {
+    const t = make()
+    t.c.start()
+    openMenu(t)
+    t.c.react(COPIED)
+    t.c.menuAction('sleep')
+    expect(mode(t)).toBe('sleep')
+    expect(bubble(t)).toBeNull()
+    vi.advanceTimersByTime(3000)
+    expect(mode(t)).toBe('sleep')
+    expect(states(t)).toEqual(['sleep'])
+    expect(reacts(t)).toEqual([])
+  })
 })
 
 describe('조종 모드(설계 §14-2 "펫 창이 키보드를 받는다")', () => {

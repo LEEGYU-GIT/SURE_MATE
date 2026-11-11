@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { PetMenuAction, PetMenuRow, PetView } from '../../../shared/pet/pet-view'
 import { EyeOffIcon, GamepadIcon, MoonIcon, SettingsIcon, SunIcon } from '../design/icons'
 import { MenuBody } from '../flyout/Menu'
+import { press } from '../flyout/press'
 
 type PetMenuView = NonNullable<PetView['menu']>
 
@@ -57,6 +58,9 @@ export function PetMenu({
 
 /**
  * 한 줄 명령 행(높이 32): 아이콘 칸 16 + 제목 14. M5 메뉴의 명령 행(MenuRowButton)과 같은 모양·마우스 올림·누름 바탕.
+ * M5 행처럼 누름이 아니라 뗌(pointerup)으로 고른다(flyout/press.ts): 포커스를 받지 않는 창을 누른 직후 숨기면
+ * 그 창의 다음 첫 누름이 가끔 오지 않는다. "숨기기"가 바로 그 경우다(다시 부른 펫 창의 첫 누름이 사라져도 뗌으로 고른다).
+ * 뗌 없이 오는 click(화면 읽기 프로그램·자동화)도 받는다.
  * 펫 창은 포커스를 받지 않으므로 tabIndex -1(마우스만). 설명(키 안내·다시 부르는 곳)은 행 높이에 들어가지 않아
  * 화면 읽기 프로그램에만 준다(조종 키는 조종을 시작할 때 말풍선으로 보인다).
  */
@@ -77,7 +81,8 @@ function PetMenuItem({
       aria-labelledby={`${id}-title`}
       aria-describedby={row.detail ? `${id}-detail` : undefined}
       className="grid h-8 w-full shrink-0 grid-cols-[16px_minmax(0,1fr)] content-center items-center gap-x-2 rounded-control px-2 text-left transition-colors duration-(--dur-hover) hover:bg-row-hover active:bg-row-selected active:transition-none"
-      onClick={() => onAction(row.action)}
+      // 뗄 때 고른다(press.ts: 숨겼던 창의 첫 누름이 사라져도 눌리게)
+      {...press(() => onAction(row.action))}
     >
       <span aria-hidden="true" className="grid h-5 place-items-center text-fg-2">
         <Icon size={16} />

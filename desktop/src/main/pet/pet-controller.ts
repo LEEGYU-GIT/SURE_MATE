@@ -2,10 +2,12 @@ import type { AppEvent } from '../../shared/app-events'
 import { choosePlan, pickMs, PET_TIMING } from '../../shared/pet/pet-behavior'
 import { PET_CONTROL_GUIDE, petMenuRows } from '../../shared/pet/pet-copy'
 import {
+  boundsOf,
   bubbleHop,
   bubbleSlot,
   hitShape,
   isOver,
+  menuBridge,
   menuSlot,
   petBox,
   petWindowRect
@@ -299,6 +301,11 @@ export function createPetController(d: PetControllerDeps): PetController {
   let stepDown: { ms: number; from: Point } | null = null
   /** 조종을 시작할 때 보인 키 안내 반응. 조종이 끝나면 닫는다(앱 반응은 그대로) */
   let guide: PetReaction | null = null
+  /**
+   * 메뉴가 열린 동안 왔다가 "조종하기"에 밀린 반응(키 안내가 이긴다). Esc·단축키·다른 창으로 조종이 끝나면 보이고,
+   * 조종 중에 새 반응이 오거나(마지막 하나) 숨기면 버린다
+   */
+  let afterControl: PetReaction | null = null
 
   const now = (): number => d.now()
   const size = (): number => cfg.size
@@ -432,7 +439,18 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   const bodyRects = (): Rect[] => hitShape(POSE[mode], screenBox(), facing === 'left')
 
-  /** 몸 모양, 말풍선(렌더러가 잰 사각형, 창 → 화면 좌표), 열린 메뉴 */
+  /**
+   * 열린 메뉴가 받는 곳: 메뉴와, 몸과 메뉴 사이 틈(약 21 DIP)을 잇는 사각형. 몸에서 행으로 옮기는 커서가 클릭 통과로
+   * 바뀌지 않고 틈에서 누른 클릭이 아래 창으로 가지 않게 한다(닫기 확인도 틈을 메뉴 안으로 친다)
+   */
+  function menuRects(): Rect[] {
+    const { rect, side } = menuPlace()
+    const body = boundsOf(bodyRects())
+    const bridge = body ? menuBridge({ menu: rect, side, body }) : null
+    return bridge ? [rect, bridge] : [rect]
+  }
+
+  /** 몸 모양, 말풍선(렌더러가 잰 사각형, 창 → 화면 좌표), 열린 메뉴(몸과 잇는 틈 포함) */
   function hitRects(): (Rect | null)[] {
     const rects: (Rect | null)[] = bodyRects()
     if (bubbleHit && placed && reacting?.r.bubble) {
@@ -443,7 +461,7 @@ export function createPetController(d: PetControllerDeps): PetController {
         height: bubbleHit.height
       })
     }
-    if (menuOpen) rects.push(menuPlace().rect)
+    if (menuOpen) rects.push(...menuRects())
     return rects
   }
 
@@ -1322,6 +1340,8 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (guide && reacting?.r === guide) endReaction()
     if (guide && pending === guide) pending = null
     guide = null
+    // 키 안내에 밀린 반응은 Esc·단축키·다른 창으로 끝낼 때 endControlNow가 보이고, 숨기거나 버릴 때는 버린다
+    afterControl = null
     d.window.setFocusable(false)
     if ((reason === 'esc' || reason === 'toggle') && c.prev !== null) d.restoreFocus(c.prev)
     if (reason !== 'dispose') d.log('pet.control', { phase: 'end', reason })
@@ -1384,7 +1404,7 @@ export function createPetController(d: PetControllerDeps): PetController {
    */
   function checkMenu(c: Point): void {
     const t = now()
-    if (isOver(c, [...bodyRects(), menuPlace().rect])) {
+    if (isOver(c, [...bodyRects(), ...menuRects()])) {
       menuInsideAt = t
       return
     }
@@ -1429,8 +1449,14 @@ export function createPetController(d: PetControllerDeps): PetController {
 
   function endControlNow(reason: 'esc' | 'blur' | 'toggle'): void {
     if (disposed || !control) return
+    const later = afterControl
     finishControl(reason)
     if (!shown) return
+    // 메뉴 동안 와서 키 안내에 밀린 반응을 이제 보인다(날고 있으면 내려앉은 뒤). 보이면 계획은 반응이 끝난 뒤
+    if (later) {
+      pending = later
+      flushPending()
+    }
     resumeAfterControl()
     // 끝낸 뒤 커서가 몸 밖이면 바로 클릭 통과(Review Focus 1)
     retest()
@@ -1729,6 +1755,8 @@ export function createPetController(d: PetControllerDeps): PetController {
       if (disposed || !shown || !world) return
       const r = reactionFor(e, { reactions: cfg.reactions, bubbles: cfg.bubbles })
       if (!r) return
+      // 조종하기에 밀려 기다리던 반응은 새 반응으로 바뀐다(마지막 하나만)
+      afterControl = null
       // 들림·공중·뛰어오르기·꼭대기로 올라서기·메뉴: 마지막 하나만 두었다가 바닥·꼭대기·옆면에 서거나 메뉴가 닫힌 뒤 보인다
       if (menuOpen || (!canReact() && mode !== 'walk' && mode !== 'sleep')) {
         pending = r
@@ -1781,11 +1809,18 @@ export function createPetController(d: PetControllerDeps): PetController {
       if (disposed || !shown || !world || !menuOpen) return
       d.log('pet.menu', { action: a })
       switch (a) {
-        case 'control':
+        case 'control': {
+          // 고른 일이 이긴다: 메뉴 동안 온 반응은 키 안내에 밀려 조종이 끝난 뒤 보인다
+          const stored = pending
+          pending = null
           closeMenu(false)
           beginControl()
+          afterControl = stored
           break
+        }
         case 'sleep':
+          // 고른 일이 이긴다: 메뉴 동안 온 반응은 버린다(보이려면 바로 깨워야 한다)
+          pending = null
           if (mode === 'sleep') {
             closeMenu(true)
             break

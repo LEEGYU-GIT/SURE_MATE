@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bubbleHop, bubbleSlot, hitShape, hopRoom, isOver, menuSize, menuSlot, petBox, petWindowRect, placeSlot } from './pet-frame'
+import { boundsOf, bubbleHop, bubbleSlot, hitShape, hopRoom, isOver, menuBridge, menuSize, menuSlot, petBox, petWindowRect, placeSlot } from './pet-frame'
 import { SLOT } from './pet-view'
 import type { Rect } from '../types'
 
@@ -198,6 +198,42 @@ describe('menuSlot: 오른쪽 클릭 메뉴 자리(placeSlot(menuSize(4)), 창 �
       expect(r.rect.y - w.y, String(size)).toBeGreaterThanOrEqual(M.top)
       expect(r.rect.x - w.x, String(size)).toBeGreaterThanOrEqual(M.side)
     }
+  })
+})
+
+describe('menuBridge: 몸과 열린 메뉴 사이 틈을 잇는 사각형(몸에서 메뉴 행으로 가는 커서가 통과로 바뀌지 않게)', () => {
+  it('boundsOf: 사각형들을 감싸는 사각형, 비면 null', () => {
+    expect(
+      boundsOf([
+        { x: 10, y: 20, width: 30, height: 5 },
+        { x: 5, y: 22, width: 20, height: 30 }
+      ])
+    ).toEqual({ x: 5, y: 20, width: 35, height: 32 })
+    expect(boundsOf([])).toBeNull()
+  })
+
+  it('위 메뉴: 메뉴 아래 끝에서 몸 위 끝까지, 가로는 메뉴와 몸을 합친 범위(비스듬히 가는 길도 덮는다)', () => {
+    // 바닥 가운데 크기 56 펫(서기)과 그 메뉴
+    const box = petBox({ x: 960, y: 1040 }, 56)
+    const body = boundsOf(hitShape('stand', box, false))!
+    expect(body).toEqual({ x: 938.125, y: 1002.375, width: 43.75, height: 39.375 })
+    const { rect, side } = menuSlot({ rows: 4, box, window: petWindowRect(box, MAIN), bounds: MAIN })
+    expect(menuBridge({ menu: rect, side, body })).toEqual({ x: 872, y: 981.25, width: 176, height: 21.125 })
+  })
+
+  it('옆 메뉴: 메뉴 안쪽 끝에서 몸 옆 끝까지, 세로는 메뉴와 몸을 합친 범위', () => {
+    const menu: Rect = { x: 100, y: 20, width: 176, height: 136 }
+    const left = menuBridge({ menu, side: 'left', body: { x: 290, y: 60, width: 40, height: 30 } })
+    expect(left).toEqual({ x: 276, y: 20, width: 14, height: 136 })
+    const right = menuBridge({ menu, side: 'right', body: { x: 40, y: 140, width: 40, height: 30 } })
+    expect(right).toEqual({ x: 80, y: 20, width: 20, height: 150 })
+  })
+
+  it('맞닿거나 겹치면(메뉴를 창 안으로 자른 드문 자리) 틈이 없어 null', () => {
+    const menu: Rect = { x: 100, y: 20, width: 176, height: 136 }
+    expect(menuBridge({ menu, side: 'above', body: { x: 150, y: 156, width: 40, height: 30 } })).toBeNull()
+    expect(menuBridge({ menu, side: 'above', body: { x: 150, y: 100, width: 40, height: 30 } })).toBeNull()
+    expect(menuBridge({ menu, side: 'left', body: { x: 270, y: 60, width: 40, height: 30 } })).toBeNull()
   })
 })
 
