@@ -31,6 +31,10 @@
 
 설정을 잠시 바꾸는 `t14-run.ps1`·`t16-run.ps1`·`t18-run.ps1`·`t20-run.ps1`·`t21-run.ps1`·`t22-run.ps1`의 출력은 `Select-Object -First`로 자르지 말고 파일로 받아 읽는다. 파이프가 일찍 끊기면 되돌리기(`finally`)가 돌지 않아 `settings.json`이 시험 값으로 남는다.
 
+안전하게 중단하는 방법: 실행 중인 창에서 `Ctrl+C`를 한 번 누른다. `run-smoke.ps1`은 `finally`에서 시험 스크립트 프로세스, dev 앱(`npm run dev`와 그 자식 프로세스), 이 저장소의 electron, 시험 창을 정리한다. `*-run.ps1`은 자기 `finally`에서 설정·사용자 파일을 되돌리고, t21·t22는 클립보드도 되돌린다. 이 동작은 리눅스 서버에서 확인할 수 없고 Windows에서 확인하지 않았다(확인 필요).
+- 창 닫기 단추·작업 관리자의 강제 종료·`Stop-Process`는 `finally`를 돌리지 않는다. 이때는 dev 앱과 electron이 남을 수 있으므로 작업 관리자에서 `electron`·`node`·`cmd`를 정리하고, `%APPDATA%\Sure-Mate`에 `.smoke-backup` 파일이 남아 있으면 원래 파일과 비교해 되돌린 뒤 지운다. `.smoke-backup`이 있으면 다음 실행이 멈추는 것은 의도한 동작이다.
+- 시험 중에는 마우스·키보드를 사용하지 않는다. 중단한 뒤 시험 창(`SureMate-Test`·`SureMate-WS-*`)이 남아 있으면 직접 닫는다.
+
 스크립트는 UTF-8 BOM으로 저장한다. Windows PowerShell 5.1은 BOM 없는 파일을 시스템 코드 페이지로 읽어 한글 주석에서 구문이 깨진다.
 
 지킬 것: 키는 스캔 코드와 함께 보내고, 시험 창은 시스템 메뉴(ControlBox)를 끈다. 키 타이밍은 사람처럼 한다(첫 자동 반복 0.5초 뒤 33ms 간격, 보조키는 0.2~0.8초 늦게 떼기).
@@ -155,11 +159,11 @@ t20은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 
 `Ctrl+Alt+9`를 다른 앱이 사용하면 `.\t21-run.ps1 -WsHotkey Ctrl+Alt+8 > t21-out.txt`처럼 다른 조합으로 실행한다. 아래 설명의 `Ctrl+Alt+9`는 그 조합으로 바뀐다.
 
-시험 전후의 파일 처리는 t22와 같다.
+시험 전후의 파일 처리는 t22와 같다. 시험 중 클립보드를 사용하며(팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다), 시작 전 클립보드가 글자였으면 끝난 뒤 되돌린다. 파일·그림이 들어 있었다면 되돌릴 수 없고 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
 
 - 설정 파일(`settings.json`)을 잠시 바꾼다: AI 대상 "복사만", 바는 주 모니터 오른쪽 가장자리 띠, 가명 처리 되돌리기, 첫 실행 안내 완료. 말랑 메이트 설정은 바꾸지 않는다.
 - M7 파일(`workspaces.json`·`phrase-map.json`·`usage.json`·`intents.json`)과 `workspaces.json.bak`을 백업하고, M7 파일은 지워 빈 상태로 시작한다. 시험이 저장한 워크스페이스가 목록과 바 메뉴의 첫 행이 되게 하기 위해서다.
-- 시험이 종료되면 모두 되돌린다. `.smoke-backup` 파일이 이미 있으면 시험이 시작하지 않고 멈춘다. `t21-workspace.ps1`을 `run-smoke.ps1`로 직접 실행하면 `error =` 줄을 출력하고 멈춘다.
+- 시험이 종료되면 모두 되돌린다. `.smoke-backup` 파일이 이미 있으면 시험이 시작하지 않고 멈춘다. `t21-workspace.ps1`을 `run-smoke.ps1`로 직접 실행하면 `t21-run.ps1`이 넘기는 `-FromRunner`가 없으므로 `error =` 줄을 출력하고 멈춘다.
 
 시험 창은 3개다. 좌표는 주 모니터 작업 영역의 왼쪽 위를 기준으로 한 물리 픽셀이다.
 
@@ -185,7 +189,7 @@ t21은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 
 저장과 설정 창:
 
-- `workspace_saved`: `workspace.save`가 성공하고(출처 palette, 창 3개 이상) `workspaces.json`에 시험 창 3개의 규칙이 하나씩 있다. 아래 판정의 전제다
+- `workspace_saved`: `workspace.save`가 성공하고(출처 palette, 창 3개 이상) `workspaces.json`에 시험 창 3개의 규칙이 하나씩 있다. 아래 판정의 전제다 열린 창이 40개를 넘어 앱이 40개까지만 저장했다고 알리면(`overLimit`) 시험 창이 빠졌을 수 있어 False가 아니라 `skipped (more than 40 windows open)`을 출력한다
 - `default_name_batch_n`: 이름 없이 저장한 워크스페이스의 이름이 "배치 N"이다(`info_default_name`)
 - `editor_opened`: 저장 뒤 `settings.window`(탭 workspace)가 기록되고 설정 창이 5초 안에 앞 창이 된다
 - `name_committed`: 설정 창이 앞에 오고 2초 뒤 `smoke ws`를 입력하고 Enter → `workspace.edit` 성공, `workspaces.json`의 이름이 정확히 `smoke ws`다. 이름 칸 전체가 선택되어 있지 않았으면 기본 이름 뒤에 이어 붙어 False가 된다(`info_name`의 `file_name`으로 확인)
@@ -198,7 +202,7 @@ t21은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 - `a_within_10px`, `b_within_10px`: A(불러오기 전 최소화)·B(불러오기 전 최대화)의 보이는 테두리가 저장할 때와 위치·크기 모두 ±10px 안이다(차이는 `info_a_diff`·`info_b_diff`)
 - `c_maximized`: 불러오기 전 보통 상태였던 C가 최대화된다
 - `ab_normal`: A·B가 보통 상태다
-- `focus_restored`: 불러온 뒤 앞 창이 불러오기 전 앞 창(B)이다
+- `focus_restored`: 불러온 뒤 앞 창이 불러오기 전 앞 창(B)이다. 로그 `workspace.restore`의 `restoredFocus`가 true일 때만 True다
 - `mixed_dpi`: B가 배율이 다른 두 번째 모니터에 있을 때 B의 ±10px. 모니터가 1대이거나 배율이 같으면 `skipped`
 - `missing_reported`: A를 닫고 다시 불러오면 `workspace.restore`의 missing이 앞 불러오기보다 1 많다(알림에 "못 찾음"이 표시된다)
 
@@ -221,6 +225,7 @@ t21은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 
 로그:
 
+- 아래 `log_has_no_*` 세 줄은 이번 실행의 앱 로그에 `palette.run`이나 `workspace.save` 줄이 하나라도 있어야 판정한다. 없으면 `skipped (no app log lines)`을 출력한다(로그를 읽지 못해 비어 있을 때 "없음"이 True로 나오는 것을 막는다)
 - `log_has_no_titles`: 앱 로그에 시험 창 제목(`SureMate-WS`)이 없다
 - `log_has_no_names`: 앱 로그에 워크스페이스 이름(`smoke ws`, 기본 이름)이 없다. 있으면 `info_names_in_log`에 출력된다
 - `log_has_no_typed_text`: 앱 로그에 이름·제목·문장을 담는 키(`text`·`query`·`sentence`·`phrase`·`input`·`title`·`name`·`label`·`words`·`aliases`·`savedTitle`·`titleIncludes`의 값이 글자나 배열)가 없다
@@ -253,10 +258,11 @@ t21은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 
 시험 전후의 파일 처리는 다음과 같다.
 
-- 설정 파일(`settings.json`)을 잠시 바꾼다: AI 대상 "복사만", 바는 주 모니터 오른쪽 가장자리 띠, 가명 처리 되돌리기, 첫 실행 안내 끝냄.
+- 설정 파일(`settings.json`)을 잠시 바꾼다: AI 대상 "복사만", 바는 주 모니터 오른쪽 가장자리 띠, 가명 처리 되돌리기, 첫 실행 안내 완료.
 - M7 파일(`workspaces.json`·`phrase-map.json`·`usage.json`·`intents.json`)은 백업한 뒤 지워 빈 상태로 시작한다. 최근 항목·기억한 문장·사용자 단어 목록이 목록 순서를 바꾸지 않게 하기 위해서다. `workspaces.json.bak`도 백업한다.
 - 끝나면 모두 되돌린다. `.smoke-backup` 파일이 이미 있으면 앞선 시험이 도중에 끊긴 것이므로 시험이 시작하지 않고 멈춘다. 원래 파일과 비교해 정리한 뒤 다시 실행한다.
-- `t22-natural.ps1`을 `run-smoke.ps1`로 직접 실행하면 M7 파일이 남아 있어 `error =` 줄을 출력하고 멈춘다.
+- 시험 중 클립보드를 사용한다(처음에 가짜 글을 넣고, 가명 되돌리기 단계에서 가짜 글로 바꾸며, 팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다). 시작 전 클립보드가 글자였으면 끝난 뒤 되돌리고, 파일·그림이 들어 있었다면 되돌릴 수 없으며 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
+- `t22-natural.ps1`을 `run-smoke.ps1`로 직접 실행하면 `t22-run.ps1`이 넘기는 `-FromRunner`가 없으므로 `error =` 줄을 출력하고 멈춘다.
 
 시험은 그때 화면에 열린 창 전체(시험 창 `SureMate-Test` 포함)를 저장하고 세 번 불러온다. 저장한 자리로 다시 옮기는 것이라 위치는 바뀌지 않는다. 다만 최대화한 창은 잠깐 보통 크기가 되었다가 다시 최대화되고, 창 순서는 저장할 때 순서로 돌아온다.
 
@@ -271,6 +277,7 @@ t22는 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 - `natural_unmask`: '가명 되돌려줘' → `palette.run` id가 `cmd.unmask`(가명 되돌리기). 가명 대응표가 비어 있어 "되돌릴 수 없어요" 알림이 표시되는 것이 정상이다
 - `remember_learned`: '보고서 띄워줘'(맨 위 주간보고 초안, 둘째 행 보고서 모드) → ↓ 한 번 → Shift+Enter → `phrase.learn`이 기록되고, 실행한 항목이 그 워크스페이스이며, `phrase-map.json`에 그 워크스페이스로 연결된 줄이 하나 있다. False이고 `info_remember`의 `ran`이 다른 id이면 ↓가 다른 행을 선택한 것이다(캡처 `m7-remember`로 확인)
 - `learned_top`: 다시 '보고서 띄워줘' → Enter → 기억한 워크스페이스가 실행된다(맨 위). `remember_learned`가 True일 때만 판정한다. 기억하기 안내는 맨 위가 아닌 행에만 표시되므로, 기억하기 전의 맨 위는 그 워크스페이스가 아니었다
+- `log_has_no_phrases`, `log_has_no_typed_text`는 이번 실행의 앱 로그에 `palette.run`이나 `workspace.save` 줄이 없으면 `skipped (no app log lines)`을 출력한다
 - `log_has_no_phrases`: 앱 로그에 입력 조각(회의록·보고서·가명 되돌려·띄워·바꿔줘·정리해줘·영문 자판 글)이 없다. 있으면 `info_phrases_in_log`에 찾은 조각이 출력된다
 - `log_has_no_typed_text`: 앱 로그에 문장을 담는 키(`text`·`query`·`sentence`·`phrase`·`input`·`title`·`name`·`label`·`words`·`aliases`의 값이 글자나 배열)가 없다
 

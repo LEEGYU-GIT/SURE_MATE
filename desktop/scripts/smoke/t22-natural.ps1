@@ -5,7 +5,9 @@
 # 로그 읽기: palette.show(mode·bounds), palette.run(id), workspace.save(op·source·ok·id·windows), workspace.restore(source·ok·id·total·placed),
 # phrase.learn(keyLength), masking.unmask(restored·tableSize). 앱이 로그로 알리지 않는 화면 순서(↓로 선택한 행)는 실행된 id·phrase-map.json·캡처 m7-remember로 확인한다.
 # 단계가 예외로 멈추면 그 단계만 `error_단계` 줄을 남기고 다음 단계로 간다. 앞 단계가 성립하지 않은 판정은 True 대신 `skipped (까닭)`을 출력한다.
-param([string]$Combo = 'Alt+`')
+param([string]$Combo = 'Alt+`', [switch]$FromRunner)
+# t22-run.ps1만 -FromRunner를 넘긴다. 직접 실행하면 사용자 설정·파일을 비우지 않은 채 시작해 결과가 틀리므로 멈춘다
+if (-not $FromRunner) { 'error = t22-run.ps1로 실행한다(직접 실행하면 설정과 사용자 파일이 시험 상태가 아니다)'; return }
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"
 $r = [ordered]@{}
@@ -75,6 +77,7 @@ try {
   $left = @(@('workspaces.json', 'phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
   if ($left.Count -gt 0) { throw "t22-run.ps1로 실행한다(시작할 때 없어야 하는 파일이 있다: $($left -join ', '))" }
   $r.info_palette_hotkey = $Combo
+  # 클립보드는 시험 중 가짜 글로 바뀐다. t22-run.ps1이 시작 전 글자 내용을 저장해 두었다가 되돌린다(내용은 로그·출력에 남기지 않는다)
   [System.Windows.Forms.Clipboard]::SetText('ORIGINAL-CLIP')
   $form = NewTestForm
 
@@ -194,9 +197,14 @@ try {
 
   # 6. 로그에 입력 문장·저장 이름·학습 문장이 없다(id·건수·길이만). 문장이 하나도 팔레트에 들어가지 않았으면 판정하지 않는다
   $appLines = @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines) -join "`n"
+  # 앱 로그가 비어 있으면 없다는 판정이 거짓 True가 되므로, 이번 실행의 palette.run·workspace.save 줄이 있어야 판정한다
+  $appLogLines = @(NewLogs 'palette.run').Count + @(NewLogs 'workspace.save').Count
   if ($script:typed -eq 0) {
     $r.log_has_no_phrases = 'skipped (no sentence reached the palette)'
     $r.log_has_no_typed_text = 'skipped (no sentence reached the palette)'
+  } elseif ($appLogLines -eq 0) {
+    $r.log_has_no_phrases = 'skipped (no app log lines)'
+    $r.log_has_no_typed_text = 'skipped (no app log lines)'
   } else {
     $found = @($phrases | Where-Object { $appLines.Contains($_) })
     $r.log_has_no_phrases = ($found.Count -eq 0)
