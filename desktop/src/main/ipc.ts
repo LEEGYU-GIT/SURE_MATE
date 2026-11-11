@@ -21,6 +21,7 @@ import {
   type WorkspaceSaveResult,
   type WorkspaceView
 } from '../shared/workspace/workspace-ipc'
+import { createErrorOnce } from './error-once'
 import { errorText } from './error-text'
 import type { GlossaryRuntime } from './glossary/glossary-runtime'
 import { log } from './log'
@@ -223,10 +224,12 @@ type Window = 'bar' | 'flyout'
 /**
  * fn이 던지거나 거부해도 fallback을 돌려준다(오류는 채널 이름과 함께 기록).
  * main에서 처리하지 않은 예외는 Electron이 오류 창을 띄우므로 바·펼침 창 처리기는 던지지 않는다.
+ * once를 주면 그 거름을 통과한 오류만 기록한다(펫 채널: 채널과 오류 글마다 한 번)
  */
-function attempt<T>(channel: string, fallback: T, fn: () => T | Promise<T>): T | Promise<T> {
+function attempt<T>(channel: string, fallback: T, fn: () => T | Promise<T>, once?: (where: string, error: string) => boolean): T | Promise<T> {
   const fail = (e: unknown): T => {
-    log('ipc.error', { channel, error: errorText(e) })
+    const error = errorText(e)
+    if (!once || once(channel, error)) log('ipc.error', { channel, error })
     return fallback
   }
   try {
@@ -300,8 +303,10 @@ function registerOverlayIpc(overlay: () => OverlayIpc | null): void {
 /**
  * 말랑 메이트 창 IPC. 펫 창의 webContents가 보낸 것만 받고(다른 창이 보낸 메시지는 버린다), 값은 검사를 통과한 것만 넘긴다.
  * 펫 런타임은 바 다음에 만들어지므로 getter로 받는다(그 전에는 null). 처리 중 오류는 기록만 하고 던지지 않는다.
+ * 누름·키·말풍선 사각형은 잦으므로 오류는 펫 런타임과 같이 채널과 오류 글마다 한 번만 기록한다(종류 수에 한도, M6 최종 검토 Task 9 #4)
  */
 function registerPetIpc(pet: () => PetIpc | null): void {
+  const once = createErrorOnce()
   const from = (e: Sender): PetIpc | null => {
     const p = pet()
     return p && e.sender.id === p.petContentsId ? p : null
@@ -309,13 +314,13 @@ function registerPetIpc(pet: () => PetIpc | null): void {
   const on = (channel: string, fn: (p: PetIpc, ...args: unknown[]) => unknown): void => {
     ipcMain.on(channel, (e, ...args: unknown[]) => {
       const p = from(e)
-      if (p) void attempt(channel, undefined, () => fn(p, ...args))
+      if (p) void attempt(channel, undefined, () => fn(p, ...args), once)
     })
   }
 
   ipcMain.handle(IPC.petGetView, (e) => {
     const p = from(e)
-    return p ? attempt<PetView | null>(IPC.petGetView, null, () => p.petView()) : null
+    return p ? attempt<PetView | null>(IPC.petGetView, null, () => p.petView(), once) : null
   })
   on(IPC.petPress, (p, raw) => {
     const down = parsePetBool(raw)

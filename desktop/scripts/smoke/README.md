@@ -25,8 +25,9 @@
 | t16 | 가명 처리: §8 예시 선택 → 확인 화면 되돌리기·빼기·끔 캡처, 항목 끄기, 복사한 프롬프트의 가명 줄·머리말, 로그에 이름 없음(`t16-run.ps1`로 실행, 가상 예시 사전과 "복사만" 대상을 잠시 넣고 되돌림) |
 | t17 | 위키·상용구: 팔레트 `?` + mcdc → MC/DC 맨 위(캡처) → Enter 상세(캡처) → Enter 설명 복사 → 클립보드가 설명과 같음. 시험 창 글상자에서 `!` + issue → Enter → 글상자에 결함 리포트 양식이 한 번만(캡처), 로그에 용어·설명·본문 없음(`run-smoke.ps1 -Script t17-wiki-snippet.ps1`) |
 | t18 | 바·펼침 창·위키 카드(M5): 가장자리 띠 배치와 너비 56, 고정 프롬프트 클릭 실행(확인 화면 없이·선택 유지·앞 창 유지), 가명 처리 메뉴 끔·되돌리기(같은 메뉴를 두 번째 열어도 눌림), 이름표 0.6초 표시·0.3초 미표시, `Ctrl+Alt+W` 위키 카드와 8초 뒤 자동 닫힘, 전체 화면 창에서 바 숨김·복귀, 다른 맨 앞(topmost) 창이 덮은 뒤 2초 안에 맨 위 복귀, 바 메뉴로 캡슐↔띠 전환, 끌어서 위치 저장, 자동 숨김 손잡이, 로그에 선택 글·프롬프트·용어 이름 없음, 참고값 메모리·유휴 CPU(`t18-run.ps1`로 실행, 설정을 잠시 바꾸고 되돌림) |
+| t20 | 말랑 메이트(M6): 시작 60초 안에 바를 올라 꼭대기에 앉음, 펫 몸 밖 클릭 통과·몸 클릭(뛰기)·앞 창 유지·작업 표시줄 클릭 뒤 바 복귀, 0.15초 간격 두 번 클릭 → 팔레트, 던지면 바닥에 닿고 바 위에서 놓으면 앉음, 놓은 직후 클릭 통과, 오른쪽 클릭 메뉴(캡처)·숨기기 → 바 펫 단추로 다시 부른 직후 첫 행 클릭, 조종 모드(←1초 걷기·Space·Esc로 끝나고 앞 창 복귀, Alt+Space·Alt+F4, 조종 중 팔레트), 복사 1초 안에 축하·가명 처리 끔이면 경고(캡처), 다시 나타난 직후 첫 클릭·첫 끌기, 전체 화면에서 숨김·복귀와 직후 첫 행 클릭, 입력 없이 70초 뒤 졸고 커서를 올리면 깸, 로그에 메모 글·말풍선 문구 없음, 참고값 메모리. `-Idle`: 입력 없이 5분 동안 앱 전체 CPU와 졺(`t20-run.ps1`·`t20-run.ps1 -Idle`로 실행, 설정·가상 가명 사전을 잠시 바꾸고 되돌림) |
 
-설정을 잠시 바꾸는 `t14-run.ps1`·`t16-run.ps1`·`t18-run.ps1`의 출력은 `Select-Object -First`로 자르지 말고 파일로 받아 읽는다. 파이프가 일찍 끊기면 되돌리기(`finally`)가 돌지 않아 `settings.json`이 시험 값으로 남는다.
+설정을 잠시 바꾸는 `t14-run.ps1`·`t16-run.ps1`·`t18-run.ps1`·`t20-run.ps1`의 출력은 `Select-Object -First`로 자르지 말고 파일로 받아 읽는다. 파이프가 일찍 끊기면 되돌리기(`finally`)가 돌지 않아 `settings.json`이 시험 값으로 남는다.
 
 스크립트는 UTF-8 BOM으로 저장한다. Windows PowerShell 5.1은 BOM 없는 파일을 시스템 코드 페이지로 읽어 한글 주석에서 구문이 깨진다.
 
@@ -106,3 +107,42 @@ Windows에서 돌린 뒤 `%TEMP%\sure-mate-smoke`에 저장된 캡처 3장을 �
 - `m5-bar-handle.png`: 자동 숨김 손잡이. 화면 끝에 너비 6의 세로 띠가 보인다.
 
 배율 125%·150%에서도 다시 실행한다. Windows 설정 → 디스플레이 → 배율을 바꾸고 로그아웃·로그인한 뒤 `t18-run.ps1`을 돌린다. `info_bar`의 `scale`이 바뀌었는지, 판정이 배율과 상관없이 True인지, 캡처에서 아이콘·"끔" 글자가 흐리지 않고 칸 안에 들어오는지 확인한다. 모니터가 둘이면 주 모니터에서만 시험한다.
+
+### t20 결과를 눈으로 확인할 곳
+
+실행: `powershell -NoProfile -ExecutionPolicy Bypass -File .\t20-run.ps1 > t20-out.txt` 뒤 `t20-out.txt`를 연다(최대 10분, 그동안 마우스·키보드를 사용하지 않는다. 스크립트가 직접 누르고 옮긴다). 5분 동안 입력하지 않고 CPU만 재는 실행은 `.\t20-run.ps1 -Idle > t20-idle-out.txt`(약 6분)다. 시험 창과 바를 가리는 창은 닫아 둔다. 설정 파일(`settings.json`)과 가명 사전(`masking-dictionary.json`)의 `.smoke-backup` 파일이 이미 있으면 앞선 시험이 도중에 끊긴 것이므로 시험이 시작하지 않고 멈춘다. 원래 파일과 비교해 정리한 뒤 다시 실행한다.
+
+t20은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작성해 구문과 로그 항목만 정적으로 확인했다). 처음 실행에서 False가 나오면 스크립트 문제인지 앱 문제인지 먼저 구분한다(좌표 계산·펫 창 찾기는 스크립트 쪽 가정이다). 펫이 로그에 없는 자리(걷는 중)에서 화면 가장자리에 눌려 있으면 자리를 어림하지 않으므로, 멈추길 기다리다 `error_` 줄에 이유가 출력될 수 있다.
+
+판정 줄은 모두 `True`여야 한다. 아래 판정 줄이 출력에 없거나 `error`로 시작하는 줄(`error =`, `error_1_flow =` 등)이 있으면 그 단계는 실패한 것이다. 단계가 도중에 멈춰도 다음 단계는 이어서 실행한다.
+
+- 시작: `bar_place_found`, `pet_bar_flow_within_60s`(앱이 시작하고 60초 안에 바를 오른 뒤 꼭대기에 앉음, `info_pet_flow`에 상태 순서와 걸린 시간)
+- 클릭 통과: `click_through_transparent`(펫 창 안이고 몸 밖인 시험 단추가 눌림. 단추를 창 안에 놓지 못하면 `skipped` 이유가 출력되며 그 줄은 판정되지 않은 것이므로 다시 실행한다), `click_on_pet_received`(몸 클릭은 펫이 받고 단추는 안 눌림), `pet_click_kept_focus`(앞 창이 시험 창 그대로), `info_taskbar_click`(작업 표시줄 빈 곳을 누른 뒤 바가 맨 위인지 참고값. 바 사각형이 작업 표시줄과 겹치지 않아 판정으로 삼지 않는다. 2초 안 복귀는 회사 PC 점검표 7번에서 사람이 확인한다)
+- 두 번 클릭: `double_click_opens_palette`(0.15초 간격으로 두 번 누르면 팔레트)
+- 집어 던지기: `thrown_lands_on_floor`(발이 작업 영역 아래 끝에 닿음, `info_throw`에 발 위치와 상태 순서), `dropped_on_bar_sits`(바 꼭대기 위 40 DIP에서 놓으면 1초 안에 앉음, `info_drop`), `click_through_after_drag`(놓고 0.2초 안에 펫 창 왼쪽 위 구석의 시험 단추가 다시 눌림. 그 순간 단추가 펫 창 밖이면 `skipped`로 출력)
+- 메뉴: `pet_menu_opened`, `menu_hide_row_works`(숨기기), `recall_via_bar_button`(바 펫 단추로 다시 부름), `menu_first_row_after_recall`(다시 부른 뒤 펫이 멈추길 0.5초 기다려 메뉴를 열고, 첫 행 "조종하기"가 한 번에 눌림. 부른 즉시가 아니라 약 1초 뒤다)
+- 조종 모드: `control_walks`(←를 1초 누르면 왼쪽으로 이동, `info_control_walk`), `control_esc_ends`, `control_esc_restores_focus`(Esc로 끝나고 앞 창이 시험 창), `alt_space_keeps_control`, `alt_f4_ends_control`, `alt_f4_keeps_pet_window`(Alt+F4는 펫 창을 닫지 않고 조종만 끝냄), `control_palette_keeps_focus`(앞 창이 앱 창이면서 펫 창 크기가 아님), `control_palette_ends_control`(조종 중 팔레트를 열면 조종이 원래 창으로 포커스를 돌리며 먼저 끝남: 기록 `reason` handoff), `control_palette_esc_returns`(그 팔레트를 Esc로 닫으면 앞 창이 시험 창, `info_control_palette_esc_foreground`), `alt_f4_ends_control`은 앞 창이 펫 창일 때만 Alt+F4를 보내며 아니면 `skipped`로 출력
+- 반응: `reaction_within_1s`(고정 프롬프트 복사 후 1초 안에 축하, 걸린 시간은 `info_reaction_ms`), `warning_on_masking_off`(가명 처리를 끄고 복사하면 경고), `masking_restored`
+- 다시 나타난 직후: `first_click_after_reappear`, `first_drag_after_reappear`(숨겼다 바 펫 단추로 부른 직후 첫 클릭·첫 끌기). 펫 창은 숨길 때 `hide()`를 쓰므로 첫 누름이 드물게(약 40번에 1번) 사라질 수 있다. 한 번만 False면 다시 실행해 보고, 반복되면 앱 문제로 기록한다
+- 전체 화면: `pet_hides_fullscreen`(1.1초 안에 숨고 닫으면 1.1초 안에 다시 나타남, `info_fullscreen_ms`), `menu_first_row_after_fullscreen`(전체 화면이 끝난 뒤 펫이 멈추길 기다려 연 메뉴의 첫 행. 같은 이유로 즉시가 아니다)
+- 졸기: `pet_sleeps`(입력 없이 70초 뒤 졸기), `pet_wakes_on_hover`(커서를 올리면 깸)
+- 로그: `log_has_no_content`(메모 글·가상 이름·말풍선 문구 없음), `log_has_no_typed_text`, `pet_no_errors`(펫 오류 로그 없음)
+
+`info_`로 시작하는 줄은 참고값이다. `info_memory_mb`는 앱 프로세스 작업 집합의 합, `info_private_mb`는 사용 메모리 합이다(설계 §16 목표 350MB 이하, dev 앱은 설치본보다 크다. 넘으면 renderer 경로별 코드 분할을 검토한다). `info_foreground_*`는 참고용 창 제목이다.
+
+`-Idle`(졸기까지 3분 설정): `idle_cpu_under_1`(입력 없이 5분 동안 앱 전체 CPU가 1% 미만, 값은 `info_idle_cpu_percent` = CPU 초 증가 ÷ (걸린 초 × 논리 프로세서 수) × 100), `pet_slept_during_idle`(5분 안에 졺), `pet_no_errors`. 작업 관리자의 5분 평균은 사람이 같은 조건에서 확인한다.
+
+캡처 5장은 `%TEMP%\sure-mate-smoke`에 저장된다. 설계 §14-2·§14-4와 대조해 눈으로 확인한다.
+
+- `m6-pet-sit.png`: 바 꼭대기에 앉은 펫. 발이 바 윗면에 붙어 있고(떠 있거나 파묻히지 않음) 외곽선이 선명하다.
+- `m6-pet-celebrate.png`: 축하 반응. 편지 소품과 웃는 얼굴, 말풍선에 "가명으로 바꿨어요" 문구가 보이고 꼬리가 펫 얼굴을 가리킨다. 글자가 잘리지 않고 흰 바탕 윗면에서도 외곽선으로 구분된다.
+- `m6-pet-warn.png`: 경고 반응. 걱정하는 얼굴과 주황 느낌표, 말풍선 "가명 처리가 꺼져 있어요" 문구, 선글라스가 벗겨진 상태(가명 처리 꺼짐)가 보인다.
+- `m6-pet-menu.png`: 오른쪽 클릭 메뉴. 4행(조종하기·재우기·숨기기·펫 설정)이 한 줄씩이고 바 메뉴와 같은 모양(모서리·테두리·그림자·글자 크기)이며 그림자가 창 가장자리에서 잘리지 않는다.
+- `m6-pet-alt-space.png`: 조종 중 Alt+Space를 누른 직후. Windows 시스템 메뉴(복원·이동·크기·닫기)가 보이지 않아야 한다.
+
+사람이 눈으로 볼 것(스크립트가 판정하지 않음):
+
+- 배율 125%·150%에서 다시 실행한다. Windows 설정 → 디스플레이 → 배율을 바꾸고 로그아웃·로그인한 뒤 `t20-run.ps1`을 돌려 판정이 배율과 상관없이 True인지, 캡처의 외곽선이 흐리지 않은지 확인한다.
+- 작업 표시줄을 왼쪽으로 옮기고, 또 자동 숨김으로 바꿔 다시 실행해 펫이 새 바닥(작업 영역 아래 끝)에 서는지 확인한다. 자동 숨김이면 `info_taskbar_click`은 건너뜀으로 나온다.
+- 조종 모드에서 작업 표시줄에 단추가 생기지 않는지, 설정 창을 눌러도 포커스가 설정 창에 남는지는 `docs/reports/company-pc-checklist.md` 8번에서 사람이 확인한다.
+- 펫 말풍선 문구 검토(설계 §20: 존댓말, 짧게)는 사람이 한다.

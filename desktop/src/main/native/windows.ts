@@ -122,6 +122,28 @@ export function setForeground(hwnd: string): boolean {
 }
 
 /**
+ * Sure-Mate 자신의 창인지(팔레트·펫·바·펼침 창·설정 창은 모두 main 프로세스의 창이다). 팔레트·조종 모드가 돌아갈 창으로
+ * 기억하지 않으려고 쓴다. Win32 기능을 못 불러왔거나 창이 없으면 false
+ */
+export function isOwnWindow(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  const h = w.toHwnd(hwnd)
+  if (!w.IsWindow(h)) return false
+  const pidOut = [0]
+  w.GetWindowThreadProcessId(h, pidOut)
+  return pidOut[0] === process.pid
+}
+
+/** 보이는 창인지(숨긴 창에 포커스를 주지 않으려고). Win32 기능을 못 불러왔거나 창이 없으면 false */
+export function isWindowVisible(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  const h = w.toHwnd(hwnd)
+  return Boolean(w.IsWindow(h)) && Boolean(w.IsWindowVisible(h))
+}
+
+/**
  * 창의 보이는 테두리가 targetPhysical(물리 픽셀)에 오도록 옮긴다.
  * 최소화·최대화면 먼저 되돌리고, 배율(DPI)이 다른 모니터로 갈 때는 먼저 옮긴 뒤
  * 창이 스스로 크기를 바꾸고 나서 최종 크기를 한 번 더 맞춘다.

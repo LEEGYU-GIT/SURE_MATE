@@ -8,6 +8,12 @@ import type { WorkspaceService } from './workspace-service'
 export interface WorkspaceHotkeysDeps {
   manager: Pick<HotkeyManager, 'bind' | 'unbind' | 'ids' | 'current'>
   service: Pick<WorkspaceService, 'list' | 'setHotkey' | 'run'>
+  /**
+   * 누른 뒤 불러오기 전에 부른다(index.ts의 beforeCapture): 말랑 메이트 조종 중이면 원래 창으로 포커스를 돌리며 조종을 끝내고
+   * 그 창이 앞에 올 때까지 기다린다(M6 최종 검토 I1). 조종 중에는 펫 창이 앞에 있어, 불러오기가 시작 때 앞 창으로 기억했다가
+   * 끝에 펫 창을 다시 앞으로 가져온다. 없으면 바로 불러온다
+   */
+  beforeRun?(): Promise<void>
   /** id·결과·까닭만 남긴다(워크스페이스 이름 금지) */
   log(event: string, data: Record<string, unknown>): void
 }
@@ -31,7 +37,10 @@ export function createWorkspaceHotkeys(d: WorkspaceHotkeysDeps): WorkspaceHotkey
   const handler =
     (id: string) =>
     (): void => {
-      d.service.run(id, 'hotkey').catch((e) => d.log('workspace.hotkeyError', { id, error: errorText(e) }))
+      const run = (): Promise<unknown> => d.service.run(id, 'hotkey')
+      // 조종 중이면 먼저 원래 창으로 돌려 둔 뒤 불러온다(I1). 넘겨주기가 실패하면 불러오지 않고 기록만 한다
+      const started = d.beforeRun ? d.beforeRun().then(run) : run()
+      started.catch((e) => d.log('workspace.hotkeyError', { id, error: errorText(e) }))
     }
 
   /** 처리기를 붙인 적이 없으면 붙인다(그 id의 조합도 없다: 조합은 처리기가 있어야 등록된다) */

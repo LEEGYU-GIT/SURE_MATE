@@ -14,11 +14,16 @@ afterEach(() => vi.useRealTimers())
 // 시험 데이터는 가상 이름만
 const ws = (id: string, name: string, hotkey: string | null = null): Workspace => testWorkspace({ id, name, aliases: [], hotkey })
 
+/** 기다리는 Promise 처리를 돌린다(가짜 시계는 Promise를 멈추지 않는다) */
+const flushPromises = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) await Promise.resolve()
+}
+
 /**
  * 팔레트(Alt+`)·용어 찾기(Ctrl+Alt+W)·조종(Ctrl+Alt+P)이 등록된 단축키 묶음, 메모리 워크스페이스 서비스, 설정 창의 단축키 바꾸기.
  * 다른 앱이 잡은 조합(taken)은 등록되지 않는다
  */
-function setup(o: { taken?: string[]; list?: Workspace[] } = {}) {
+function setup(o: { taken?: string[]; list?: Workspace[]; beforeRun?: () => Promise<void> } = {}) {
   const taken = new Set(o.taken ?? ['Ctrl+Alt+9'])
   const registered = new Map<string, () => void>()
   let registers = 0
@@ -55,6 +60,7 @@ function setup(o: { taken?: string[]; list?: Workspace[] } = {}) {
         return true
       }
     },
+    beforeRun: o.beforeRun,
     log
   })
   const changer = createHotkeyChanger({
@@ -123,6 +129,40 @@ describe('sync: 워크스페이스 목록에 맞춰 단축키를 등록·해제�
     expect(t.hotkeys.sync(t.state.list)).toEqual({ failed: [] })
     t.registered.get('Ctrl+Alt+1')?.()
     expect(t.runs).toEqual([['ws-2', 'hotkey']])
+  })
+
+  it('(M6 최종 검토 I1) 말랑 메이트 조종을 먼저 끝내고 원래 창이 앞에 온 뒤 불러온다(조종 중 앞 창인 펫 창을 기억해 끝에 다시 앞으로 가져오지 않게)', async () => {
+    const order: string[] = []
+    let handedOff = (): void => {}
+    const t = setup({
+      list: [ws('ws-2', '가상자동차 보고', 'Ctrl+Alt+2')],
+      beforeRun: () => {
+        order.push('handoff')
+        return new Promise<void>((resolve) => (handedOff = resolve))
+      }
+    })
+    t.hotkeys.sync(t.state.list)
+    t.registered.get('Ctrl+Alt+2')?.()
+    expect(order).toEqual(['handoff'])
+    // 원래 창이 앞에 오기 전(최대 80ms)에는 불러오지 않는다
+    expect(t.runs).toEqual([])
+    handedOff()
+    await flushPromises()
+    expect(t.runs).toEqual([['ws-2', 'hotkey']])
+  })
+
+  it('(I1) 조종 넘겨주기가 실패하면 불러오지 않고 id·오류만 기록한다(던지지 않는다)', async () => {
+    const t = setup({
+      list: [ws('ws-2', '가상자동차 보고', 'Ctrl+Alt+2')],
+      beforeRun: async () => {
+        throw new Error('handoff failed')
+      }
+    })
+    t.hotkeys.sync(t.state.list)
+    expect(() => t.registered.get('Ctrl+Alt+2')?.()).not.toThrow()
+    await flushPromises()
+    expect(t.runs).toEqual([])
+    expect(t.logs).toContainEqual(['workspace.hotkeyError', { id: 'ws-2', error: 'handoff failed' }])
   })
 
   it('녹화로 단축키를 잠시 푼 동안 맞추면 바로 등록하지 않고, 녹화가 끝날 때 함께 등록한다', () => {

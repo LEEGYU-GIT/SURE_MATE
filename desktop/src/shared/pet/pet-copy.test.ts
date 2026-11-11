@@ -9,6 +9,7 @@ import {
   PET_CONTROL_GUIDE,
   PET_CONTROL_KEY_ITEMS,
   PET_CONTROL_KEYS,
+  PET_CRASH_NOTICE,
   petBubbleText,
   petMenuRows
 } from './pet-copy'
@@ -191,5 +192,11 @@ describe('조종 안내(메뉴 설명·조종 시작 말풍선·팔레트 부제
 
   it('조종을 시작할 때 말풍선: 할 일 한 문장(굵게) + 키 안내', () => {
     expect(PET_CONTROL_GUIDE).toBe(`키보드로 조종해 보세요. ${PET_CONTROL_KEYS}`)
+  })
+})
+
+describe('(Task 9 #6) 펫 화면이 다시 불러온 뒤에도 멈췄을 때 알림', () => {
+  it('무슨 일이 있었는지와 다시 나오게 하는 방법(존댓말, 두 문장)', () => {
+    expect(PET_CRASH_NOTICE).toBe('말랑 메이트 화면에 문제가 생겨 숨겼어요. 앱을 다시 켜면 다시 나와요.')
   })
 })

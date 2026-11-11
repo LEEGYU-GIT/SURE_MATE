@@ -6,8 +6,13 @@ import { buildPaletteIndex, EMPTY_SEARCH_CONTEXT, filterItems, searchPalette, ty
 import { parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { parseIntentPack } from '../../shared/natural/intent-pack'
+import { understand } from '../../shared/natural/understand'
 import type { UsageRecord } from '../../shared/natural/usage'
 import { parseTemplatePack } from '../../shared/template/pack'
+import { monitorFingerprint } from '../../shared/workspace/monitors'
+import { L, P } from '../../shared/workspace/test-monitors'
+import { testWorkspace } from '../../shared/workspace/test-workspaces'
+import { workspacePaletteItems } from '../workspace/workspace-items'
 import { buildPaletteItems } from './palette-items'
 
 // 설치 파일에 들어가는 실제 기본 자료(프롬프트·상용구 팩, 용어 팩, 말하듯 입력 단어 목록)로 말하듯 입력 전체를 돌린다(설계 §13 완료 기준)
@@ -26,9 +31,17 @@ const testTerm = (id: string, term: string): GlossaryEntry => ({
   version: 1
 })
 const userTerms = [testTerm('u-exact', '정확'), testTerm('u-accuracy', '정확도'), testTerm('u-mean', '평균')]
-// 펫 명령은 M6을 합치며 들어왔다(petVisible: true).
-// TODO(10b): 워크스페이스 항목이 들어오면 workspaces(workspacePaletteItems로 만든 'QA 모드'·'보고서 모드'·'회의 모드')도 넘긴다
-const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge', petVisible: true })
+// 워크스페이스 세 개(가상 이름). 배치는 워크스페이스 시험의 시험 지문 배치(test-workspaces.ts, 가상 창 제목)
+const workspaces = workspacePaletteItems(
+  [
+    testWorkspace({ id: 'ws-qa', name: 'QA 모드', aliases: ['qa', '시험', '테스트'] }),
+    testWorkspace({ id: 'ws-report', name: '보고서 모드', aliases: ['보고'] }),
+    testWorkspace({ id: 'ws-meeting', name: '회의 모드', aliases: ['미팅 화면'] })
+  ],
+  monitorFingerprint([P, L])
+)
+// 펫 명령은 M6을 합치며 들어왔다(petVisible: true). 워크스페이스 항목은 "지금 배치 저장"(cmd.workspace-save)과 위 세 개
+const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge', petVisible: true, workspaces })
 const index = buildPaletteIndex(items)
 const pack = parseIntentPack(builtinIntents).pack!
 const NOW = Date.parse('2026-11-11T09:00:00.000Z')
@@ -37,14 +50,9 @@ const search = (q: string, c: SearchContext = ctx): ReturnType<typeof searchPale
 const top = (q: string, c?: SearchContext): string | undefined => search(q, c).items[0]?.id
 
 /**
- * 문장 표(설계 §13 완료 기준 "문장 40개 이상의 표로 Vitest를 돌려 모두 맨 위 후보가 맞는다").
+ * 문장 표(설계 §13 완료 기준 "문장 40개 이상의 표로 Vitest를 돌려 모두 맨 위 후보가 맞는다"). 51줄.
  * 정확도·평가·결과 줄은 원형 유지 규칙을 지킨다: 원형을 버리거나 감점이 없으면 '정확'(u-exact)이,
  * 1음절 어간을 허용하면 '평균'(u-mean)·'결함 리포트'가 맨 위로 온다.
- * TODO(10b): 워크스페이스 항목이 들어오면 아래 10줄을 더해 51줄로 만든다.
- *   보고서 모드로 바꿔줘 · qhrhtj ahemfh qkRnjwnj → workspace:ws-report
- *   회의모드로바꿔줘 · 회의 화면 불러와줘 → workspace:ws-meeting
- *   QA 모드 켜줘 · qa로 전환 · 시험 배치로 복원 → workspace:ws-qa
- *   지금 배치 저장해줘 · 현재 배치 기억해줘 · 배치 저장 → cmd.workspace-save
  */
 const TABLE: [sentence: string, top: string][] = [
   ['회의록 정리해줘', 'prompt:meeting-notes'],
@@ -72,6 +80,16 @@ const TABLE: [sentence: string, top: string][] = [
   ['HARA 풀네임', 'wiki:hara'],
   ['커버리지가 뭐지', 'wiki:code-coverage'],
   ['혹시 커버리지 뜻 좀 알려주세요', 'wiki:code-coverage'],
+  ['보고서 모드로 바꿔줘', 'workspace:ws-report'],
+  ['qhrhtj ahemfh qkRnjwnj', 'workspace:ws-report'],
+  ['회의모드로바꿔줘', 'workspace:ws-meeting'],
+  ['회의 화면 불러와줘', 'workspace:ws-meeting'],
+  ['QA 모드 켜줘', 'workspace:ws-qa'],
+  ['qa로 전환', 'workspace:ws-qa'],
+  ['시험 배치로 복원', 'workspace:ws-qa'],
+  ['지금 배치 저장해줘', 'cmd.workspace-save'],
+  ['현재 배치 기억해줘', 'cmd.workspace-save'],
+  ['배치 저장', 'cmd.workspace-save'],
   ['이슈 양식', 'snippet:defect-report'],
   ['결함 리포트 붙여줘', 'snippet:defect-report'],
   ['메일 서명', 'snippet:mail-signature'],
@@ -121,7 +139,10 @@ it('의도 표시: 맨 위 후보에 가장 좁은 찾은 규칙의 이름, 없�
   expect(search('정확도').top).toEqual({ id: 'wiki:u-accuracy', label: '용어 뜻' })
   expect(search('회의록 정리해줘').top).toEqual({ id: 'prompt:meeting-notes', label: '프롬프트' })
   expect(search('이슈 양식').top).toEqual({ id: 'snippet:defect-report', label: '상용구' })
-  // TODO(10b): '보고서 모드로 바꿔줘'·'현재 배치 기억해줘'·'@QA' → '창 배치'
+  expect(search('보고서 모드로 바꿔줘').top).toEqual({ id: 'workspace:ws-report', label: '창 배치' })
+  expect(search('현재 배치 기억해줘').top).toEqual({ id: 'cmd.workspace-save', label: '창 배치' })
+  // 접두어 검색은 규칙을 찾지 않고 이 워크스페이스를 id로 가리키는 규칙도 없으므로 구역 기본 이름
+  expect(search('@QA').top).toEqual({ id: 'workspace:ws-qa', label: '창 배치' })
 })
 
 it('의도 표시는 맨 위 항목의 제목을 되풀이하지 않는다(문장 표 전체)', () => {
@@ -134,13 +155,24 @@ it('의도 표시는 맨 위 항목의 제목을 되풀이하지 않는다(문�
 })
 
 it('학습: 기억한 문장은 검색어에 맞지 않아도 맨 위이고 의도 표시는 기억한 문장', () => {
-  // TODO(10b): 같은 시험을 워크스페이스 'QA 모드'(workspace:ws-qa)로
   const learned = new Map([['출근세팅해줘', 'snippet:mail-signature']])
   const s = search('출근 세팅해줘', { ...ctx, learned })
   expect(s.items[0].id).toBe('snippet:mail-signature')
   expect(s.top).toEqual({ id: 'snippet:mail-signature', label: '기억한 문장' })
   expect(s.key).toBe('출근세팅해줘')
   expect(top('출근 세팅해줘')).not.toBe('snippet:mail-signature')
+})
+
+it('학습: 워크스페이스 QA 모드도 같다(학습 키는 팔레트 선택 기록이 저장할 때 쓰는 understand의 key)', () => {
+  // main의 createPickHandler가 phrase-map.json에 저장하는 키와 같은 함수로 만든다
+  const key = understand('출근세팅해줘', pack).key
+  expect(key).toBe('출근세팅해줘')
+  const learned = new Map([[key!, 'workspace:ws-qa']])
+  const s = search('출근 세팅해줘', { ...ctx, learned })
+  expect(s.items[0].id).toBe('workspace:ws-qa')
+  expect(s.top).toEqual({ id: 'workspace:ws-qa', label: '기억한 문장' })
+  expect(s.key).toBe(key)
+  expect(top('출근 세팅해줘')).not.toBe('workspace:ws-qa')
 })
 
 it('사용 기록: 같은 점수면 자주·최근 쓴 항목이 먼저("가명"은 네 가명 명령이 동점)', () => {
@@ -166,3 +198,37 @@ it('빈 검색어: 최근 실행 항목 5개가 최근 순으로 맨 앞(지금 
   expect(new Set(listed).size).toBe(listed.length)
   expect(listed.length).toBeLessThanOrEqual(50)
 })
+
+/** 속도 시험용 가상 낱말의 음절 40개. 자리마다 다르게 돌려 세 음절을 고르므로 i < 64,000이면 이름이 서로 다르다(실제 용어가 아니다) */
+const SYLLABLES = [...'가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허고노도로모보소오조초코토']
+const fakeName = (i: number): string =>
+  [i % 40, Math.floor(i / 40) % 40, Math.floor(i / 1600) % 40].map((d, k) => SYLLABLES[(d * 7 + k * 13) % 40]).join('')
+/** 가상 영문 약어(소문자 세 글자, i < 17,576이면 서로 다르다) */
+const fakeAbbr = (i: number): string => [i % 26, Math.floor(i / 26) % 26, Math.floor(i / 676) % 26].map((d) => String.fromCharCode(97 + d)).join('')
+
+it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 51개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
+  // 가상 용어 2,000개(설명 '시험용 가상 용어'). 기본 용어 팩처럼(별칭 평균 2.4개) 별칭 둘(띄어 쓴 이름, 영문 약어)을 둔다
+  const fake = Array.from({ length: 2000 }, (_, i): GlossaryEntry => {
+    const name = fakeName(i)
+    return { ...testTerm(`u-fake-${i}`, name), aliases: [`${name.slice(0, 2)} ${name.slice(2)}`, fakeAbbr(i)] }
+  })
+  expect(new Set(fake.map((e) => e.term)).size).toBe(2000)
+  const big = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms, ...fake], barShape: 'edge', petVisible: true, workspaces })
+  // 팔레트는 색인을 항목이 바뀔 때만 만들어 두고(Palette.tsx의 useMemo) 글자를 칠 때마다 searchPalette만 다시 돌린다.
+  // 그래서 색인 만들기는 재지 않고 searchPalette 한 번(문장 이해·점수·정렬·50줄 자르기)만 잰다
+  const bigIndex = buildPaletteIndex(big)
+  const run = (q: string): void => void searchPalette(big, q, bigIndex, ctx)
+  expect(TABLE).toHaveLength(51)
+  for (const [sentence] of TABLE) run(sentence) // 데우기 한 번
+  const total = new Array<number>(TABLE.length).fill(0)
+  for (let round = 0; round < 5; round++) {
+    TABLE.forEach(([sentence], i) => {
+      const start = performance.now()
+      run(sentence)
+      total[i] += performance.now() - start
+    })
+  }
+  const means = total.map((t) => t / 5)
+  const median = [...means].sort((a, b) => a - b)[Math.floor(means.length / 2)]
+  expect(median).toBeLessThan(50)
+}, 60_000)

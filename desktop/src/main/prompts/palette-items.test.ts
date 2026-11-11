@@ -21,7 +21,7 @@ const PACK_IDS = ['cmd.glossary-export', 'cmd.glossary-import']
 /** 바 모양 명령은 용어 팩 명령 다음 */
 const BAR_IDS = ['cmd.bar-shape']
 /** 말랑 메이트 명령은 바 모양 명령 바로 뒤 */
-const PET_IDS = ['cmd.pet-visible', 'cmd.pet-control']
+const PET_IDS = ['cmd.pet-visible', 'cmd.pet-control', 'cmd.pet-sleep']
 /** 설정 열기 명령은 바 모양 명령 다음 */
 const SETTINGS_IDS = ['cmd.open-settings']
 
@@ -97,6 +97,11 @@ it('워크스페이스 항목(저장 명령 포함)은 명령 다음, 위키 앞
     'wiki:mcdc'
   ])
   expect(items.find((i) => i.id === 'workspace:ws-qa')).toEqual(workspaces[1])
+})
+
+it('(M4) 말랑 메이트가 졸고 있으면 재우기 대신 깨우기 명령', () => {
+  const items = buildPaletteItems([], [], { maskingMode: 'restore', glossary: [], barShape: 'edge', petVisible: true, petSleeping: true })
+  expect(items.filter((i) => i.id.startsWith('cmd.pet-')).map((i) => i.id)).toEqual(['cmd.pet-visible', 'cmd.pet-control', 'cmd.pet-wake'])
 })
 
 it('바 모양 명령이 명령 구역에 있고 부제가 지금 모양을 보여 준다', () => {

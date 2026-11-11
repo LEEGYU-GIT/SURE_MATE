@@ -380,6 +380,34 @@ describe('펫 IPC는 펫 창이 보낸 것만 받는다(모든 창이 같은 pre
       { event: 'ipc.error', data: { channel: IPC.petGetView, error: 'view' } }
     ])
   })
+
+  it('(Task 9 #4) 펫 채널 오류는 채널과 오류 글마다 한 번만 기록한다(잦은 누름·키·화면 요청이 로그를 채우지 않게)', async () => {
+    const p = pet!
+    let message = 'boom'
+    p.petPress.mockImplementation(() => {
+      throw new Error(message)
+    })
+    p.petKey.mockImplementation(() => {
+      throw new Error('boom')
+    })
+    p.petView.mockImplementation(() => {
+      throw new Error('view')
+    })
+    for (let i = 0; i < 5; i++) send(IPC.petPress, PET, true)
+    message = 'other'
+    send(IPC.petPress, PET, false)
+    send(IPC.petPress, PET, false)
+    send(IPC.petKey, PET, 'left', true)
+    send(IPC.petKey, PET, 'left', false)
+    expect(await invoke(IPC.petGetView, PET)).toBeNull()
+    expect(await invoke(IPC.petGetView, PET)).toBeNull()
+    expect(reg.logs).toEqual([
+      { event: 'ipc.error', data: { channel: IPC.petPress, error: 'boom' } },
+      { event: 'ipc.error', data: { channel: IPC.petPress, error: 'other' } },
+      { event: 'ipc.error', data: { channel: IPC.petKey, error: 'boom' } },
+      { event: 'ipc.error', data: { channel: IPC.petGetView, error: 'view' } }
+    ])
+  })
 })
 
 describe('처리 중 오류가 나도 던지지 않는다(main의 처리하지 않은 예외는 오류 창을 띄운다)', () => {
