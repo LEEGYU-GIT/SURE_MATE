@@ -12,7 +12,7 @@ import {
   petBox,
   petWindowRect
 } from '../../shared/pet/pet-frame'
-import { jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
+import { dropOnLedge, jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
 import {
   BUBBLE_MS,
   REACTION_MS,
@@ -83,10 +83,28 @@ export interface PetController {
   startControl(): void
   /** esc·toggle은 기억한 창으로 포커스를 되돌리고, blur(다른 창을 눌렀다)는 되돌리지 않는다 */
   endControl(reason: 'esc' | 'blur' | 'toggle'): void
-  /** 조종 단축키 */
+  /** 조종 단축키·팔레트 명령: 조종 중이면 끝내고(reason toggle) 아니면 시작한다 */
   toggleControl(): void
+  /**
+   * 팔레트를 열거나 사용자 창의 선택 글을 읽기 전에 부른다(M6 최종 검토 I1): 조종 중이면 기억한 창으로 포커스를 돌리며 끝내고
+   * (reason handoff) 그 창을 돌려준다. 포커스 복귀가 끝나기 전에도 펫 창 대신 그 창을 쓰게 한다. 조종 중이 아니거나 기억한 창이 없으면 null
+   */
+  handOff(): string | null
   /** 조종 키 누름·뗌. 조종 중이 아니면 무시한다 */
   key(k: PetKey, down: boolean): void
+  /**
+   * 팔레트 명령 "재우기"(§16 키보드만으로 사용, M6 최종 검토 M4): 바닥·꼭대기에 있으면(가만히·걷기·앉기) 그 자리에서 존다.
+   * 메뉴 "재우기"와 같다(열린 메뉴는 닫고 메뉴 동안 온 반응은 버린다, 보이던 말풍선은 닫는다). 이미 자고 있으면 true,
+   * 들리거나 날거나 오르는 중·조종 중·숨김이면 false
+   */
+  putToSleep(): boolean
+  /** 팔레트 명령 "깨우기": 자고 있으면 깨운다(바닥은 가만히, 꼭대기는 앉기). 깨어 있으면 할 일 없이 true, 숨김이면 false */
+  wakeUp(): boolean
+  /**
+   * 펫 창의 렌더러가 죽었다(M6 최종 검토 Task 9 #6). 죽은 화면은 뗌·키·blur를 보내지 못하므로 조종을 끝내고
+   * (포커스는 돌리지 않는다), 누름·들림을 놓고, 클릭 통과로 되돌린다. 다시 불러온 렌더러가 지금 화면 상태를 받도록 보낸 값을 잊는다
+   */
+  rendererGone(): void
   controlling(): boolean
   status(): PetStatus
   view(): PetView | null
@@ -105,9 +123,9 @@ export interface PetControllerDeps {
   mouseButtonDown(): boolean | null
   idleSeconds(): number
   openPalette(): void
-  /** 지금 앞에 있는 창(HWND 10진 문자열). Win32가 없으면 null */
+  /** 조종을 끝낼 때 돌아갈 창(앞 창, Sure-Mate 창이 아닌 것. HWND 10진 문자열). Win32가 없으면 null */
   foreground(): string | null
-  /** 그 창을 앞으로 가져온다(조종을 Esc·단축키로 끝낼 때 한 번). 실패하면 false */
+  /** 그 창을 앞으로 가져온다(조종을 Esc·단축키·팔레트로 끝낼 때 한 번). 숨은 창이거나 실패하면 false */
   restoreFocus(hwnd: string): boolean
   /** 설정 pet.visible 저장(메뉴 "숨기기"). 저장 뒤 런타임이 refresh()를 부른다 */
   setVisible(visible: boolean): Promise<void>
@@ -153,6 +171,8 @@ const MAX_SAMPLES = 8
 
 type Point = { x: number; y: number }
 type HideReason = 'setting' | 'fullscreen' | 'no-display'
+/** 조종이 끝나는 까닭. handoff: 팔레트·선택 글 가져오기에 포커스를 넘긴다(기억한 창으로 돌린다, I1) */
+type EndReason = 'esc' | 'blur' | 'toggle' | 'handoff'
 /** pet.state로 남기는 일. walk·idle은 남기지 않는다 */
 type StateEvent = 'climb' | 'sit' | 'sleep' | 'wake' | 'held' | 'land'
 
@@ -583,7 +603,11 @@ export function createPetController(d: PetControllerDeps): PetController {
       mode === 'sit' ||
       (mode === 'climb' && stepUp === null && stepDown === null))
 
-  /** 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다. 저장한 반응은 설 수 있게 되면 여기서 보인다 */
+  /**
+   * 상태에 맞게 동작 고리 또는 조회 타이머 하나만 남기고 화면을 맞춘다. 저장한 반응은 설 수 있게 되면 여기서 보인다.
+   * 동작 고리가 이미 도는 동안에는 그리지 않고 다음 프레임이 그린다: 바 끌기 같은 바깥 변화가 프레임 사이에 창을 한 번 더 옮기면
+   * 펫 이동이 30fps를 넘는다(Task 9 #1). 고리를 멈추거나 새로 시작하는 변화(반응·말풍선 닫힘·메뉴·걷기 시작)는 같은 호출 안에서 그린다
+   */
   function settle(): void {
     if (!shown || disposed) return
     if (pending && canReact()) {
@@ -593,11 +617,10 @@ export function createPetController(d: PetControllerDeps): PetController {
     }
     if (loopNeeded()) {
       stopPoll()
-      if (loopTimer === null) {
-        const t = now()
-        lastFrame = Number.isFinite(t) ? t : null
-        loopTimer = T.setInterval(frame, PET_LOOP.frameMs)
-      }
+      if (loopTimer !== null) return
+      const t = now()
+      lastFrame = Number.isFinite(t) ? t : null
+      loopTimer = T.setInterval(frame, PET_LOOP.frameMs)
     } else {
       stopLoop()
       if (pollTimer === null) schedulePoll()
@@ -1000,6 +1023,13 @@ export function createPetController(d: PetControllerDeps): PetController {
       hold(c, t)
       const v = throwVelocity(samples, t)
       samples = []
+      // 바 꼭대기 바로 아래에서 느리게 놓았으면(들린 몸이 바 위에 겹쳐 그려진다) 꼭대기에 앉는다(I2)
+      const seat = dropOnLedge({ x: foot.x, y: foot.y, vx: v.vx, vy: v.vy }, world!, size())
+      if (seat) {
+        foot = seat
+        enterSit()
+        return
+      }
       enterAir(v, 'surprised')
       return
     }
@@ -1323,11 +1353,11 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   /**
-   * 조종을 끝낸다: 창이 다시 포커스를 받지 않게 하고, Esc·단축키면 기억한 창으로 포커스를 한 번 돌린다
+   * 조종을 끝낸다: 창이 다시 포커스를 받지 않게 하고, Esc·단축키·넘겨주기(팔레트·선택 글 가져오기)면 기억한 창으로 포커스를 한 번 돌린다
    * (blur는 이미 다른 창이 앞에 있고, 숨김은 전체 화면 앱 등이 앞에 있어 돌리지 않는다).
    * 키로 걷던 펫은 멈추고(꼭대기면 앉음) 키 안내는 닫는다
    */
-  function finishControl(reason: 'esc' | 'blur' | 'toggle' | 'hide' | 'dispose'): void {
+  function finishControl(reason: EndReason | 'hide' | 'dispose'): void {
     const c = control
     if (!c) return
     control = null
@@ -1343,7 +1373,7 @@ export function createPetController(d: PetControllerDeps): PetController {
     // 키 안내에 밀린 반응은 Esc·단축키·다른 창으로 끝낼 때 endControlNow가 보이고, 숨기거나 버릴 때는 버린다
     afterControl = null
     d.window.setFocusable(false)
-    if ((reason === 'esc' || reason === 'toggle') && c.prev !== null) d.restoreFocus(c.prev)
+    if ((reason === 'esc' || reason === 'toggle' || reason === 'handoff') && c.prev !== null) d.restoreFocus(c.prev)
     if (reason !== 'dispose') d.log('pet.control', { phase: 'end', reason })
   }
 
@@ -1447,7 +1477,7 @@ export function createPetController(d: PetControllerDeps): PetController {
     settle()
   }
 
-  function endControlNow(reason: 'esc' | 'blur' | 'toggle'): void {
+  function endControlNow(reason: EndReason): void {
     if (disposed || !control) return
     const later = afterControl
     finishControl(reason)
@@ -1505,6 +1535,8 @@ export function createPetController(d: PetControllerDeps): PetController {
     if (!allFinite(foot.x, foot.y, vx, vy)) toFloorMiddle()
     hitTest(c)
     settle()
+    // 고리가 이어 돌면 settle이 그리지 않으므로 프레임이 그린다(멈췄으면 settle이 이미 그렸다)
+    if (loopTimer !== null) render()
   }
 
   // ---- 세계 변화 ----
@@ -1856,6 +1888,12 @@ export function createPetController(d: PetControllerDeps): PetController {
       if (control) endControlNow('toggle')
       else startControlNow()
     },
+    handOff() {
+      if (disposed || !control) return null
+      const back = control.prev
+      endControlNow('handoff')
+      return back
+    },
     key(k, down) {
       if (disposed || !shown || !world || !control) return
       if (k === 'end') {
@@ -1869,6 +1907,45 @@ export function createPetController(d: PetControllerDeps): PetController {
         if (down && (k === 'left' || k === 'right')) lastHorizontal = k
         steer()
       }
+      settle()
+    },
+    putToSleep() {
+      if (disposed || !shown || !world) return false
+      if (mode === 'sleep') return true
+      if (control || pressed || !(mode === 'idle' || mode === 'walk' || mode === 'sit')) return false
+      // 고른 일이 이긴다(메뉴 "재우기"와 같다): 메뉴 동안 온 반응은 버리고 보이던 반응·클릭 표시는 끝낸다
+      pending = null
+      closeMenu(false)
+      endReaction()
+      clickFaceUntil = null
+      fallAsleep()
+      retest()
+      settle()
+      return true
+    },
+    wakeUp() {
+      if (disposed || !shown || !world) return false
+      if (mode !== 'sleep') return true
+      closeMenu(false)
+      wake()
+      flushPending()
+      retest()
+      settle()
+      return true
+    },
+    rendererGone() {
+      if (disposed || !shown) return
+      if (control) endControlNow('blur')
+      if (pressed) {
+        pressed = null
+        samples = []
+        if (mode === 'held') enterAir({ vx: 0, vy: 0 }, 'surprised')
+      }
+      // 렌더러가 잰 말풍선 사각형은 버리고(다시 불러온 렌더러가 다시 잰다), 클릭 통과로 되돌린다(캐시와 상관없이)
+      bubbleHit = null
+      sentKey = null
+      ignoring = true
+      d.window.setIgnoreMouse(true)
       settle()
     },
     controlling: () => control !== null,

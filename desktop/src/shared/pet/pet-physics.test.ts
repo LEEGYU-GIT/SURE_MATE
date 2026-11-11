@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MonitorInfo } from '../types'
-import { petWorld } from './pet-world'
-import { jumpVelocity, stepAir, throwVelocity, type AirContact, type Body } from './pet-physics'
+import { PET_BASELINE, petWorld } from './pet-world'
+import { DROP_SNAP_SPEED, dropOnLedge, jumpVelocity, stepAir, throwVelocity, type AirContact, type Body } from './pet-physics'
 
 const mon: MonitorInfo = {
   id: '1',
@@ -119,5 +119,44 @@ describe('jumpVelocity', () => {
   it('높이 292', () => {
     expect(jumpVelocity(292)).toBeCloseTo(-1080.7, 1)
     expect(jumpVelocity(0)).toBe(0)
+  })
+})
+
+describe('dropOnLedge: 느리게 놓은 펫의 발이 바 꼭대기 바로 아래면 꼭대기에 앉힌다(M6 최종 검토 I2, §14-2 "바 꼭대기에 떨어지면 앉는다")', () => {
+  const still = (x: number, y: number): Body => ({ x, y, vx: 0, vy: 0 })
+
+  it('발이 꼭대기(292) 아래 1·10·20 DIP이면 그 x로 꼭대기에 올린다', () => {
+    for (const below of [1, 10, 20]) expect(dropOnLedge(still(1892, 292 + below), world, 56)).toEqual({ x: 1892, y: 292 })
+  })
+
+  it('몸 높이의 절반(56 → 25.375 DIP)까지 올리고, 그보다 깊거나 40 DIP 넘게 아래면 그대로 떨어진다(옆면에 밀려난다)', () => {
+    const half = (PET_BASELINE * 56) / 2
+    expect(half).toBeCloseTo(25.375, 6)
+    expect(dropOnLedge(still(1892, 292 + half), world, 56)).toEqual({ x: 1892, y: 292 })
+    expect(dropOnLedge(still(1892, 292 + half + 0.5), world, 56)).toBeNull()
+    for (const below of [40, 100]) expect(dropOnLedge(still(1892, 292 + below), world, 56)).toBeNull()
+    // 크기를 따른다: 40이면 절반 18.125, 72면 32.625
+    expect(dropOnLedge(still(1892, 292 + 20), petWorld(mon, world.bar, 40), 40)).toBeNull()
+    expect(dropOnLedge(still(1892, 292 + 30), petWorld(mon, world.bar, 72), 72)).toEqual({ x: 1892, y: 292 })
+  })
+
+  it('x는 꼭대기 양끝 + 크기/4 안(1850~1934)만, 밖이면 null(바닥으로 떨어진다)', () => {
+    expect(dropOnLedge(still(1850, 300), world, 56)).toEqual({ x: 1850, y: 292 })
+    expect(dropOnLedge(still(1849, 300), world, 56)).toBeNull()
+  })
+
+  it(`빠르게 던지면(${DROP_SNAP_SPEED} DIP/초 이상) 그대로 날아간다. 꼭대기 위·꼭대기와 같은 높이는 stepAir가 내려앉힌다`, () => {
+    expect(DROP_SNAP_SPEED).toBe(300)
+    expect(dropOnLedge({ x: 1892, y: 302, vx: 0, vy: 300 }, world, 56)).toBeNull()
+    expect(dropOnLedge({ x: 1892, y: 302, vx: -250, vy: 200 }, world, 56)).toBeNull()
+    expect(dropOnLedge({ x: 1892, y: 302, vx: 200, vy: -200 }, world, 56)).toEqual({ x: 1892, y: 292 })
+    expect(dropOnLedge(still(1892, 280), world, 56)).toBeNull()
+    expect(dropOnLedge(still(1892, 292), world, 56)).toBeNull()
+  })
+
+  it('꼭대기가 없는 세계(바 없음·자리 없는 바)와 유한하지 않은 값은 null', () => {
+    expect(dropOnLedge(still(1892, 300), petWorld(mon, null, 56), 56)).toBeNull()
+    expect(dropOnLedge({ x: Number.NaN, y: 300, vx: 0, vy: 0 }, world, 56)).toBeNull()
+    expect(dropOnLedge({ x: 1892, y: 300, vx: Number.NaN, vy: 0 }, world, 56)).toBeNull()
   })
 })

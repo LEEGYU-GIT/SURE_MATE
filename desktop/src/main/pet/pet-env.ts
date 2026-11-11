@@ -2,9 +2,11 @@ import { app, powerMonitor, screen, systemPreferences } from 'electron'
 import { appEvents } from '../app-events'
 import { getMonitors } from '../native/coords'
 import { mouseButtonDown } from '../native/input'
-import { getForegroundWindow, setForeground } from '../native/windows'
+import { getForegroundWindow, isOwnWindow, isWindowVisible, setForeground } from '../native/windows'
 import { realTimers } from '../timers'
+import { getPreviousHwnd, paletteHwnd } from '../windows/palette-window'
 import { createPetWindow } from '../windows/pet-window'
+import { controlReturnTarget } from './pet-focus'
 import type { PetRuntimeEnv } from './pet-runtime'
 
 /**
@@ -40,16 +42,22 @@ export function electronPetEnv(): PetRuntimeEnv {
         return false
       }
     },
+    // 조종을 끝낼 때 돌아갈 창: Sure-Mate 창은 기억하지 않는다(팔레트면 팔레트가 돌아갈 창, M6 최종 검토 I1)
     foreground: () => {
       try {
-        return getForegroundWindow()
+        return controlReturnTarget({
+          foreground: getForegroundWindow(),
+          palette: { hwnd: paletteHwnd(), returnTo: getPreviousHwnd() },
+          isOwn: isOwnWindow
+        })
       } catch {
         return null
       }
     },
+    // 숨은 창(숨긴 팔레트 등)에는 포커스를 주지 않는다: 보이지 않는 창이 키 입력을 받게 된다(I1)
     restoreFocus: (hwnd) => {
       try {
-        return setForeground(hwnd)
+        return isWindowVisible(hwnd) && setForeground(hwnd)
       } catch {
         return false
       }

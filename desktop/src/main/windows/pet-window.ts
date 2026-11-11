@@ -41,10 +41,16 @@ export interface PetWindow extends PetWindowControls {
   hwnd: string
   /** 펫 창 webContents id(펫 IPC는 이 창이 보낸 것만 받는다) */
   contentsId: number
+  /** 창이 포커스를 가졌는지(조종을 시작한 뒤 Windows가 포커스를 주었는지 확인한다). 닫힌 뒤에는 false */
+  isFocused(): boolean
   onBlur(cb: () => void): void
   /** 닫으려 한다(조종 중 Alt+F4 등). event.preventDefault()로 막는다 */
   onClose(cb: (event: { preventDefault(): void }) => void): void
   onClosed(cb: () => void): void
+  /** 렌더러가 죽었다(render-process-gone). 까닭(crashed·oom 등 Electron 값)을 넘긴다 */
+  onRenderGone(cb: (reason: string) => void): void
+  /** #/pet을 다시 불러온다(렌더러가 죽은 뒤 한 번). 닫힌 뒤에는 아무것도 하지 않는다 */
+  reload(): void
   /** 창을 없앤다(이미 닫혔으면 아무것도 하지 않는다) */
   destroy(): void
 }
@@ -154,9 +160,14 @@ export function createPetWindow(): PetWindow & { win: BrowserWindow } {
     hwnd,
     contentsId: win.webContents.id,
     ...petWindowControls(win, hwnd),
+    isFocused: () => !win.isDestroyed() && win.isFocused(),
     onBlur: (cb) => void win.on('blur', cb),
     onClose: (cb) => void win.on('close', cb),
     onClosed: (cb) => void win.on('closed', cb),
+    onRenderGone: (cb) => void win.webContents.on('render-process-gone', (_e, details) => cb(details.reason)),
+    reload: () => {
+      if (!win.isDestroyed()) loadRoute(win, '/pet')
+    },
     destroy: () => {
       if (!win.isDestroyed()) win.destroy()
     }

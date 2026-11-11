@@ -5,6 +5,7 @@
 # 필요: Node 22, /usr/bin/google-chrome, python3 + Pillow(캡처를 장면 크기로 자르는 데 사용).
 #       Pillow가 없으면 시작 즉시 중단한다. 설치: python3 -m pip install --user Pillow
 # Chrome은 실행마다 임시 프로필(--user-data-dir)을 쓰고 끝나면 지운다(공용 계정의 기본 프로필을 건드리지 않는다).
+# 백그라운드 네트워크(구성 요소 업데이트·첫 실행 처리 등)는 끈다: 캡처는 127.0.0.1의 미리 보기 서버만 연다.
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
@@ -50,6 +51,7 @@ curl -fsS -o /dev/null "http://127.0.0.1:$PORT/preview.html"
 for id in "$@"; do
   for f in 1 1.25 1.5; do
     /usr/bin/google-chrome --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$PROFILE_DIR" --window-size=$SCENE_W,$((SCENE_H + CHROME_H)) \
+      --disable-background-networking --disable-component-update --no-first-run \
       --force-device-scale-factor="$f" --virtual-time-budget=3000 \
       --screenshot="$OUT/$id@$f.png" "http://127.0.0.1:$PORT/preview.html#$id"
     python3 -c "

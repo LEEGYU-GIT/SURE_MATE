@@ -2,9 +2,9 @@ import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { BrowserWindow, screen, type Display } from 'electron'
 import { IPC, type ShownPayload } from '../../shared/ipc-channels'
-import { needsResize, palettePosition, shouldHideOnBlur } from '../../shared/palette-rules'
+import { needsResize, palettePosition, paletteReturnTarget, shouldHideOnBlur } from '../../shared/palette-rules'
 import { log } from '../log'
-import { getForegroundWindow, setForeground } from '../native/windows'
+import { getForegroundWindow, isOwnWindow, setForeground } from '../native/windows'
 import { loadRoute } from './overlay-window'
 
 export type DisplayMode = 'cursor' | 'primary' | 'active'
@@ -69,10 +69,28 @@ function targetDisplay(): Display {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
 }
 
-export function showPalette(payload: ShownPayload = { mode: 'search' }): void {
+/** Sure-Mate 창인지(읽지 못하면 아니라고 본다: 팔레트는 Win32 없이도 열린다) */
+const ownWindow = (hwnd: string): boolean => {
+  try {
+    return isOwnWindow(hwnd)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 팔레트를 연다. 닫은 뒤 돌아갈 창으로 지금 앞 창을 기억하되 Sure-Mate 창(펫·바·펼침 창·설정 창)은 기억하지 않는다.
+ * returnTo: 말랑 메이트 조종을 끝내며 돌려받은 창. 포커스 복귀가 아직 끝나지 않아 펫 창이 앞에 있을 때 대신 쓴다(M6 최종 검토 I1)
+ */
+export function showPalette(payload: ShownPayload = { mode: 'search' }, o: { returnTo?: string | null } = {}): void {
   if (!win) return
-  const fg = getForegroundWindow()
-  if (fg && fg !== ownHwnd) previousHwnd = fg
+  previousHwnd = paletteReturnTarget({
+    foreground: getForegroundWindow(),
+    palette: ownHwnd,
+    current: previousHwnd,
+    returnTo: o.returnTo ?? null,
+    isOwn: ownWindow
+  })
 
   const display = targetDisplay()
   const bounds = palettePosition(display.workArea, SIZE)
@@ -115,3 +133,6 @@ export const isPaletteVisible = (): boolean => Boolean(win?.isVisible())
 export const paletteContentsId = (): number | null => (win && !win.isDestroyed() ? win.webContents.id : null)
 
 export const getPreviousHwnd = (): string | null => previousHwnd
+
+/** 팔레트 창 핸들(10진 문자열). 창이 없으면 null */
+export const paletteHwnd = (): string | null => ownHwnd
