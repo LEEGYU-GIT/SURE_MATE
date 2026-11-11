@@ -3079,6 +3079,63 @@ describe('조종 모드(설계 §14-2 "펫 창이 키보드를 받는다")', () 
     expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'toggle' }])
   })
 
+  it('(I1) handOff: 조종 중이면 기억한 창으로 포커스를 돌리며 끝내고 그 창을 돌려준다(기록 end handoff). 아니면 null', () => {
+    const t = make()
+    t.c.start()
+    expect(t.c.handOff()).toBeNull()
+    expect(t.window.setFocusable).not.toHaveBeenCalled()
+    t.env.foreground = '4242'
+    t.c.startControl()
+    expect(t.c.handOff()).toBe('4242')
+    expect(t.c.controlling()).toBe(false)
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(t.restoreFocus.mock.calls).toEqual([['4242']])
+    expect(t.window.setFocusable.mock.invocationCallOrder[1]).toBeLessThan(
+      t.restoreFocus.mock.invocationCallOrder[0]
+    )
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'handoff' }])
+    expect(t.c.view()).toMatchObject({ controlling: false, bubble: null })
+    // 두 번째는 조종 중이 아니다
+    expect(t.c.handOff()).toBeNull()
+    expect(t.restoreFocus).toHaveBeenCalledTimes(1)
+  })
+
+  it('(I1) handOff: 기억한 창이 없으면(Win32 없음·Sure-Mate 창) 끝내기만 하고 null', () => {
+    const t = make()
+    t.c.start()
+    t.env.foreground = null
+    t.c.startControl()
+    expect(t.c.handOff()).toBeNull()
+    expect(t.c.controlling()).toBe(false)
+    expect(t.restoreFocus).not.toHaveBeenCalled()
+  })
+
+  it('(I1) 조종 중 펫 더블클릭: 팔레트를 여는 쪽이 handOff로 조종을 끝내고 기억한 창을 받는다(펫 창을 돌아갈 창으로 두지 않는다)', () => {
+    const t = make({ bar: null })
+    t.c.start()
+    t.env.foreground = '4242'
+    t.c.startControl()
+    vi.advanceTimersByTime(4000)
+    // index.ts의 팔레트 열기와 같이 handOff를 먼저 부른다(컨트롤러 안의 클릭 처리 도중에 다시 들어온다)
+    const handed: (string | null)[] = []
+    t.openPalette.mockImplementation(() => void handed.push(t.c.handOff()))
+    t.env.cursor = bodyPoint(t)
+    click(t)
+    vi.advanceTimersByTime(100)
+    click(t)
+    expect(t.openPalette).toHaveBeenCalledTimes(1)
+    expect(handed).toEqual(['4242'])
+    expect(t.c.controlling()).toBe(false)
+    expect(t.restoreFocus.mock.calls).toEqual([['4242']])
+    expect(t.window.setFocusable.mock.calls).toEqual([[true], [false]])
+    expect(controls(t)).toEqual([{ phase: 'start' }, { phase: 'end', reason: 'handoff' }])
+    // 끝낸 뒤에는 혼자 놀기로 돌아간다(조종 표시 없음, 키는 무시)
+    expect(look(t).props).not.toContain('control')
+    t.c.key('right', true)
+    vi.advanceTimersByTime(PET_TIMING.idleMs[1] + 1000)
+    expect(t.c.controlling()).toBe(false)
+  })
+
   it('조종 중 숨김(전체 화면): 조종을 끝내고 포커스는 되돌리지 않는다. 다시 보여도 조종 중이 아니다', () => {
     const t = make()
     t.c.start()

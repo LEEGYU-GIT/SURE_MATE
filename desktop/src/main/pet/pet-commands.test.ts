@@ -3,7 +3,11 @@ import { PET_HIDDEN_NOTICE } from '../../shared/pet/pet-copy'
 import { HotkeyManager, type ShortcutBackend } from '../hotkeys/hotkey-manager'
 import { createPetCommands, createPetControlHotkey, petCommandItems } from './pet-commands'
 
-function fake(over: { visible?: boolean; keysHeld?: boolean; setFails?: boolean } = {}): { run: (id: string) => Promise<boolean>; calls: string[]; notes: string[] } {
+function fake(over: { visible?: boolean; keysHeld?: boolean; setFails?: boolean; refocus?: () => Promise<boolean> } = {}): {
+  run: (id: string) => Promise<boolean>
+  calls: string[]
+  notes: string[]
+} {
   const calls: string[] = []
   const notes: string[] = []
   let visible = over.visible ?? true
@@ -14,12 +18,16 @@ function fake(over: { visible?: boolean; keysHeld?: boolean; setFails?: boolean 
       visible = v
       calls.push(`set:${v}`)
     },
-    startControl: () => calls.push('control'),
+    toggleControl: () => calls.push('control'),
     waitKeysReleased: async () => {
       calls.push('wait')
       return !over.keysHeld
     },
     hidePalette: (restore) => calls.push(`hide:${restore}`),
+    hidePaletteAndRefocus: async () => {
+      calls.push('refocus')
+      return over.refocus ? over.refocus() : true
+    },
     notify: (m) => notes.push(m),
     log: (e) => calls.push(`log:${e}`)
   })
@@ -57,17 +65,38 @@ it('키를 떼지 않았으면 숨기지 않지만 값은 바꾼다', async () =
   expect(f.calls.filter((c) => c.startsWith('set:'))).toEqual(['set:false'])
 })
 
-it('조종: 팔레트를 숨긴 뒤 시작한다', async () => {
-  const f = fake()
-  expect(await f.run('cmd.pet-control')).toBe(true)
-  expect(f.calls.slice(0, 3)).toEqual(['wait', 'hide:true', 'control'])
+it('(I1) 조종: 팔레트를 숨기고 원래 창이 앞에 올 때까지(최대 80ms) 기다린 뒤 시작한다(조종이 팔레트를 돌아갈 창으로 기억하지 않게)', async () => {
+  let landed: (ok: boolean) => void = () => {}
+  const f = fake({ refocus: () => new Promise<boolean>((r) => (landed = r)) })
+  const running = f.run('cmd.pet-control')
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(f.calls).toEqual(['wait', 'refocus'])
+  landed(true)
+  expect(await running).toBe(true)
+  expect(f.calls.slice(0, 3)).toEqual(['wait', 'refocus', 'control'])
+  expect(f.calls.filter((c) => c.startsWith('hide:'))).toHaveLength(0)
   expect(f.notes).toEqual([])
+})
+
+it('(I1) 조종: 원래 창이 80ms 안에 앞에 오지 않아도 시작한다(조종은 숨은 팔레트 대신 팔레트가 돌아갈 창을 기억한다)', async () => {
+  const f = fake({ refocus: async () => false })
+  await f.run('cmd.pet-control')
+  expect(f.calls.slice(0, 3)).toEqual(['wait', 'refocus', 'control'])
+})
+
+it('(M5) 조종: 명령은 켜고 끄기다(이미 조종 중이면 끝낸다: 포커스를 받지 못해 남은 조종도 키보드로 끝낼 수 있다)', async () => {
+  const f = fake()
+  await f.run('cmd.pet-control')
+  await f.run('cmd.pet-control')
+  expect(f.calls.filter((c) => c === 'control')).toHaveLength(2)
 })
 
 it('조종: 키를 떼지 않았으면 시작하지 않고 알림 한 번', async () => {
   const f = fake({ keysHeld: true })
   expect(await f.run('cmd.pet-control')).toBe(true)
   expect(f.calls).not.toContain('control')
+  expect(f.calls).not.toContain('refocus')
   expect(f.calls.filter((c) => c.startsWith('hide:'))).toHaveLength(0)
   expect(f.notes).toEqual(['키를 뗀 뒤 다시 실행해 주세요.'])
 })

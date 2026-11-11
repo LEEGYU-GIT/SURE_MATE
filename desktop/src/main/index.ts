@@ -8,7 +8,7 @@ import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
-import { IPC } from '../shared/ipc-channels'
+import { IPC, type ShownPayload } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
@@ -38,9 +38,11 @@ import { createTermsCache } from './masking/terms-cache'
 import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
+import { getForegroundWindow } from './native/windows'
 import { buildPaletteItems } from './prompts/palette-items'
 import { notify } from './notify'
 import { electronPetEnv } from './pet/pet-env'
+import { handOffForCapture } from './pet/pet-focus'
 import { createPetRuntime, type PetRuntime } from './pet/pet-runtime'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
@@ -58,7 +60,7 @@ import { realTimers } from './timers'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
-import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
+import { createPaletteWindow, hidePalette, hidePaletteAndRefocus, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
 import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
 
 app.setName('Sure-Mate')
@@ -85,9 +87,10 @@ const barCommands = createBarCommands({
 const petCommands = createPetCommands({
   isVisible: () => settings.pet.visible,
   setVisible: setPetVisible,
-  startControl: () => petRuntime?.controller.startControl(),
+  toggleControl: () => petRuntime?.controller.toggleControl(),
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  hidePaletteAndRefocus,
   notify,
   log
 })
@@ -115,9 +118,36 @@ let pendingFileErrors: FileErrorReport[] = []
 /** 시작할 때 settings.json을 읽지 못해 기본 설정으로 시작했다는 알림(트레이가 생기면 한 번 알린다) */
 let pendingSettingsNotice: string | null = null
 
+/**
+ * 팔레트를 연다(단축키·바 로고·바 용어·펼침 창·펫 더블클릭·트레이·두 번째 실행). 말랑 메이트 조종 중이면 먼저 원래 창으로
+ * 포커스를 돌리며 조종을 끝내고, 그 창을 팔레트가 돌아갈 창으로 준다(펫 창이 아직 앞에 있어도, M6 최종 검토 I1)
+ */
+function openPalette(payload: ShownPayload = { mode: 'search' }): void {
+  showPalette(payload, { returnTo: petRuntime?.controller.handOff() ?? null })
+}
+
 function togglePalette(): void {
   if (isPaletteVisible()) hidePalette({ restoreFocus: true })
-  else showPalette({ mode: 'search' })
+  else openPalette({ mode: 'search' })
+}
+
+/**
+ * 사용자 창의 선택 글을 읽기 전에(바 고정 프롬프트·조회 단축키): 조종 중이면 원래 창으로 포커스를 돌리며 끝내고
+ * 그 창이 앞에 올 때까지 최대 80ms 기다린다(조종 중에는 펫 창이 앞에 있어 펫 창에서 가져오게 된다, I1)
+ */
+function beforeCapture(): Promise<void> {
+  return handOffForCapture({
+    handOff: () => petRuntime?.controller.handOff() ?? null,
+    foreground: () => {
+      try {
+        return getForegroundWindow()
+      } catch {
+        return null
+      }
+    },
+    now: Date.now,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  })
 }
 
 /** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그리고 말랑 메이트가 다시 판단한다(보이기·크기·가명 처리 선글라스 등) */
@@ -299,8 +329,12 @@ function startBar(): void {
     // 트레이 메뉴가 바의 잠시 숨김 상태를 보여 준다
     onVisibleChange: () => shell?.refresh(),
     togglePalette,
-    showPalette,
-    runPrompt: (templateId) => (prompts ? prompts.runFromBar(templateId) : Promise.resolve('missing')),
+    showPalette: openPalette,
+    // 조종 중이면 원래 창으로 돌려 둔 뒤 그 창의 선택 글로 실행한다(I1)
+    runPrompt: async (templateId) => {
+      await beforeCapture()
+      return prompts ? prompts.runFromBar(templateId) : 'missing'
+    },
     togglePet,
     openSettings: async () => openSettings('/settings'),
     setMaskingMode,
@@ -326,7 +360,8 @@ function startPet(): void {
     {
       bar: bar ? { bar: bar.bar, fullscreen: () => bar.fullscreen() } : null,
       getSettings: () => settings,
-      openPalette: () => showPalette({ mode: 'search' }),
+      // 더블클릭(조종 중이면 openPalette가 조종을 끝내고 원래 창을 팔레트에 준다)
+      openPalette: () => openPalette({ mode: 'search' }),
       // 메뉴 "펫 설정": 말랑 메이트 탭으로 연다
       openSettings: async () => openSettings('/settings', { tab: 'pet' }),
       setPetVisible,
@@ -342,12 +377,19 @@ function startPet(): void {
  */
 function showWikiCard(view: WikiCardView): void {
   if (barRuntime) barRuntime.flyout.showCard(view, { width: settings.bar.wikiCardWidth, autoHideMs: settings.bar.wikiCardMs })
-  else showPalette({ mode: 'search', query: '?' })
+  else openPalette({ mode: 'search', query: '?' })
 }
 
-/** 조회 단축키: 선택한 글로 위키 카드를 띄운다. 가져오기 수치·카드 종류는 로그 wiki.card 한 줄 */
+/**
+ * 조회 단축키: 선택한 글로 위키 카드를 띄운다. 가져오기 수치·카드 종류는 로그 wiki.card 한 줄.
+ * 조종 중이면 원래 창으로 돌려 둔 뒤 그 창에서 가져온다(I1)
+ */
 function lookupSelection(): void {
-  wikiCard?.lookupSelection().catch((e) => log('wiki.card.error', { error: errorText(e) }))
+  const card = wikiCard
+  if (!card) return
+  beforeCapture()
+    .then(() => card.lookupSelection())
+    .catch((e) => log('wiki.card.error', { error: errorText(e) }))
 }
 
 async function runItem(id: string): Promise<void> {
@@ -452,7 +494,7 @@ async function startShell(): Promise<void> {
   shell = createTray({
     paletteHotkey,
     maskingMode: () => settings.masking.mode,
-    onOpenPalette: () => showPalette({ mode: 'search' }),
+    onOpenPalette: () => openPalette({ mode: 'search' }),
     onOpenSettings: () => openSettings('/settings'),
     barShape: () => settings.bar.shape,
     onBarShape: (shape) =>
@@ -535,7 +577,7 @@ async function startShell(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => showPalette({ mode: 'search' }))
+  app.on('second-instance', () => openPalette({ mode: 'search' }))
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('kr.suremate.app')

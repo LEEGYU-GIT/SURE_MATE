@@ -52,6 +52,10 @@ const env = vi.hoisted(() => {
     isDestroyed(): boolean {
       return this.destroyed
     }
+    focused = false
+    isFocused(): boolean {
+      return this.focused
+    }
     destroy(): void {
       this.calls.push('destroy')
       this.destroyed = true
@@ -333,5 +337,14 @@ describe('createPetWindow: 펫 창 만들기', () => {
     w.destroy()
     w.destroy()
     expect(fake.calls.filter((s) => s === 'destroy')).toEqual(['destroy'])
+  })
+
+  it('(M5) isFocused: 창이 포커스를 가졌는지(조종을 시작한 뒤 확인한다). 닫힌 뒤에는 false', () => {
+    const { w, fake } = made()
+    expect(w.isFocused()).toBe(false)
+    fake.focused = true
+    expect(w.isFocused()).toBe(true)
+    w.destroy()
+    expect(w.isFocused()).toBe(false)
   })
 })

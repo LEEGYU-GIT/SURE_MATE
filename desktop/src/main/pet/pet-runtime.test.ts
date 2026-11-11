@@ -8,7 +8,7 @@ import { globalTimers } from '../bar/test-timers'
 import { RAISE_INTERVAL_MS } from '../bar/topmost-keeper'
 import type { PetWindow } from '../windows/pet-window'
 import { PET_LOOP, type PetWindowPort } from './pet-controller'
-import { barWorld, createCoalescer, createPetRuntime, createSettler, type PetRuntimeEnv, type PetRuntimeOptions } from './pet-runtime'
+import { barWorld, CONTROL_FOCUS_CHECK_MS, createCoalescer, createPetRuntime, createSettler, type PetRuntimeEnv, type PetRuntimeOptions } from './pet-runtime'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -49,11 +49,12 @@ function fakeBar(o: Partial<FakeBar['s']> = {}): FakeBar {
 }
 
 type PortMocks = { [K in keyof PetWindowPort]: Mock<PetWindowPort[K]> }
-type FakePetWindow = Omit<PetWindow, 'port' | 'recheckSize' | 'raise' | 'destroy'> & {
+type FakePetWindow = Omit<PetWindow, 'port' | 'recheckSize' | 'raise' | 'destroy' | 'isFocused'> & {
   port: PortMocks
   recheckSize: Mock<() => void>
   raise: Mock<() => void>
   destroy: Mock<() => void>
+  isFocused: Mock<() => boolean>
 }
 /** 펫 창(포트·맨 앞 올리기·창 이벤트)의 가짜. blur·close·closed는 창 이벤트를 낸다 */
 type FakeWindow = { w: FakePetWindow; blur(): void; close(): { preventDefault: Mock<() => void> }; closed(): void }
@@ -78,6 +79,7 @@ function fakeWindow(): FakeWindow {
     },
     recheckSize: vi.fn<() => void>(),
     raise: vi.fn<() => void>(),
+    isFocused: vi.fn<() => boolean>(() => true),
     onBlur: (cb) => void on.blur.push(cb),
     onClose: (cb) => void on.close.push(cb),
     onClosed: (cb) => void on.closed.push(cb),
@@ -450,6 +452,48 @@ describe('createPetRuntime: 펫 창을 앱에 연결한다', () => {
     expect(end).toHaveBeenCalledWith('blur')
     expect(rt.controller.controlling()).toBe(false)
     expect(f.env.restoreFocus).not.toHaveBeenCalled()
+    rt.dispose()
+  })
+
+  it('(M5) 조종을 시작하고 300ms 뒤에도 펫 창이 포커스를 받지 못했으면(앞 창 잠금) 조종을 끝낸다(blur처럼 포커스는 돌리지 않는다)', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    f.win.w.isFocused.mockReturnValue(false)
+    rt.controller.startControl()
+    expect(f.win.w.port.focus).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(CONTROL_FOCUS_CHECK_MS - 1)
+    expect(rt.controller.controlling()).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(rt.controller.controlling()).toBe(false)
+    expect(f.env.restoreFocus).not.toHaveBeenCalled()
+    expect(f.win.w.port.setFocusable).toHaveBeenLastCalledWith(false)
+    expect(o.log).toHaveBeenCalledWith('pet.focusRefused', {})
+    expect(o.log).toHaveBeenCalledWith('pet.control', { phase: 'end', reason: 'blur' })
+    rt.dispose()
+  })
+
+  it('(M5) 포커스를 받았으면 조종을 이어 가고, 확인 전에 조종이 끝나거나 펫이 숨으면 확인하지 않고 타이머도 남기지 않는다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    rt.controller.startControl()
+    vi.advanceTimersByTime(CONTROL_FOCUS_CHECK_MS)
+    expect(rt.controller.controlling()).toBe(true)
+    rt.controller.endControl('esc')
+
+    // 포커스를 받지 못했어도 그 전에 Esc로 끝났으면 다시 끝내지 않는다
+    f.win.w.isFocused.mockReturnValue(false)
+    rt.controller.startControl()
+    rt.controller.endControl('esc')
+    vi.advanceTimersByTime(CONTROL_FOCUS_CHECK_MS)
+    expect(o.log.mock.calls.filter(([e]) => e === 'pet.focusRefused')).toEqual([])
+
+    // 전체 화면으로 숨으면 확인 타이머도 지운다(숨긴 펫에는 타이머가 없다)
+    rt.controller.startControl()
+    rt.setFullscreen(true)
+    expect(rt.controller.controlling()).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
     rt.dispose()
   })
 

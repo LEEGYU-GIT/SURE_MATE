@@ -10,12 +10,23 @@ const m = vi.hoisted(() => ({
   },
   getForegroundWindow: vi.fn((): string | null => '1001'),
   setForeground: vi.fn<(hwnd: string) => boolean>(() => true),
+  // Sure-Mate 창: 팔레트 500, 설정 창 700
+  isOwnWindow: vi.fn((hwnd: string) => hwnd === '500' || hwnd === '700'),
+  isWindowVisible: vi.fn<(hwnd: string) => boolean>(() => true),
+  paletteHwnd: vi.fn((): string | null => '500'),
+  getPreviousHwnd: vi.fn((): string | null => '1001'),
   mouseButtonDown: vi.fn((): boolean | null => false),
   getMonitors: vi.fn(() => []),
   createPetWindow: vi.fn()
 }))
 vi.mock('electron', () => ({ app: m.app, powerMonitor: m.powerMonitor, screen: m.screen, systemPreferences: m.systemPreferences }))
-vi.mock('../native/windows', () => ({ getForegroundWindow: m.getForegroundWindow, setForeground: m.setForeground }))
+vi.mock('../native/windows', () => ({
+  getForegroundWindow: m.getForegroundWindow,
+  setForeground: m.setForeground,
+  isOwnWindow: m.isOwnWindow,
+  isWindowVisible: m.isWindowVisible
+}))
+vi.mock('../windows/palette-window', () => ({ paletteHwnd: m.paletteHwnd, getPreviousHwnd: m.getPreviousHwnd }))
 vi.mock('../native/input', () => ({ mouseButtonDown: m.mouseButtonDown }))
 vi.mock('../native/coords', () => ({ getMonitors: m.getMonitors }))
 vi.mock('../windows/pet-window', () => ({ createPetWindow: m.createPetWindow }))
@@ -75,6 +86,36 @@ describe('electronPetEnv: 펫 런타임의 바깥 세계(Electron·Win32·시계
     })
     expect(env.foreground()).toBeNull()
     expect(env.restoreFocus('1001')).toBe(false)
+  })
+
+  it('(I1) foreground: Sure-Mate 창은 돌아갈 창으로 주지 않는다(팔레트면 팔레트가 돌아갈 창, 그 밖의 Sure-Mate 창이면 null)', () => {
+    const env = electronPetEnv()
+    m.getForegroundWindow.mockReturnValueOnce('500')
+    expect(env.foreground()).toBe('1001')
+    m.getForegroundWindow.mockReturnValueOnce('500')
+    m.getPreviousHwnd.mockReturnValueOnce(null)
+    expect(env.foreground()).toBeNull()
+    m.getForegroundWindow.mockReturnValueOnce('700')
+    expect(env.foreground()).toBeNull()
+    m.getForegroundWindow.mockReturnValueOnce('4242')
+    expect(env.foreground()).toBe('4242')
+    m.isOwnWindow.mockImplementationOnce(() => {
+      throw new Error('koffi')
+    })
+    expect(env.foreground()).toBeNull()
+  })
+
+  it('(I1) restoreFocus: 보이지 않는 창(숨긴 팔레트 등)에는 포커스를 주지 않는다', () => {
+    const env = electronPetEnv()
+    m.isWindowVisible.mockReturnValueOnce(false)
+    expect(env.restoreFocus('4242')).toBe(false)
+    expect(m.setForeground).not.toHaveBeenCalled()
+    expect(env.restoreFocus('4242')).toBe(true)
+    expect(m.setForeground).toHaveBeenCalledWith('4242')
+    m.isWindowVisible.mockImplementationOnce(() => {
+      throw new Error('koffi')
+    })
+    expect(env.restoreFocus('4242')).toBe(false)
   })
 
   it('mouseButtonDown: Win32 값, 던지면 null(놓침은 렌더러 뗌과 1.5초 규칙으로)', () => {

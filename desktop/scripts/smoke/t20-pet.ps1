@@ -367,7 +367,8 @@ try {
     } else { $r.alt_space_keeps_control = $false }
     FocusForm
 
-    # 조종 세 번째: 조종 중 팔레트(단축키)를 열면 팔레트가 포커스를 유지하고 조종은 끝난다(blur)
+    # 조종 세 번째: 조종 중 팔레트(단축키)를 열면 조종은 원래 창으로 포커스를 돌리며 먼저 끝나고(handoff) 팔레트가 포커스를 가진다.
+    # 팔레트를 Esc로 닫으면 시험 창으로 돌아간다(펫 창으로 돌아가지 않는다, M6 최종 검토 I1)
     if (StartControl) {
       $mark = LogMark
       HoldCombo $Combo 300
@@ -376,9 +377,11 @@ try {
       Pump 500
       # 앞 창이 앱 창이면서 펫 창(320x240)이 아니어야 팔레트가 포커스를 가진 것이다
       $r.control_palette_keeps_focus = ($null -ne $ps -and (IsApp) -and -not (ForegroundIsPetWindow $scale))
-      $r.control_palette_ends_control = ($null -ne $end -and $end.reason -eq 'blur')
+      $r.control_palette_ends_control = ($null -ne $end -and $end.reason -eq 'handoff')
       $r.info_control_palette_foreground = (Fg).Title
       TapHuman 0x1B; Pump 700
+      $r.control_palette_esc_returns = ((Fg).Title -eq 'SureMate-Test')
+      $r.info_control_palette_esc_foreground = (Fg).Title
     } else { $r.control_palette_keeps_focus = $false }
     FocusForm
   } catch { $r['error_6_menu_control'] = "$_ at line $($_.InvocationInfo.ScriptLineNumber)"; try { EndControlIfAny } catch { } }

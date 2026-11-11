@@ -21,9 +21,12 @@ export interface PetRuntimeEnv {
   idleSeconds(): number
   /** OS 애니메이션 효과 끔(prefers-reduced-motion). 읽지 못하면 false */
   systemReducedMotion(): boolean
-  /** 지금 앞에 있는 창(HWND 10진 문자열). Win32가 없으면 null */
+  /**
+   * 조종을 끝낼 때 돌아갈 창(HWND 10진 문자열): 앞 창이되 Sure-Mate 창은 빼고, 팔레트면 팔레트가 돌아갈 창(pet-focus.ts).
+   * Win32가 없으면 null
+   */
   foreground(): string | null
-  /** 그 창을 앞으로. Win32가 없거나 실패하면 false */
+  /** 그 창을 앞으로. 숨은 창이거나 Win32가 없거나 실패하면 false */
   restoreFocus(hwnd: string): boolean
   /** 모니터 연결·해제·배율·작업 영역이 바뀌면 부른다. 해제 함수를 돌려준다 */
   onDisplays(cb: () => void): () => void
@@ -91,6 +94,12 @@ export function createCoalescer(o: { timers: Timers; now(): number; gapMs: numbe
     }
   }
 }
+
+/**
+ * 조종을 시작하며 포커스를 요청한 뒤 펫 창이 포커스를 받았는지 확인하기까지(ms, M6 최종 검토 M5).
+ * Windows가 앞 창 잠금으로 포커스를 주지 않으면 blur도 Esc도 오지 않아 조종 모드(계획·졸기 없음)가 남는다
+ */
+export const CONTROL_FOCUS_CHECK_MS = 300
 
 /** 마지막 요청 뒤 ms 동안 조용하면 run을 한 번 부른다(모니터 연결·배율 변화는 몰려 온다) */
 export function createSettler(o: { timers: Timers; ms: number; run(): void }): { request(): void; dispose(): void } {
@@ -202,6 +211,21 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
     undo.push(() => keeper.stop())
     const syncKeeper = (): void => keeper.setVisible(shown && !barVisible())
 
+    // 조종을 시작하며 포커스를 요청하면 300ms 뒤 한 번 확인한다(M5). 받지 못했으면 blur처럼 끝낸다(포커스는 돌리지 않는다).
+    // 조종이 끝나거나(setFocusable(false)) 펫이 숨으면 확인을 지운다(숨긴 펫에는 타이머가 없다)
+    let focusCheck: unknown = null
+    const clearFocusCheck = (): void => {
+      if (focusCheck !== null) timers.clearTimeout(focusCheck)
+      focusCheck = null
+    }
+    undo.push(clearFocusCheck)
+    const checkFocus = (): void => {
+      focusCheck = null
+      if (disposed || !controller.controlling() || win.isFocused()) return
+      o.log('pet.focusRefused', {})
+      controller.endControl('blur')
+    }
+
     // 컨트롤러가 띄우고 숨기는 곳에서 맨 앞 유지를 맞춘다. 띄울 때는 먼저 나온 바 앞으로 바로 올린다
     // (바가 없으면 펫 혼자 올리기가 시작하며 올린다)
     const port: PetWindowPort = {
@@ -213,9 +237,19 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
         syncKeeper()
       },
       hide: () => {
+        clearFocusCheck()
         win.port.hide()
         shown = false
         syncKeeper()
+      },
+      setFocusable: (focusable) => {
+        if (!focusable) clearFocusCheck()
+        win.port.setFocusable(focusable)
+      },
+      focus: () => {
+        win.port.focus()
+        clearFocusCheck()
+        focusCheck = timers.setTimeout(checkFocus, CONTROL_FOCUS_CHECK_MS)
       }
     }
 

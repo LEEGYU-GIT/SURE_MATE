@@ -28,11 +28,13 @@ export interface PetCommandDeps {
   isVisible(): boolean
   /** 보이기 값을 저장한다(저장 뒤 펫이 나타나거나 사라진다) */
   setVisible(visible: boolean): Promise<void>
-  /** 조종 모드를 시작한다(펫이 포커스를 가져간다) */
-  startControl(): void
+  /** 조종 모드를 시작하고(펫이 포커스를 가져간다), 이미 조종 중이면 끝낸다 */
+  toggleControl(): void
   /** 명령을 고른 Enter·보조키를 뗄 때까지 기다린다. 시간 안에 안 떼면 false */
   waitKeysReleased(): Promise<boolean>
   hidePalette(restoreFocus: boolean): void
+  /** 팔레트를 숨기고 원래 창이 앞에 올 때까지 기다린다(최대 80ms). 오지 않으면 false */
+  hidePaletteAndRefocus(): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
@@ -54,9 +56,11 @@ export function createPetCommands(d: PetCommandDeps): { run(id: string): Promise
           // 팔레트가 앞에 남은 채 펫이 포커스를 가져가지 않게 시작하지 않는다
           d.notify('키를 뗀 뒤 다시 실행해 주세요.')
         } else {
-          // 팔레트를 숨겨 원래 창으로 포커스를 돌려 둔 뒤 시작해야 Esc 때 그 창으로 돌아간다
-          d.hidePalette(true)
-          if (d.isVisible()) d.startControl()
+          // 팔레트를 숨기고 원래 창이 앞에 온 뒤 시작해야 조종이 그 창을 기억하고 Esc 때 그리로 돌아간다(I1).
+          // 80ms 안에 오지 않아도 시작한다: 조종은 숨은 팔레트 대신 팔레트가 돌아갈 창을 기억한다.
+          // 이미 조종 중이면 끝낸다(M5: 포커스를 받지 못해 남은 조종도 키보드로 끝낼 수 있게)
+          await d.hidePaletteAndRefocus()
+          if (d.isVisible()) d.toggleControl()
           d.log('pet.controlCommand', {})
         }
       } catch (e) {

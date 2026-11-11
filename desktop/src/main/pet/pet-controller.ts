@@ -83,8 +83,13 @@ export interface PetController {
   startControl(): void
   /** esc·toggle은 기억한 창으로 포커스를 되돌리고, blur(다른 창을 눌렀다)는 되돌리지 않는다 */
   endControl(reason: 'esc' | 'blur' | 'toggle'): void
-  /** 조종 단축키 */
+  /** 조종 단축키·팔레트 명령: 조종 중이면 끝내고(reason toggle) 아니면 시작한다 */
   toggleControl(): void
+  /**
+   * 팔레트를 열거나 사용자 창의 선택 글을 읽기 전에 부른다(M6 최종 검토 I1): 조종 중이면 기억한 창으로 포커스를 돌리며 끝내고
+   * (reason handoff) 그 창을 돌려준다. 포커스 복귀가 끝나기 전에도 펫 창 대신 그 창을 쓰게 한다. 조종 중이 아니거나 기억한 창이 없으면 null
+   */
+  handOff(): string | null
   /** 조종 키 누름·뗌. 조종 중이 아니면 무시한다 */
   key(k: PetKey, down: boolean): void
   controlling(): boolean
@@ -105,9 +110,9 @@ export interface PetControllerDeps {
   mouseButtonDown(): boolean | null
   idleSeconds(): number
   openPalette(): void
-  /** 지금 앞에 있는 창(HWND 10진 문자열). Win32가 없으면 null */
+  /** 조종을 끝낼 때 돌아갈 창(앞 창, Sure-Mate 창이 아닌 것. HWND 10진 문자열). Win32가 없으면 null */
   foreground(): string | null
-  /** 그 창을 앞으로 가져온다(조종을 Esc·단축키로 끝낼 때 한 번). 실패하면 false */
+  /** 그 창을 앞으로 가져온다(조종을 Esc·단축키·팔레트로 끝낼 때 한 번). 숨은 창이거나 실패하면 false */
   restoreFocus(hwnd: string): boolean
   /** 설정 pet.visible 저장(메뉴 "숨기기"). 저장 뒤 런타임이 refresh()를 부른다 */
   setVisible(visible: boolean): Promise<void>
@@ -153,6 +158,8 @@ const MAX_SAMPLES = 8
 
 type Point = { x: number; y: number }
 type HideReason = 'setting' | 'fullscreen' | 'no-display'
+/** 조종이 끝나는 까닭. handoff: 팔레트·선택 글 가져오기에 포커스를 넘긴다(기억한 창으로 돌린다, I1) */
+type EndReason = 'esc' | 'blur' | 'toggle' | 'handoff'
 /** pet.state로 남기는 일. walk·idle은 남기지 않는다 */
 type StateEvent = 'climb' | 'sit' | 'sleep' | 'wake' | 'held' | 'land'
 
@@ -1323,11 +1330,11 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   /**
-   * 조종을 끝낸다: 창이 다시 포커스를 받지 않게 하고, Esc·단축키면 기억한 창으로 포커스를 한 번 돌린다
+   * 조종을 끝낸다: 창이 다시 포커스를 받지 않게 하고, Esc·단축키·넘겨주기(팔레트·선택 글 가져오기)면 기억한 창으로 포커스를 한 번 돌린다
    * (blur는 이미 다른 창이 앞에 있고, 숨김은 전체 화면 앱 등이 앞에 있어 돌리지 않는다).
    * 키로 걷던 펫은 멈추고(꼭대기면 앉음) 키 안내는 닫는다
    */
-  function finishControl(reason: 'esc' | 'blur' | 'toggle' | 'hide' | 'dispose'): void {
+  function finishControl(reason: EndReason | 'hide' | 'dispose'): void {
     const c = control
     if (!c) return
     control = null
@@ -1343,7 +1350,7 @@ export function createPetController(d: PetControllerDeps): PetController {
     // 키 안내에 밀린 반응은 Esc·단축키·다른 창으로 끝낼 때 endControlNow가 보이고, 숨기거나 버릴 때는 버린다
     afterControl = null
     d.window.setFocusable(false)
-    if ((reason === 'esc' || reason === 'toggle') && c.prev !== null) d.restoreFocus(c.prev)
+    if ((reason === 'esc' || reason === 'toggle' || reason === 'handoff') && c.prev !== null) d.restoreFocus(c.prev)
     if (reason !== 'dispose') d.log('pet.control', { phase: 'end', reason })
   }
 
@@ -1447,7 +1454,7 @@ export function createPetController(d: PetControllerDeps): PetController {
     settle()
   }
 
-  function endControlNow(reason: 'esc' | 'blur' | 'toggle'): void {
+  function endControlNow(reason: EndReason): void {
     if (disposed || !control) return
     const later = afterControl
     finishControl(reason)
@@ -1855,6 +1862,12 @@ export function createPetController(d: PetControllerDeps): PetController {
     toggleControl() {
       if (control) endControlNow('toggle')
       else startControlNow()
+    },
+    handOff() {
+      if (disposed || !control) return null
+      const back = control.prev
+      endControlNow('handoff')
+      return back
     },
     key(k, down) {
       if (disposed || !shown || !world || !control) return
