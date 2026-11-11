@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
 import { app, dialog, shell as electronShell, globalShortcut, screen, type Tray } from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
+import builtinIntents from '../../resources/intents.json'
 import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
@@ -39,6 +40,10 @@ import { isAcceleratorHeld, waitPickKeysReleased } from './native/input'
 import { captureSelection, readClipboardText, writeClipboardText } from './native/selection'
 import { nativeStatus } from './native/win32'
 import { buildPaletteItems } from './prompts/palette-items'
+import { createIntentCache, ensureUserIntents } from './natural/intent-store'
+import { createNaturalCommands, createPickHandler } from './natural/natural-commands'
+import { createPhraseStore } from './natural/phrase-store'
+import { createUsageStore } from './natural/usage-store'
 import { notify } from './notify'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
@@ -91,6 +96,7 @@ const settingsCommands = createSettingsCommands({
 let packCommands: { run(id: string): Promise<boolean> } | null = null
 /** 워크스페이스 팔레트 명령(지금 배치 저장·불러오기, 설계 §11). 앱이 준비되면 만든다 */
 let workspaceCommands: ReturnType<typeof createWorkspaceCommands> | null = null
+let naturalCommands: ReturnType<typeof createNaturalCommands> | null = null
 /** 워크스페이스 서비스(바 메뉴가 쓴다). 앱이 준비되면 만든다 */
 let workspaceSvc: ReturnType<typeof createWorkspaceRuntime> | null = null
 /** 지금 용어 목록. 팔레트를 열 때(목록 요청)마다 새로 읽은 것으로 바꾼다({{terms}}는 이것을 쓴다) */
@@ -334,6 +340,7 @@ async function runItem(id: string): Promise<void> {
   if (await settingsCommands.run(id)) return
   // 지금 배치 저장(cmd.workspace-save)·워크스페이스 불러오기(workspace:<id>)
   if (workspaceCommands && (await workspaceCommands.run(id))) return
+  if (naturalCommands && (await naturalCommands.run(id))) return
   if (id.startsWith('prompt:') && prompts) {
     lastPreparedTemplate = id.slice('prompt:'.length)
     return prompts.prepare(lastPreparedTemplate)
@@ -603,6 +610,20 @@ if (!app.requestSingleInstanceLock()) {
       hidePalette: (restoreFocus) => hidePalette({ restoreFocus })
     })
     workspaceCommands = workspaceCmds
+    // 말하듯 입력(설계 §13): 단어 목록(기본본 + 사용자 intents.json), 기억한 문장, 사용 기록은 모두 이 PC에만 저장한다
+    const intentCache = createIntentCache(userData, builtinIntents, (errors) => reportFileErrors('말하듯 입력 단어 목록', 'intents.loadErrors', errors))
+    const phraseStore = createPhraseStore(userData)
+    const usageStore = createUsageStore(userData)
+    naturalCommands = createNaturalCommands({
+      ensure: () => ensureUserIntents(userData, builtinIntents),
+      openFile: (path) => electronShell.openPath(path),
+      showInFolder: (path) => electronShell.showItemInFolder(path),
+      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+      notify,
+      log
+    })
+    const handlePick = createPickHandler({ usage: usageStore, phrases: phraseStore, pack: () => intentCache.get(), notify, log })
     workspaceSvc = workspaceService
     // 시작할 때 한 번 읽어 깨진 파일을 바로 알린다
     await workspaceService.list()
@@ -632,6 +653,15 @@ if (!app.requestSingleInstanceLock()) {
       },
       cancelPrompt: () => session.cancel(),
       wiki,
+      natural: {
+        searchContext: async () => ({
+          pack: await intentCache.get(),
+          learned: [...(await phraseStore.all())],
+          usage: [...(await usageStore.all())],
+          now: Date.now()
+        }),
+        pick: handlePick
+      },
       saveImeLog,
       getStatus: () => ({
         paletteHotkey: paletteHotkey(),

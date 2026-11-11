@@ -15,8 +15,8 @@ const t = (over: Partial<Template>): Template => ({
 })
 const commands: PaletteItem[] = [{ id: 'dev.listWindows', group: 'command', title: '개발: 창 목록' }]
 
-const MASKING_IDS = ['cmd.unmask', 'cmd.mask-selection', 'cmd.masking-mode', 'cmd.open-dictionary']
-/** 용어 팩 명령은 가명 처리 명령 다음 */
+const MASKING_IDS = ['cmd.unmask', 'cmd.mask-selection', 'cmd.masking-mode', 'cmd.open-dictionary', 'cmd.open-intents']
+/** 말하듯 입력 단어 목록 열기는 가명 사전 열기 다음(MASKING_IDS 끝), 용어 팩 명령은 그 다음 */
 const PACK_IDS = ['cmd.glossary-export', 'cmd.glossary-import']
 /** 바 모양 명령은 용어 팩 명령 다음 */
 const BAR_IDS = ['cmd.bar-shape']

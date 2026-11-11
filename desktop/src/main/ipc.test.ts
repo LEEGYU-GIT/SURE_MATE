@@ -83,6 +83,7 @@ function workspacesFake() {
 let overlay: ReturnType<typeof overlayFake> | null
 let palette: ReturnType<typeof paletteFake>
 let workspaces: ReturnType<typeof workspacesFake>
+let natural: { searchContext: ReturnType<typeof vi.fn>; pick: ReturnType<typeof vi.fn> }
 let paletteId: number | null
 let imeLoggerId: number | null
 let settingsId: number | null
@@ -94,12 +95,14 @@ beforeEach(() => {
   overlay = overlayFake()
   palette = paletteFake()
   workspaces = workspacesFake()
+  natural = { searchContext: vi.fn(async () => ({ pack: null, learned: [['k', 'a']], usage: [], now: 5 })), pick: vi.fn(async () => {}) }
   paletteId = 1
   imeLoggerId = 21
   settingsId = 31
   const deps = {
     ...palette,
     workspaces,
+    natural,
     overlay: () => overlay,
     paletteContentsId: () => paletteId,
     imeLoggerContentsId: () => imeLoggerId,
@@ -353,5 +356,22 @@ describe('워크스페이스 IPC: 보기·편집·다시 저장·지우기는 �
     expect(reg.logs.map((l) => l.data.channel).sort()).toEqual(
       [IPC.workspaceGet, IPC.workspaceEdit, IPC.workspaceRecapture, IPC.workspaceRemove, IPC.workspaceSaveAs].sort()
     )
+  })
+})
+
+describe('말하듯 입력 채널(팔레트 창만)', () => {
+  const pick = { id: 'cmd.unmask', remember: true, query: '가명 되돌려줘' }
+
+  it('팔레트 창이 보내면 검색 문맥을 주고 선택 기록을 넘긴다', async () => {
+    expect(await invoke(IPC.paletteSearchContext, PALETTE)).toEqual({ pack: null, learned: [['k', 'a']], usage: [], now: 5 })
+    send(IPC.palettePick, PALETTE, pick)
+    expect(natural.pick).toHaveBeenCalledWith(pick)
+  })
+
+  it('다른 창이 보내면 빈 문맥을 주고 선택 기록은 무시한다', async () => {
+    expect(await invoke(IPC.paletteSearchContext, SETTINGS)).toEqual({ pack: null, learned: [], usage: [], now: 0 })
+    send(IPC.palettePick, SETTINGS, pick)
+    expect(natural.searchContext).not.toHaveBeenCalled()
+    expect(natural.pick).not.toHaveBeenCalled()
   })
 })

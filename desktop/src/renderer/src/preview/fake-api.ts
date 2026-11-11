@@ -9,6 +9,9 @@ import type { MaskTerm } from '../../../shared/masking/dictionary'
 import type { GlossaryEntry } from '../../../shared/glossary/types'
 import type { Template } from '../../../shared/template/types'
 import type { PaletteItem } from '../../../shared/types'
+import builtinIntents from '../../../../resources/intents.json'
+import { parseIntentPack } from '../../../shared/natural/intent-pack'
+import type { UsageRecord } from '../../../shared/natural/usage'
 
 /**
  * 미리 보기의 펼침 창 연결(main의 펼침 창 컨트롤러 대신). 내용을 보내고, 화면이 알린 크기로 배치한 뒤 shown을 보낸다.
@@ -37,6 +40,8 @@ export interface FakeFixtures {
   dictionary: MaskTerm[]
   templates: Template[]
   glossary: GlossaryEntry[]
+  /** 기억한 문장([키, 항목 id])과 사용 기록([항목 id, 기록]) */
+  searchContext: { learned: [string, string][]; usage: [string, UsageRecord][] }
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -49,7 +54,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   hotkeyCandidates: [],
   dictionary: [],
   templates: [],
-  glossary: []
+  glossary: [],
+  searchContext: { learned: [], usage: [] }
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -59,6 +65,8 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     hide: () => {},
     runItem: async () => {},
     listItems: async () => fx.items,
+    getSearchContext: async () => ({ pack: parseIntentPack(builtinIntents).pack, learned: fx.searchContext.learned, usage: fx.searchContext.usage, now: Date.now() }),
+    recordPick: () => {},
     previewPrompt: async () => ({
       text: '',
       truncated: false,

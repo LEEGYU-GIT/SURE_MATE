@@ -4,6 +4,7 @@ import { parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parsePointer
 import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-action'
 import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
+import type { SearchContextPayload } from '../shared/natural/natural-ipc'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePromptRequest } from '../shared/prompt-request'
 import type { PaletteItem } from '../shared/types'
@@ -65,6 +66,8 @@ export interface IpcDeps {
   /** 한글 입력 기록기 창의 webContents id(기록 저장은 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
   imeLoggerContentsId: () => number | null
   workspaces: WorkspaceIpc
+  /** 말하듯 입력: 검색 문맥과 선택 기록(값 검사는 pick이 한다. pick은 던지지 않는다) */
+  natural: { searchContext(): Promise<SearchContextPayload>; pick(raw: unknown): Promise<void> }
   /** 설정 창의 webContents id(워크스페이스 보기·편집·다시 저장·지우기는 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
   settingsContentsId: () => number | null
 }
@@ -107,6 +110,8 @@ export function registerIpc(d: IpcDeps): void {
   }
 
   on(IPC.paletteHide, () => d.hide())
+  handle<SearchContextPayload>(IPC.paletteSearchContext, () => ({ pack: null, learned: [], usage: [], now: 0 }), () => d.natural.searchContext())
+  on(IPC.palettePick, (raw) => void d.natural.pick(raw))
   handle<void>(IPC.paletteRunItem, () => undefined, (id) => d.runItem(String(id)))
   handle<PaletteItem[]>(IPC.paletteListItems, () => [], () => d.listItems())
   handle<PromptPreview>(IPC.promptPreview, badPreview, (raw) => {

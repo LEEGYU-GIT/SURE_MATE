@@ -2,6 +2,7 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskTerm } from './masking/dictionary'
+import type { SearchContextPayload } from './natural/natural-ipc'
 import type { Template } from './template/types'
 import type { MaskItem } from './masking/types'
 import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
@@ -66,6 +67,10 @@ export const IPC = {
   paletteHide: 'palette:hide',
   paletteRunItem: 'palette:run-item',
   paletteListItems: 'palette:list-items',
+  /** 팔레트 → main(invoke): 말하듯 입력 검색 문맥(단어 목록·기억한 문장·사용 기록) */
+  paletteSearchContext: 'palette:search-context',
+  /** 팔레트 → main(send): 항목을 골랐다(사용 기록, 기억하기) */
+  palettePick: 'palette:pick',
   promptPreview: 'prompt:preview',
   promptRun: 'prompt:run',
   promptCancel: 'prompt:cancel',
@@ -179,6 +184,10 @@ export interface SureMateApi {
   runItem(id: string): Promise<void>
   /** 팔레트에 보일 항목(프롬프트·명령 등) */
   listItems(): Promise<PaletteItem[]>
+  /** 말하듯 입력 검색 문맥(단어 목록·기억한 문장·사용 기록·지금 시각) */
+  getSearchContext(): Promise<SearchContextPayload>
+  /** 항목을 골랐다고 알린다. remember이면 query의 문장을 이 항목에 연결해 기억한다 */
+  recordPick(p: { id: string; remember: boolean; query?: string }): void
   /** 확인 화면 미리 보기(가명 처리는 M3에서 여기에 들어간다) */
   previewPrompt(req: PromptRequest): Promise<PromptPreview>
   /** 복사하고 AI 대상을 연다 */
