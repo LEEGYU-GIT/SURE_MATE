@@ -4,7 +4,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import builtin from '../../../resources/intents.json'
 import { parseIntentPack } from '../../shared/natural/intent-pack'
+import { readJsonFile } from '../files/atomic-write'
 import { createIntentCache, ensureUserIntents, INTENTS_FILE } from './intent-store'
+
+// 읽는 사이에 편집기가 저장을 끝내는 경우를 흉내 내려고 감싼다(기본은 실제 동작 그대로)
+vi.mock('../files/atomic-write', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../files/atomic-write')>()
+  return { ...actual, readJsonFile: vi.fn(actual.readJsonFile) }
+})
 
 let dir: string
 beforeEach(async () => {
@@ -76,6 +83,26 @@ it('수정 시각·크기가 같으면 다시 읽지 않고, 바뀌면 다시 �
   expect((await cache.get()).intents[0].label).toBe('내것')
   await writeFile(path(), JSON.stringify({ ...user, fillers: ['음', '어'] }))
   expect((await cache.get()).fillers).toEqual(['음', '어'])
+})
+
+it('편집기가 저장하는 중에 읽어 깨진 결과를 얻어도 저장이 끝난 파일은 다음에 다시 읽는다(읽기 전에 잰 수정 시각·크기로 기억)', async () => {
+  // 편집기가 파일을 비우고 다시 쓰는 중이라 일부만 쓰여 있다
+  await writeFile(path(), '{"format": "sure-mate-intents", "ver')
+  const { readJsonFile: actualRead } = await vi.importActual<typeof import('../files/atomic-write')>('../files/atomic-write')
+  vi.mocked(readJsonFile).mockImplementationOnce(async (p) => {
+    const r = await actualRead(p)
+    // 읽은 뒤 수정 시각·크기를 다시 재기 전에 편집기가 저장을 끝낸다
+    await writeFile(path(), JSON.stringify(user))
+    return r
+  })
+  const onErrors = vi.fn()
+  const cache = createIntentCache(dir, builtin, onErrors)
+  expect((await cache.state()).errors).toEqual(['읽지 못함(PARSE)'])
+  const s = await cache.state()
+  expect(s.source).toBe('user')
+  expect(s.errors).toEqual([])
+  expect(s.pack.intents.map((r) => r.id)).toEqual(['mine'])
+  expect(onErrors).toHaveBeenCalledTimes(1)
 })
 
 it('state: 파일이 없으면 기본 목록(builtin), 문제 없음', async () => {

@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import builtinGlossary from '../../../resources/glossary.json'
 import builtinIntents from '../../../resources/intents.json'
 import builtinPrompts from '../../../resources/prompts.json'
-import { buildPaletteIndex, EMPTY_SEARCH_CONTEXT, filterItems, searchPalette, type SearchContext } from '../../renderer/src/palette/filter-items'
+import { buildPaletteIndex, EMPTY_SEARCH_CONTEXT, filterItems, searchPalette, WIKI_ADD_ID, withWikiAdd, type SearchContext } from '../../renderer/src/palette/filter-items'
 import { parseGlossaryPack } from '../../shared/glossary/pack'
 import type { GlossaryEntry } from '../../shared/glossary/types'
 import { parseIntentPack } from '../../shared/natural/intent-pack'
+import { ENGLISH_WORDS } from '../../shared/natural/test-english-words'
 import { understand } from '../../shared/natural/understand'
 import type { UsageRecord } from '../../shared/natural/usage'
 import { parseTemplatePack } from '../../shared/template/pack'
@@ -133,6 +134,32 @@ it('(Review Focus 4) 낱말·영어 낱말·초성·오타·치는 중인 글은
   }
 })
 
+describe('영문 자판 바꾸기는 영어 낱말 검색을 바꾸지 않는다', () => {
+  it("'word'는 바꾼 '잭ㅇ'으로 용어를 끌어오지 않아 '직접 추가하기'만 남는다(M4와 같다)", () => {
+    expect(search('word').items).toEqual([])
+    expect(withWikiAdd(search('word').items, 'word').map((i) => i.id)).toEqual([WIKI_ADD_ID])
+  })
+
+  it('흔한 영어 낱말·약어 109개는 M4 검색에 없는 줄을 더하지 않는다', () => {
+    for (const w of ENGLISH_WORDS) {
+      const m4 = filterItems(items, w, index, EMPTY_SEARCH_CONTEXT).map((i) => i.id)
+      expect(
+        search(w)
+          .items.map((i) => i.id)
+          .filter((id) => !m4.includes(id)),
+        w
+      ).toEqual([])
+    }
+  })
+})
+
+it('요청 어미를 떼고 한 글자만 남는 낱말(이란·자란·불켜·혼란·파란·전란·반란·켜켜)은 M4 검색과 목록이 같다', () => {
+  for (const q of ['이란', '자란', '불켜', '혼란', '파란', '전란', '반란', '켜켜']) {
+    const m4 = filterItems(items, q, index, EMPTY_SEARCH_CONTEXT)
+    expect(search(q).items.map((i) => i.id), q).toEqual(m4.map((i) => i.id))
+  }
+})
+
 it('의도 표시: 맨 위 후보에 가장 좁은 찾은 규칙의 이름, 없으면 구역 기본 이름', () => {
   expect(search('가명 되돌려줘').top).toEqual({ id: 'cmd.unmask', label: '가명 처리' })
   expect(search('선택한 글 가려줘').top).toEqual({ id: 'cmd.mask-selection', label: '가명 처리' })
@@ -206,7 +233,10 @@ const fakeName = (i: number): string =>
 /** 가상 영문 약어(소문자 세 글자, i < 17,576이면 서로 다르다) */
 const fakeAbbr = (i: number): string => [i % 26, Math.floor(i / 26) % 26, Math.floor(i / 676) % 26].map((d) => String.fromCharCode(97 + d)).join('')
 
-it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 51개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
+/** 기본 자료에 가상 용어 2,000개를 더한 팔레트 항목과 색인(속도 시험 둘이 같이 쓴다. 처음 부를 때 한 번 만든다) */
+let bigSet: { big: ReturnType<typeof buildPaletteItems>; bigIndex: ReturnType<typeof buildPaletteIndex> } | null = null
+function withFakeTerms(): NonNullable<typeof bigSet> {
+  if (bigSet) return bigSet
   // 가상 용어 2,000개(설명 '시험용 가상 용어'). 기본 용어 팩처럼(별칭 평균 2.4개) 별칭 둘(띄어 쓴 이름, 영문 약어)을 둔다
   const fake = Array.from({ length: 2000 }, (_, i): GlossaryEntry => {
     const name = fakeName(i)
@@ -216,7 +246,12 @@ it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시�
   const big = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms, ...fake], barShape: 'edge', petVisible: true, workspaces })
   // 팔레트는 색인을 항목이 바뀔 때만 만들어 두고(Palette.tsx의 useMemo) 글자를 칠 때마다 searchPalette만 다시 돌린다.
   // 그래서 색인 만들기는 재지 않고 searchPalette 한 번(문장 이해·점수·정렬·50줄 자르기)만 잰다
-  const bigIndex = buildPaletteIndex(big)
+  bigSet = { big, bigIndex: buildPaletteIndex(big) }
+  return bigSet
+}
+
+it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 51개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
+  const { big, bigIndex } = withFakeTerms()
   const run = (q: string): void => void searchPalette(big, q, bigIndex, ctx)
   expect(TABLE).toHaveLength(51)
   for (const [sentence] of TABLE) run(sentence) // 데우기 한 번
@@ -230,5 +265,20 @@ it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시�
   }
   const means = total.map((t) => t / 5)
   const median = [...means].sort((a, b) => a - b)[Math.floor(means.length / 2)]
+  expect(median).toBeLessThan(50)
+}, 60_000)
+
+it('속도: 입력칸 상한(200자)까지 친 한글 문장도 시험 용어 2,000개에서 5번 잰 중앙값이 50ms 미만', () => {
+  const { big, bigIndex } = withFakeTerms()
+  const sentence = '회의록 좀 정리해 주세요 그리고 주간보고 초안도 작성해 주시고 메일 회신 초안도 써 주세요 '.repeat(5).slice(0, 200)
+  expect(sentence).toHaveLength(200)
+  searchPalette(big, sentence, bigIndex, ctx) // 데우기 한 번
+  const times: number[] = []
+  for (let round = 0; round < 5; round++) {
+    const start = performance.now()
+    searchPalette(big, sentence, bigIndex, ctx)
+    times.push(performance.now() - start)
+  }
+  const median = [...times].sort((a, b) => a - b)[2]
   expect(median).toBeLessThan(50)
 }, 60_000)

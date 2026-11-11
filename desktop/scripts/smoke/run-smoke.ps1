@@ -9,18 +9,24 @@ $log = "$work\dev.log"
 $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c set ELECTRON_RUN_AS_NODE=& npm run dev > `"$log`" 2>&1" -WorkingDirectory $desktop -PassThru -WindowStyle Hidden
 $appLog = Join-Path $env:APPDATA ("Sure-Mate\logs\" + (Get-Date -Format 'yyyy-MM-dd') + ".log")
 $before = if (Test-Path $appLog) { @(Get-Content $appLog).Count } else { 0 }
-$deadline = (Get-Date).AddSeconds(90); $readyLine = $null
-while ((Get-Date) -lt $deadline -and -not $readyLine) { Start-Sleep -Milliseconds 500; if (Test-Path $appLog) { $readyLine = Get-Content $appLog | Select-Object -Skip $before | Where-Object { $_ -match 'app.ready' } | Select-Object -First 1 } }
-"ready: $readyLine"
-$combo = if ($readyLine) { ($readyLine | ConvertFrom-Json).paletteHotkey } else { $null }
-$out = "$work\smoke-out.txt"; Remove-Item $out -ErrorAction SilentlyContinue
-if ($combo) {
-  Start-Sleep -Seconds 2
-  $t = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$W\$Script`" -Combo `"$combo`" $ScriptArgs" -RedirectStandardOutput $out -PassThru -WindowStyle Hidden
-  if (-not $t.WaitForExit($TimeoutSec * 1000)) { "WATCHDOG: test killed after ${TimeoutSec}s"; Stop-Process -Id $t.Id -Force }
+$t = $null
+# Ctrl+C로 끊거나 오류가 나도 시험 프로세스·dev 앱·시험 창을 정리한다(finally)
+try {
+  $deadline = (Get-Date).AddSeconds(90); $readyLine = $null
+  while ((Get-Date) -lt $deadline -and -not $readyLine) { Start-Sleep -Milliseconds 500; if (Test-Path $appLog) { $readyLine = Get-Content $appLog | Select-Object -Skip $before | Where-Object { $_ -match 'app.ready' } | Select-Object -First 1 } }
+  "ready: $readyLine"
+  $combo = if ($readyLine) { ($readyLine | ConvertFrom-Json).paletteHotkey } else { $null }
+  $out = "$work\smoke-out.txt"; Remove-Item $out -ErrorAction SilentlyContinue
+  if ($combo) {
+    Start-Sleep -Seconds 2
+    $t = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$W\$Script`" -Combo `"$combo`" $ScriptArgs" -RedirectStandardOutput $out -PassThru -WindowStyle Hidden
+    if (-not $t.WaitForExit($TimeoutSec * 1000)) { "WATCHDOG: test killed after ${TimeoutSec}s"; Stop-Process -Id $t.Id -Force }
+  }
+} finally {
+  if ($t -and -not $t.HasExited) { Stop-Process -Id $t.Id -Force -ErrorAction SilentlyContinue }
+  taskkill /PID $p.Id /T /F 2>$null | Out-Null
+  Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$desktop*" } | Stop-Process -Force
+  Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq 'SureMate-Test' } | Stop-Process -Force
 }
-taskkill /PID $p.Id /T /F 2>$null | Out-Null
-Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$desktop*" } | Stop-Process -Force
-Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq 'SureMate-Test' } | Stop-Process -Force
 "--- results"; Get-Content $out -ErrorAction SilentlyContinue
 "--- app log (this run)"; Get-Content $appLog | Select-Object -Skip $before | Select-Object -First 40

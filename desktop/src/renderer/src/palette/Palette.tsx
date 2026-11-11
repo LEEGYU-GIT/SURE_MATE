@@ -24,7 +24,7 @@ import {
   type PaletteSearch,
   type SearchContext
 } from './filter-items'
-import { listKeyAction } from './list-keys'
+import { laggingEnterAction, listKeyAction } from './list-keys'
 import { rememberHint, tipFor } from './palette-hints'
 import { nextSelection } from './selection'
 import { StatusBar } from './StatusBar'
@@ -196,6 +196,12 @@ export function Palette(): React.JSX.Element {
     void window.sureMate.runItem(id)
   }
 
+  /** 저장한 워크스페이스 행의 보조 동작: 설정 창 워크스페이스 탭에서 그 워크스페이스를 연다(같은 항목은 300ms 안에 두 번 열지 않는다) */
+  const openWorkspaceEdit = (itemId: string): void => {
+    const editId = workspaceEditId(itemId)
+    if (runGuard(editId)) void window.sureMate.runItem(editId)
+  }
+
   // 개발 출력과 확인 화면은 위키 추가·수정 화면보다 위에 그린다(그 아래 저장하지 않은 글은 그대로 남는다)
   if (dev) return <DevOutput title={dev.title} text={dev.text} onClose={close} />
   if (confirm) {
@@ -278,14 +284,24 @@ export function Palette(): React.JSX.Element {
           const lagging = query !== deferredQuery
           const input = inputRef.current
           const caretAtEnd = !input || (input.selectionStart === input.value.length && input.selectionEnd === input.value.length)
+          const key = { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent), repeat: e.repeat, caretAtEnd }
+          // →로 편집을 여는 것은 지금 친 검색어가 @ 범위일 때만
+          const workspaceScope = parseQuery(query).scope === 'workspace'
+          // 목록이 검색어를 아직 못 따라왔으면 Enter는 고른 행(지난 검색어의 것) 대신 지금 검색어로 다시 만든 맨 위 줄에 같은 보조키로
+          // 판단한다(직접 추가하기·이름으로 저장 줄 포함). 보조키를 누른 Enter인데 그 줄에 맞는 동작이 없으면 실행하지 않는다
+          // (맨 위가 워크스페이스로 바뀐 뒤의 Ctrl+Enter가 편집 대신 불러오기로 창을 옮기지 않게)
+          if (lagging) {
+            const lag = laggingEnterAction(key, () => rowsOf(searchPalette(allItems, query, index, ctx), query)[0] ?? null, { workspaceScope })
+            if (lag) {
+              e.preventDefault()
+              if (lag.type === 'run') run(lag.id)
+              else if (lag.type === 'secondary') openWorkspaceEdit(lag.id)
+              return
+            }
+          }
           const item = items.find((i) => i.id === selected) ?? null
-          const action = listKeyAction(
-            { code: e.code, key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: isImeComposing(e.nativeEvent), repeat: e.repeat, caretAtEnd },
-            item,
-            // 목록이 검색어를 못 따라온 동안의 안내는 지난 검색어의 것이라 기억하지 않는다(아래 Enter 처리로).
-            // →로 편집을 여는 것은 지금 친 검색어가 @ 범위일 때만
-            { remember: !lagging && showRemember, workspaceScope: parseQuery(query).scope === 'workspace' }
-          )
+          // 목록이 검색어를 못 따라온 동안의 기억하기 안내는 지난 검색어의 것이라 기억하지 않는다
+          const action = listKeyAction(key, item, { remember: !lagging && showRemember, workspaceScope })
           if (action === 'remember') {
             e.preventDefault()
             run(selected, { remember: true })
@@ -293,15 +309,8 @@ export function Palette(): React.JSX.Element {
           }
           if (action === 'secondary' && item) {
             e.preventDefault()
-            const editId = workspaceEditId(item.id)
-            if (runGuard(editId)) void window.sureMate.runItem(editId)
-            return
+            openWorkspaceEdit(item.id)
           }
-          // 목록이 검색어를 아직 못 따라왔으면 지금 검색어의 맨 위 줄을 실행한다(직접 추가하기·이름으로 저장 줄 포함)
-          if ((e.code !== 'Enter' && e.code !== 'NumpadEnter') || isImeComposing(e.nativeEvent) || !lagging) return
-          e.preventDefault()
-          const top = rowsOf(searchPalette(allItems, query, index, ctx), query)[0]
-          if (top) run(top.id)
         }}
       >
         <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
