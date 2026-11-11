@@ -127,10 +127,10 @@ t20은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 - 두 번 클릭: `double_click_opens_palette`(0.15초 간격으로 두 번 누르면 팔레트)
 - 집어 던지기: `thrown_lands_on_floor`(발이 작업 영역 아래 끝에 닿음, `info_throw`에 발 위치와 상태 순서), `dropped_on_bar_sits`(바 꼭대기 위 40 DIP에서 놓으면 1초 안에 앉음, `info_drop`), `click_through_after_drag`(놓고 0.2초 안에 펫 창 왼쪽 위 구석의 시험 단추가 다시 눌림. 그 순간 단추가 펫 창 밖이면 `skipped`로 출력)
 - 메뉴: `pet_menu_opened`, `menu_hide_row_works`(숨기기), `recall_via_bar_button`(바 펫 단추로 다시 부름), `menu_first_row_after_recall`(다시 부른 뒤 펫이 멈추길 0.5초 기다려 메뉴를 열고, 첫 행 "조종하기"가 한 번에 눌림. 부른 즉시가 아니라 약 1초 뒤다)
-- 조종 모드: `control_walks`(←를 1초 누르면 왼쪽으로 이동, `info_control_walk`), `control_esc_ends`, `control_esc_restores_focus`(Esc로 끝나고 앞 창이 시험 창), `alt_space_keeps_control`, `alt_f4_ends_control`, `alt_f4_keeps_pet_window`(Alt+F4는 펫 창을 닫지 않고 조종만 끝냄), `control_palette_keeps_focus`(앞 창이 앱 창이면서 펫 창 크기가 아님), `control_palette_ends_control`(조종 중 팔레트를 열면 조종이 원래 창으로 포커스를 돌리며 먼저 끝남: 기록 `reason` handoff), `control_palette_esc_returns`(그 팔레트를 Esc로 닫으면 앞 창이 시험 창, `info_control_palette_esc_foreground`), `alt_f4_ends_control`은 앞 창이 펫 창일 때만 Alt+F4를 보내며 아니면 `skipped`로 출력
+- 조종 모드: `control_walks`(←를 1초 누르면 왼쪽으로 이동, `info_control_walk`), `control_esc_ends`, `control_esc_restores_focus`(Esc로 끝나고 앞 창이 시험 창), `alt_space_keeps_control`, `alt_f4_ends_control`, `alt_f4_keeps_pet_window`(Alt+F4는 펫 창을 닫지 않고 조종만 종료함), `control_palette_keeps_focus`(앞 창이 앱 창이면서 펫 창 크기가 아님), `control_palette_ends_control`(조종 중 팔레트를 열면 조종이 원래 창으로 포커스를 돌리며 먼저 끝남: 기록 `reason` handoff), `control_palette_esc_returns`(그 팔레트를 Esc로 닫으면 앞 창이 시험 창, `info_control_palette_esc_foreground`), `alt_f4_ends_control`은 앞 창이 펫 창일 때만 Alt+F4를 보내며 아니면 `skipped`로 출력
 - 반응: `reaction_within_1s`(고정 프롬프트 복사 후 1초 안에 축하, 걸린 시간은 `info_reaction_ms`), `warning_on_masking_off`(가명 처리를 끄고 복사하면 경고), `masking_restored`
 - 다시 나타난 직후: `first_click_after_reappear`, `first_drag_after_reappear`(숨겼다 바 펫 단추로 부른 직후 첫 클릭·첫 끌기). 펫 창은 숨길 때 `hide()`를 쓰므로 첫 누름이 드물게(약 40번에 1번) 사라질 수 있다. 한 번만 False면 다시 실행해 보고, 반복되면 앱 문제로 기록한다
-- 전체 화면: `pet_hides_fullscreen`(1.1초 안에 숨고 닫으면 1.1초 안에 다시 나타남, `info_fullscreen_ms`), `menu_first_row_after_fullscreen`(전체 화면이 끝난 뒤 펫이 멈추길 기다려 연 메뉴의 첫 행. 같은 이유로 즉시가 아니다)
+- 전체 화면: `pet_hides_fullscreen`(1.1초 안에 숨고 닫으면 1.1초 안에 다시 나타남, `info_fullscreen_ms`), `menu_first_row_after_fullscreen`(전체 화면이 종료된 뒤 펫이 멈추길 기다려 연 메뉴의 첫 행. 같은 이유로 즉시가 아니다)
 - 졸기: `pet_sleeps`(입력 없이 70초 뒤 졸기), `pet_wakes_on_hover`(커서를 올리면 깸)
 - 로그: `log_has_no_content`(메모 글·가상 이름·말풍선 문구 없음), `log_has_no_typed_text`, `pet_no_errors`(펫 오류 로그 없음)
 
@@ -159,7 +159,7 @@ t20은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 
 `Ctrl+Alt+9`를 다른 앱이 사용하면 `.\t21-run.ps1 -WsHotkey Ctrl+Alt+8 > t21-out.txt`처럼 다른 조합으로 실행한다. 아래 설명의 `Ctrl+Alt+9`는 그 조합으로 바뀐다.
 
-시험 전후의 파일 처리는 t22와 같다. 시험 중 클립보드를 사용하며(팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다), 시작 전 클립보드가 글자였으면 끝난 뒤 되돌린다. 파일·그림이 들어 있었다면 되돌릴 수 없고 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
+시험 전후의 파일 처리는 t22와 같다. 시험 중 클립보드를 사용하며(팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다), 시작 전 클립보드가 글자였으면 시험이 종료된 뒤 되돌린다. 파일·그림이 들어 있었다면 되돌릴 수 없고 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
 
 - 설정 파일(`settings.json`)을 잠시 바꾼다: AI 대상 "복사만", 바는 주 모니터 오른쪽 가장자리 띠, 가명 처리 되돌리기, 첫 실행 안내 완료. 말랑 메이트 설정은 바꾸지 않는다.
 - M7 파일(`workspaces.json`·`phrase-map.json`·`usage.json`·`intents.json`)과 `workspaces.json.bak`을 백업하고, M7 파일은 지워 빈 상태로 시작한다. 시험이 저장한 워크스페이스가 목록과 바 메뉴의 첫 행이 되게 하기 위해서다.
@@ -261,7 +261,7 @@ t21은 아직 Windows에서 실행한 적이 없다(리눅스 서버에서 작�
 - 설정 파일(`settings.json`)을 잠시 바꾼다: AI 대상 "복사만", 바는 주 모니터 오른쪽 가장자리 띠, 가명 처리 되돌리기, 첫 실행 안내 완료.
 - M7 파일(`workspaces.json`·`phrase-map.json`·`usage.json`·`intents.json`)은 백업한 뒤 지워 빈 상태로 시작한다. 최근 항목·기억한 문장·사용자 단어 목록이 목록 순서를 바꾸지 않게 하기 위해서다. `workspaces.json.bak`도 백업한다.
 - 끝나면 모두 되돌린다. `.smoke-backup` 파일이 이미 있으면 앞선 시험이 도중에 끊긴 것이므로 시험이 시작하지 않고 멈춘다. 원래 파일과 비교해 정리한 뒤 다시 실행한다.
-- 시험 중 클립보드를 사용한다(처음에 가짜 글을 넣고, 가명 되돌리기 단계에서 가짜 글로 바꾸며, 팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다). 시작 전 클립보드가 글자였으면 끝난 뒤 되돌리고, 파일·그림이 들어 있었다면 되돌릴 수 없으며 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
+- 시험 중 클립보드를 사용한다(처음에 가짜 글을 넣고, 가명 되돌리기 단계에서 가짜 글로 바꾸며, 팔레트가 선택 글을 가져오느라 복사 동작을 사용할 수 있다). 시작 전 클립보드가 글자였으면 시험이 종료된 뒤 되돌리고, 파일·그림이 들어 있었다면 되돌릴 수 없으며 출력 끝의 `--- clipboard:` 줄에 그렇게 표시한다. 클립보드 내용은 로그·출력에 남기지 않는다.
 - `t22-natural.ps1`을 `run-smoke.ps1`로 직접 실행하면 `t22-run.ps1`이 넘기는 `-FromRunner`가 없으므로 `error =` 줄을 출력하고 멈춘다.
 
 시험은 그때 화면에 열린 창 전체(시험 창 `SureMate-Test` 포함)를 저장하고 세 번 불러온다. 저장한 자리로 다시 옮기는 것이라 위치는 바뀌지 않는다. 다만 최대화한 창은 잠깐 보통 크기가 되었다가 다시 최대화되고, 창 순서는 저장할 때 순서로 돌아온다.
