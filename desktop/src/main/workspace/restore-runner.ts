@@ -11,6 +11,8 @@ export interface RestorePorts {
   raise(hwnd: string): void
   toPhysical(dip: Rect): Rect
   foreground(): string | null
+  /** 그 창이 아직 있고 보이며 포커스를 받을 수 있는지(숨은 창·포커스를 받지 않는 Sure-Mate 창은 false) */
+  focusable(hwnd: string): boolean
   setForeground(hwnd: string): boolean
   sleep(ms: number): Promise<void>
   now(): number
@@ -34,13 +36,15 @@ const UNMOVED_PX = 2
 type State = NonNullable<ReturnType<RestorePorts['state']>>
 
 /**
- * 끝에 시작 때 앞 창으로 포커스를 돌려줄지(A-M4). 실행하는 동안 앞 창이 바뀌었을 때만 돌려준다: SetForegroundWindow는 그 창을
- * z-순서 맨 위로 올리므로, 바뀌지 않았는데 돌려주면 방금 맞춘 z-순서(raise 순서)가 흐트러진다.
- * none: 시작 때 앞 창이 없었다, keep: 그대로라 돌려주지 않는다, restore: 돌려준다(끝의 앞 창을 읽지 못한 null도 바뀐 것으로 본다)
+ * 끝에 시작 때 앞 창을 어떻게 돌려줄지(설계 §11 포커스 복귀, 2026-11-11 판정). 복원한 창들이 그 창을 가리면 포커스가 보이지 않는
+ * 창에 남아 키 입력이 가려진 창으로 간다(설정 창에서 불러오면 Enter·Space가 가려진 '불러오기'를 다시 누른다). 그래서 그 창이 아직 있고
+ * 보이며 포커스를 받을 수 있으면 맨 위로 올리고(그 창 하나만 저장한 z-순서에서 벗어난다), 앞 창이 아니면 포커스도 준다.
+ * none: 시작 때 앞 창이 없었거나 돌려줄 수 없는 창(사라짐·숨음·포커스를 받지 않는 Sure-Mate 창), raise: 아직 앞 창이라 맨 위로 올리기만,
+ * focus: 맨 위로 올린 뒤 SetForegroundWindow(끝의 앞 창을 읽지 못한 null도 앞 창이 아닌 것으로 본다)
  */
-export function focusReturn(remembered: string | null, now: string | null): 'none' | 'keep' | 'restore' {
-  if (remembered === null) return 'none'
-  return now === remembered ? 'keep' : 'restore'
+export function focusReturn(o: { remembered: string | null; focusable: boolean; foreground: string | null }): 'none' | 'raise' | 'focus' {
+  if (o.remembered === null || !o.focusable) return 'none'
+  return o.foreground === o.remembered ? 'raise' : 'focus'
 }
 
 /** Sure-Mate 자신의 창 하나(HWND는 10진 문자열) */
@@ -163,20 +167,34 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
       })
     }
 
-    // 최소화 해제(activate)·최대화가 다른 창을 활성화했을 때만 시작 때 창으로 한 번 되돌린다(A-M4)
-    let now: string | null
-    try {
-      now = p.foreground()
-    } catch {
-      now = null
-    }
-    const focus = focusReturn(remembered, now)
-    let restoredFocus = focus === 'keep'
-    if (focus === 'restore' && remembered !== null) {
+    // 시작 때 앞 창을 맨 위로 올리고(포커스를 바꾸지 않는 비동기 HWND_TOP), 앞 창이 아니면(최소화 해제·최대화가 다른 창을
+    // 활성화했다) 포커스를 준다. restoredFocus는 끝에 그 창이 맨 앞이고 포커스가 있는지다
+    let restoredFocus = false
+    if (remembered !== null) {
+      let focusable = false
+      let now: string | null = null
       try {
-        restoredFocus = p.setForeground(remembered)
+        focusable = p.focusable(remembered)
+        now = p.foreground()
       } catch {
-        restoredFocus = false
+        // 돌려줄 수 있는지 읽지 못했으면 돌려주지 않고, 앞 창을 읽지 못했으면(null) 앞 창이 아닌 것으로 본다
+      }
+      const focus = focusReturn({ remembered, focusable, foreground: now })
+      if (focus !== 'none') {
+        let raised = true
+        try {
+          p.raise(remembered)
+        } catch {
+          raised = false
+        }
+        if (focus === 'raise') restoredFocus = raised
+        else {
+          try {
+            restoredFocus = p.setForeground(remembered)
+          } catch {
+            restoredFocus = false
+          }
+        }
       }
     }
     return {

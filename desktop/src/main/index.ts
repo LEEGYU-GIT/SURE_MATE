@@ -28,8 +28,8 @@ import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
 import { createHotkeyChanger, resumeFailedNotice, type HotkeyChanger } from './hotkeys/hotkey-change'
-import { HotkeyManager, workspaceHotkeyId } from './hotkeys/hotkey-manager'
-import { hotkeyStatuses, withHotkeySetting } from './hotkeys/hotkey-settings'
+import { type HotkeyId, HotkeyManager, workspaceHotkeyId } from './hotkeys/hotkey-manager'
+import { hotkeyStatuses, resumeChangedStatus, withHotkeySetting } from './hotkeys/hotkey-settings'
 import { registerIpc } from './ipc'
 import { log } from './log'
 import type { MaskingCommands } from './masking/masking-commands'
@@ -240,11 +240,18 @@ function pushWorkspaceView(svc: ReturnType<typeof createWorkspaceRuntime> | null
     .catch((e) => log('workspace.pushError', { error: errorText(e) }))
 }
 
+/** 지난번에 되살릴 때 등록하지 못한 단축키(설정 창에 '등록 못 함'으로 보이는 것) */
+let lastResumeFailed: readonly HotkeyId[] = []
+
 /**
- * 단축키를 되살린 뒤(녹화가 끝남·트레이 일시 중지 끄기): 설정 창의 '쓰는 중'·'등록 못 함'을 다시 그리게 한다(A-M6).
+ * 단축키를 되살린 뒤(녹화가 끝남·트레이 일시 중지 끄기): 되살리지 못한 단축키가 지난번과 다르면 설정 창의 '쓰는 중'·'등록 못 함'을
+ * 다시 그리게 한다(A-M6). 같으면 보내지 않는다(같은 스냅숏을 다시 받으면 끌던 슬라이더 값이 잠시 되돌아간다).
  * 되살리지 못한 단축키는 조합을 기억하지만 등록되지 않았다(HotkeyManager.isRegistered)
  */
-function hotkeysResumed(): void {
+function hotkeysResumed(failed: readonly HotkeyId[]): void {
+  const changed = resumeChangedStatus(lastResumeFailed, failed)
+  lastResumeFailed = [...failed]
+  if (!changed) return
   settingsService.changed()
   pushWorkspaceView()
 }
@@ -590,7 +597,7 @@ async function startShell(): Promise<void> {
       else if (!hotkeyChanger?.recording()) {
         const { failed } = manager.resumeAll()
         if (failed.length) warn(resumeFailedNotice(failed, workspaceHotkeys?.name))
-        hotkeysResumed()
+        hotkeysResumed(failed)
       }
       return suspended
     },

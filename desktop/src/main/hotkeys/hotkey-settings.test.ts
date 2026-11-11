@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings/settings'
 import { globalTimers } from '../bar/test-timers'
 import { createHotkeyChanger } from './hotkey-change'
 import { HotkeyManager, type ShortcutBackend } from './hotkey-manager'
-import { hotkeySetting, hotkeyStatuses, withHotkeySetting } from './hotkey-settings'
+import { hotkeySetting, hotkeyStatuses, resumeChangedStatus, withHotkeySetting } from './hotkey-settings'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -36,6 +36,18 @@ it('설정 창의 단축키 상태: 등록된 조합, 못 잡았으면 설정 �
     'pet-control': { acc: 'Ctrl+Alt+P', registered: false }
   })
   expect(hotkeyStatuses(base(), () => undefined)['pet-control']).toEqual({ acc: null, registered: false })
+})
+
+it('(A-M6) 되살린 뒤 설정 창에 등록 상태를 다시 보내는 것은 되살리지 못한 단축키가 지난번과 다를 때만이다(그대로면 보내지 않는다)', () => {
+  // 모두 되살렸고 지난번에도 모두 되살렸다: 녹화를 멈출 때마다 같은 스냅숏을 보내면 끌던 슬라이더가 잠시 되돌아간다
+  expect(resumeChangedStatus([], [])).toBe(false)
+  // 새로 되살리지 못했다
+  expect(resumeChangedStatus([], ['workspace:ws-1'])).toBe(true)
+  // 지난번에 되살리지 못한 것을 이번에는 등록했다('등록 못 함' → '쓰는 중')
+  expect(resumeChangedStatus(['workspace:ws-1'], [])).toBe(true)
+  // 같은 단축키를 또 되살리지 못했다(이미 '등록 못 함')
+  expect(resumeChangedStatus(['workspace:ws-1', 'palette'], ['palette', 'workspace:ws-1'])).toBe(false)
+  expect(resumeChangedStatus(['palette'], ['workspace:ws-1'])).toBe(true)
 })
 
 it('(A-M6) 되살리지 못한 단축키는 그 조합으로 등록 못 함이다(조합은 기억하지만 등록되지 않음)', () => {

@@ -321,6 +321,34 @@ describe('녹화와 트레이 "단축키 일시 중지"는 따로 기록한다(M
     expect(resumed).toHaveLength(3)
   })
 
+  it('(A-M6) 바꾸기는 녹화를 먼저 끝내 단축키를 되살리지만, 되살린 결과는 바꾸기가 완료된 뒤 알린다(등록은 새 조합, 저장은 이전 조합인 사이에 다시 그리지 않게)', async () => {
+    const order: string[] = []
+    const changer = createHotkeyChanger({
+      manager: {
+        rebind: () => (order.push('rebind'), { ok: true }),
+        unbind: () => {},
+        suspendAll: () => {},
+        resumeAll: () => (order.push('resumeAll'), { failed: ['lookup'] }),
+        current: () => undefined,
+        ids: () => []
+      },
+      probe: () => true,
+      save: async () => void order.push('save'),
+      timers: globalTimers(),
+      log: () => {},
+      warn: () => void order.push('warn'),
+      resumed: (failed) => void order.push(`resumed:${failed.join(',')}`)
+    })
+    changer.startRecording()
+    expect(await changer.set('palette', 'Ctrl+Shift+K')).toEqual({ ok: true, acc: 'Ctrl+Shift+K' })
+    expect(order).toEqual(['resumeAll', 'rebind', 'save', 'resumed:lookup', 'warn'])
+    // 바꾸기가 실패해도 알린다
+    order.length = 0
+    changer.startRecording()
+    expect((await changer.set('palette', 'Super+Space')).ok).toBe(false)
+    expect(order).toEqual(['resumeAll', 'resumed:lookup', 'warn'])
+  })
+
   it('(13b) main이 30초가 지나 녹화를 끝내면 녹화 칸을 닫으라고 알린다(트레이 일시 중지 중이어도). 설정 창이 끝낸 녹화(멈춤·바꾸기)는 알리지 않는다', async () => {
     const state = { userSuspended: false }
     let ended = 0

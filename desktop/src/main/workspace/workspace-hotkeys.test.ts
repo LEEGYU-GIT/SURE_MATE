@@ -269,6 +269,31 @@ describe('설정 창에서 바꾸기(단축키 바꾸기 set, id workspace:<id>)
     expect(t.changer.check('lookup', 'Ctrl+Alt+9').level).not.toBe('same-as-other')
   })
 
+  it('(A-M7) 앱 단축키가 지금 잡고 있는 자기 조합은, 저장했지만 등록하지 못한 워크스페이스 조합과 같아도 다시 고를 수 있다', () => {
+    // 다른 앱이 Alt+Space를 잡아 팔레트가 대체 조합 Ctrl+Alt+Space를 먼저 잡았고, 같은 조합을 저장한 워크스페이스는 등록하지 못했다
+    const t = setup({ list: [ws('ws-1', 'QA 모드', 'Ctrl+Alt+Space')] })
+    expect(t.manager.rebind('palette', 'Ctrl+Alt+Space').ok).toBe(true)
+    expect(t.hotkeys.sync(t.state.list).failed).toEqual([{ id: 'ws-1', hotkey: 'Ctrl+Alt+Space' }])
+    expect(t.changer.check('palette', 'Ctrl+Alt+Space')).toEqual({ level: 'ok' })
+    // 다른 단축키는 그 조합을 잡고 있는 팔레트와 겹친다
+    expect(t.changer.check('lookup', 'Ctrl+Alt+Space')).toEqual({ level: 'same-as-other', reason: '팔레트 단축키와 같은 조합이에요' })
+  })
+
+  it('(A-M7) 첫 실행 후보에서 저장했지만 등록하지 못한 워크스페이스 조합은 뺀다(비어 있어 보여도 고르면 겹침으로 거절된다). 팔레트가 지금 잡은 조합은 남는다', () => {
+    const t = setup({ taken: ['Ctrl+Alt+Space'], list: [ws('ws-1', 'QA 모드', 'Ctrl+Alt+Space')] })
+    t.hotkeys.sync(t.state.list)
+    t.taken.delete('Ctrl+Alt+Space')
+    const list = t.changer.candidates()
+    expect(list.map((c) => c.acc)).not.toContain('Ctrl+Alt+Space')
+    expect(list.find((c) => c.suggested)?.acc).toBe('Alt+`')
+    for (const c of list) expect(t.changer.check('palette', c.acc).level).not.toBe('same-as-other')
+
+    const own = setup({ list: [ws('ws-1', 'QA 모드', 'Ctrl+Alt+Space')] })
+    own.manager.rebind('palette', 'Ctrl+Alt+Space')
+    own.hotkeys.sync(own.state.list)
+    expect(own.changer.candidates().find((c) => c.acc === 'Ctrl+Alt+Space')).toMatchObject({ available: true, suggested: true })
+  })
+
   it('비우면(null) 풀고 단축키 없음으로 저장한다. 처리기는 남아 다시 정할 수 있다', async () => {
     const t = setup()
     t.hotkeys.sync(t.state.list)

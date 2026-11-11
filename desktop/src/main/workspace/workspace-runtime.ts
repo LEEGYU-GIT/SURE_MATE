@@ -6,6 +6,7 @@ import { getMonitors, toDip, toPhysical } from '../native/coords'
 import { nativeStatus } from '../native/win32'
 import {
   getForegroundWindow,
+  isWindowVisible,
   listWindows,
   moveWindow,
   raiseWindow,
@@ -73,8 +74,10 @@ export function createWorkspaceRuntime(o: {
     raise: raiseWindow,
     toPhysical,
     foreground: getForegroundWindow,
-    // 숨은 창·포커스를 받지 않는 Sure-Mate 창(바·펼침 창, 조종이 끝난 펫)으로는 포커스를 돌려주지 않는다
-    setForeground: (hwnd) => !unfocusableOwnWindow(hwnd, ownWindows()) && setForeground(hwnd),
+    // 끝에 시작 때 앞 창을 올리고 포커스를 줄 수 있는지: 아직 있고 보이며, 숨은 창·포커스를 받지 않는 Sure-Mate 창(바·펼침 창,
+    // 조종이 끝난 펫)이 아니다(Win32를 못 쓰면 false)
+    focusable: (hwnd) => isWindowVisible(hwnd) && !unfocusableOwnWindow(hwnd, ownWindows()),
+    setForeground,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: Date.now
   })

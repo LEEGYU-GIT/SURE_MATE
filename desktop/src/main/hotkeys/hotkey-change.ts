@@ -99,19 +99,27 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
   let timer: unknown = null
   const name = (id: HotkeyId): string => hotkeyName(id, d.workspaces?.name)
 
-  const stopRecording = (): void => {
+  /** 녹화를 끝내고 단축키를 되살린다. 되살리지 못한 id 목록, 되살리지 않았으면(녹화 중이 아님·트레이 일시 중지 중) null */
+  const endRecording = (): HotkeyId[] | null => {
     if (timer !== null) d.timers.clearTimeout(timer)
     timer = null
-    if (!recording) return
+    if (!recording) return null
     recording = false
     // 녹화와 트레이 일시 중지는 따로 기록한다: 일시 중지 중이면 그것을 끌 때 되살린다
-    if (d.userSuspended?.()) return
-    const { failed } = d.manager.resumeAll()
+    if (d.userSuspended?.()) return null
+    return d.manager.resumeAll().failed
+  }
+
+  /** 되살린 결과를 알린다: 설정 창 다시 그리기(resumed), 되살리지 못한 단축키의 기록·트레이 알림 */
+  const reportResume = (failed: HotkeyId[] | null): void => {
+    if (failed === null) return
     d.resumed?.(failed)
     if (!failed.length) return
     d.log('hotkey.resume.failed', { ids: failed })
     d.warn?.(resumeFailedNotice(failed, d.workspaces?.name))
   }
+
+  const stopRecording = (): void => reportResume(endRecording())
 
   /** workspaces.json에 저장했지만 지금 조합이 없는(등록하지 못한) 워크스페이스 단축키 중 같은 조합(A-M7) */
   const savedOther = (id: HotkeyId, acc: string): HotkeyId | undefined => {
@@ -127,11 +135,14 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     if (acceleratorKeyCode(acc) === null) return { level: 'block', reason: UNKNOWN_KEY }
     const rule = checkAccelerator(acc)
     if (rule.level === 'block') return { level: 'block', reason: rule.reason }
-    // 등록된 모든 단축키(팔레트·용어 찾기·조종·워크스페이스)와, 저장했지만 등록하지 못한 워크스페이스 단축키와 견준다.
-    // 보조키 순서·대소문자는 따지지 않는다
-    const other = d.manager.ids().find((o) => o !== id && same(d.manager.current(o), acc)) ?? savedOther(id, acc)
+    // 등록된 모든 단축키(팔레트·용어 찾기·조종·워크스페이스)와 견준다. 보조키 순서·대소문자는 따지지 않는다
+    const other = d.manager.ids().find((o) => o !== id && same(d.manager.current(o), acc))
     if (other) return { level: 'same-as-other', reason: `${name(other)} 단축키와 같은 조합이에요` }
+    // 지금 잡고 있는 자기 조합은 그대로 고를 수 있다(팔레트 대체 조합이 등록하지 못한 워크스페이스 조합과 같아도)
     if (same(d.manager.current(id), acc)) return { level: 'ok' }
+    // 저장했지만 등록하지 못한 워크스페이스 단축키와도 견준다(A-M7)
+    const saved = savedOther(id, acc)
+    if (saved) return { level: 'same-as-other', reason: `${name(saved)} 단축키와 같은 조합이에요` }
     if (!d.probe(acc)) return { level: 'in-use', reason: IN_USE }
     return rule.level === 'warn' ? { level: 'warn', reason: rule.reason } : { level: 'ok' }
   }
@@ -155,6 +166,37 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     else d.manager.unbind(id)
   }
 
+  /** 단축키 하나를 바꾸거나(acc) 비운다(null). 녹화는 부른 쪽(set)이 먼저 끝낸다 */
+  const change = async (id: HotkeyId, acc: string | null): Promise<HotkeySetResult> => {
+    // 로그에는 id와 까닭만(워크스페이스 이름은 안내 문구에만)
+    const fail = (reason: string, why: string): HotkeySetResult => {
+      d.log('hotkey.change', { id, ok: false, reason: why })
+      return { ok: false, reason }
+    }
+    if (!(await prepare(id))) return fail(WORKSPACE_NOTES.missing, 'missing')
+    const previous = d.manager.current(id)
+    if (acc === null) {
+      if (!isWorkspaceHotkey(id) && id !== 'pet-control') return fail(`${name(id)} 단축키는 비워 둘 수 없어요`, 'not-clearable')
+      d.manager.unbind(id)
+      if (!(await save(id, null))) {
+        await rollback(id, previous)
+        return fail(SAVE_FAILED, 'save-failed')
+      }
+      d.log('hotkey.change', { id, ok: true, acc: null })
+      return { ok: true, acc: null }
+    }
+    const c = check(id, acc)
+    if (c.level === 'block' || c.level === 'same-as-other' || c.level === 'in-use') return fail(c.reason ?? '이 조합은 쓸 수 없어요', c.level)
+    const r = d.manager.rebind(id, acc)
+    if (!r.ok) return fail(r.reason === 'in-use' ? IN_USE : (r.detail ?? '이 조합은 쓸 수 없어요'), r.reason)
+    if (!(await save(id, acc))) {
+      await rollback(id, previous)
+      return fail(SAVE_FAILED, 'save-failed')
+    }
+    d.log('hotkey.change', { id, ok: true, acc })
+    return c.level === 'warn' ? { ok: true, acc, warning: c.reason } : { ok: true, acc }
+  }
+
   return {
     check,
     startRecording() {
@@ -171,37 +213,22 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     stopRecording,
     recording: () => recording,
     async set(id, acc) {
-      stopRecording()
-      // 로그에는 id와 까닭만(워크스페이스 이름은 안내 문구에만)
-      const fail = (reason: string, why: string): HotkeySetResult => {
-        d.log('hotkey.change', { id, ok: false, reason: why })
-        return { ok: false, reason }
+      // 녹화를 먼저 끝내 단축키를 되살린 뒤 바꾼다. 되살린 결과는 바꾸기가 완료된 뒤 알린다: 바꾸는 도중(등록은 새 조합, 저장은 아직
+      // 이전 조합)에 설정 창이 다시 그리면 그 단축키가 잠시 '등록 못 함'으로 보인다
+      const resumed = endRecording()
+      try {
+        return await change(id, acc)
+      } finally {
+        reportResume(resumed)
       }
-      if (!(await prepare(id))) return fail(WORKSPACE_NOTES.missing, 'missing')
-      const previous = d.manager.current(id)
-      if (acc === null) {
-        if (!isWorkspaceHotkey(id) && id !== 'pet-control') return fail(`${name(id)} 단축키는 비워 둘 수 없어요`, 'not-clearable')
-        d.manager.unbind(id)
-        if (!(await save(id, null))) {
-          await rollback(id, previous)
-          return fail(SAVE_FAILED, 'save-failed')
-        }
-        d.log('hotkey.change', { id, ok: true, acc: null })
-        return { ok: true, acc: null }
-      }
-      const c = check(id, acc)
-      if (c.level === 'block' || c.level === 'same-as-other' || c.level === 'in-use') return fail(c.reason ?? '이 조합은 쓸 수 없어요', c.level)
-      const r = d.manager.rebind(id, acc)
-      if (!r.ok) return fail(r.reason === 'in-use' ? IN_USE : (r.detail ?? '이 조합은 쓸 수 없어요'), r.reason)
-      if (!(await save(id, acc))) {
-        await rollback(id, previous)
-        return fail(SAVE_FAILED, 'save-failed')
-      }
-      d.log('hotkey.change', { id, ok: true, acc })
-      return c.level === 'warn' ? { ok: true, acc, warning: c.reason } : { ok: true, acc }
     },
     candidates() {
-      const list = ONBOARDING_CANDIDATES.map((acc) => ({ acc, available: same(d.manager.current('palette'), acc) || d.probe(acc) }))
+      const own = d.manager.current('palette')
+      // 저장했지만 등록하지 못한 워크스페이스 조합은 비어 있어 보여도 고르면 겹침으로 거절되므로 뺀다(팔레트가 지금 잡은 조합은 남긴다)
+      const list = ONBOARDING_CANDIDATES.filter((acc) => same(own, acc) || !savedOther('palette', acc)).map((acc) => ({
+        acc,
+        available: same(own, acc) || d.probe(acc)
+      }))
       const suggested = list.find((c) => c.acc !== 'Alt+Space' && c.available)?.acc
       return list.filter((c) => c.acc !== 'Alt+Space' || c.available).map((c) => ({ ...c, suggested: c.acc === suggested }))
     },
