@@ -12,7 +12,9 @@
 # workspaces.json(이름·단축키)과 캡처 m7-ws-editor로 확인한다.
 # 단계가 예외로 멈추면 그 단계만 `error_단계` 줄을 남기고 다음 단계로 간다. 앞 단계가 성립하지 않은 판정은 True 대신 `skipped (까닭)`을 출력한다.
 # -WsHotkey: 워크스페이스에 녹화할 단축키(기본 Ctrl+Alt+9, 다른 앱이 쓰면 t21-run.ps1 -WsHotkey로 바꾼다)
-param([string]$Combo = 'Alt+`', [string]$WsHotkey = 'Ctrl+Alt+9')
+param([string]$Combo = 'Alt+`', [string]$WsHotkey = 'Ctrl+Alt+9', [switch]$FromRunner)
+# t21-run.ps1만 -FromRunner를 넘긴다. 직접 실행하면 사용자 설정·워크스페이스 파일을 비우지 않은 채 시작해 결과가 틀리므로 멈춘다
+if (-not $FromRunner) { 'error = t21-run.ps1로 실행한다(직접 실행하면 설정과 사용자 파일이 시험 상태가 아니다)'; return }
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\smoke-lib.ps1"
 $r = [ordered]@{}
@@ -145,8 +147,8 @@ function StateOf($f) {
   if (($style -band 0x01000000) -ne 0) { return 'Maximized' }
   return 'Normal'
 }
-# 보이는 테두리 두 개의 차이(물리 픽셀). 하나라도 없으면 $null
-function Diff($now, $was) {
+# 보이는 테두리 두 개의 차이(물리 픽셀). 하나라도 없으면 $null. 함수 이름을 Diff로 하면 Windows PowerShell 기본 별칭 diff(Compare-Object)가 먼저 불려 값이 $null이 된다
+function PxDiff($now, $was) {
   if (-not $now -or -not $was) { return $null }
   $dx = [int]$now.x - [int]$was.x; $dy = [int]$now.y - [int]$was.y
   $dw = [int]$now.width - [int]$was.width; $dh = [int]$now.height - [int]$was.height
@@ -155,7 +157,11 @@ function Diff($now, $was) {
 }
 function DiffText($d) { if ($d) { return ('dx={0} dy={1} dw={2} dh={3}' -f $d.dx, $d.dy, $d.dw, $d.dh) }; return 'frame not readable' }
 # 설계 §11 완료 기준: 저장 위치에서 ±10px(위치·크기 모두)
-function WithinTen($d) { return ($null -ne $d -and $d.max -le 10) }
+# 값이 없거나 숫자가 아니면 False다(Windows PowerShell에서 $null -le 10은 True이므로 숫자 여부를 먼저 확인한다)
+function HasMax($d) { return ($null -ne $d -and ($d.max -is [int] -or $d.max -is [double])) }
+function WithinTen($d) { return ((HasMax $d) -and $d.max -le 10) }
+# 저장 위치에서 50px 이상 벗어났는지(옮기는 단계가 먹혔는지). 값이 없으면 False라 그 판정은 skipped
+function MovedAway($d) { return ((HasMax $d) -and $d.max -ge 50) }
 function WaitRestore([int]$from, [string]$source) { WaitLog $from 'workspace.restore' { $_.source -eq $source } 15000 }
 function RestoreText($x) {
   if (-not $x) { return 'no workspace.restore within 15 s' }
@@ -198,12 +204,32 @@ function PetClick($c, [switch]$Right) {
   HoverAt $px $py; Pump 250
   if ($Right) { ClickAt $px $py -Right } else { ClickAt $px $py }
 }
+# 메뉴 자리(DIP)를 5x5 격자로 읽은 색(물리 픽셀). 메뉴가 열리면 대부분의 점이 바뀐다
+function MenuPixels($rect) {
+  Add-Type -AssemblyName System.Drawing
+  $x0 = [int][Math]::Round($rect.x * $scale); $y0 = [int][Math]::Round($rect.y * $scale)
+  $w = [int][Math]::Round($rect.width * $scale); $h = [int][Math]::Round($rect.height * $scale)
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($x0, $y0, 0, 0, (New-Object System.Drawing.Size $w, $h))
+  $out = @()
+  foreach ($fy in 1..5) { foreach ($fx in 1..5) { $out += $bmp.GetPixel([int]($w * $fx / 6), [int]($h * $fy / 6)).ToArgb() } }
+  $g.Dispose(); $bmp.Dispose()
+  return $out
+}
 function OpenPetMenu {
   $now = WaitPetStill $scale 500 25000 $size
   if (-not $now) { return $null }
+  $rect = PetMenuRect $now.box $now.window $boundsDip
+  # 앱은 펫 메뉴를 열 때 로그를 남기지 않는다(pet.menu는 행을 고른 뒤에만 남는다). 그래서 메뉴 자리 화면이 바뀌었는지로 열렸음을 확인한다
+  $before = MenuPixels $rect
   PetClick (PetCenter $now) -Right
   Pump 350
-  return (PetMenuRect $now.box $now.window $boundsDip)
+  $after = MenuPixels $rect
+  $changed = 0
+  for ($i = 0; $i -lt $before.Count; $i++) { if ($before[$i] -ne $after[$i]) { $changed++ } }
+  if ($changed -lt 8) { return $null }
+  return $rect
 }
 function PetMenuRow($menu, [int]$row) {
   $p = PetMenuRowPoint $menu $row
@@ -273,8 +299,9 @@ try {
         $ws = WaitWs $wsId { param($w) $true } 2000
         $have = TestRuleCount (RulesOf $ws)
         $savedOk = ([int]$save.windows -ge 3 -and $have -eq 3)
-        $r.workspace_saved = $savedOk
-        $r.info_save = 'op={0} windows={1} minimized={2} excluded={3} offscreen={4} monitors={5} test_windows_in_file={6}/3' -f $save.op, $save.windows, $save.minimized, $save.excluded, $save.offscreen, $save.monitors, $have
+        # 열린 창이 40개를 넘으면 앱이 40개까지만 저장하므로(overLimit) 시험 창이 빠졌을 수 있다: False가 아니라 skipped
+        $r.workspace_saved = if ($savedOk) { $true } elseif ([int]$save.overLimit -gt 0) { 'skipped (more than 40 windows open)' } else { $false }
+        $r.info_save = 'op={0} windows={1} minimized={2} excluded={3} offscreen={4} overLimit={5} monitors={6} test_windows_in_file={7}/3' -f $save.op, $save.windows, $save.minimized, $save.excluded, $save.offscreen, $save.overLimit, $save.monitors, $have
         if ($ws) {
           $defaultName = [string]$ws.name
           $curName = $defaultName
@@ -354,15 +381,15 @@ try {
       $r.info_restore_palette = 'ran={0} {1}' -f (RunText $run), (RestoreText $rest4)
       if ($ran) {
         $fgTitle = (Fg).Title
-        $dA = Diff (FrameOf $A) $saved.A
-        $dB = Diff (FrameOf $B) $saved.B
+        $dA = PxDiff (FrameOf $A) $saved.A
+        $dB = PxDiff (FrameOf $B) $saved.B
         $r.a_within_10px = if ($moved.A) { WithinTen $dA } else { 'skipped (A was not minimized before the restore)' }
         $r.b_within_10px = if ($moved.B) { WithinTen $dB } else { 'skipped (B was not maximized before the restore)' }
         $r.info_a_diff = DiffText $dA
         $r.info_b_diff = DiffText $dB
         $r.c_maximized = if (-not $cMaxAtSave) { 'skipped (C was not maximized when saved)' } elseif (-not $moved.C) { 'skipped (C was not back to normal before the restore)' } else { (StateOf $C) -eq 'Maximized' }
         $r.ab_normal = if ($moved.A -and $moved.B) { ((StateOf $A) -eq 'Normal' -and (StateOf $B) -eq 'Normal') } else { 'skipped (A was not minimized or B was not maximized before the restore)' }
-        $r.focus_restored = ($fgTitle -eq $titles.B)
+        $r.focus_restored = ($fgTitle -eq $titles.B -and $rest4.restoredFocus -eq $true)
         $r.info_foreground_after_restore = $fgTitle
         $r.mixed_dpi = if (-not $other) { 'skipped (one monitor, or no second monitor with a different scale)' } elseif (-not $moved.B) { 'skipped (B was not maximized before the restore)' } else { WithinTen $dB }
       }
@@ -434,15 +461,15 @@ try {
     if (-not $hotkeyOk) { $r.hotkey_restores = 'skipped (the workspace hotkey was not registered: see hotkey_registered)' }
     else {
       Nudge $B 250 150
-      $off = Diff (FrameOf $B) $saved.B
-      if (-not $off -or $off.max -lt 50) { $r.hotkey_restores = 'skipped (B did not move away from the saved position)' }
+      $off = PxDiff (FrameOf $B) $saved.B
+      if (-not (MovedAway $off)) { $r.hotkey_restores = 'skipped (B did not move away from the saved position)' }
       elseif (-not (FocusWin $B)) { $r.hotkey_restores = "skipped (the test window $($titles.B) did not come to the front)" }
       else {
         $mark = LogMark
         HoldCombo $WsHotkey 300
         $rest6 = WaitRestore $mark 'hotkey'
         Pump 800
-        $dB = Diff (FrameOf $B) $saved.B
+        $dB = PxDiff (FrameOf $B) $saved.B
         $r.hotkey_restores = ($null -ne $rest6 -and $rest6.ok -eq $true -and $rest6.id -eq $wsId -and (WithinTen $dB))
         $r.info_hotkey_restore = '{0} b_diff: {1}' -f (RestoreText $rest6), (DiffText $dB)
       }
@@ -460,7 +487,7 @@ try {
       if (-not (FocusWin $B)) { SkipAll $ctl "the test window $($titles.B) did not come to the front" }
       else {
         $startMark = LogMark
-        if (-not (StartControl)) { SkipAll $ctl 'pet control could not be started (no pet.control start after the first pet menu row)' }
+        if (-not (StartControl)) { SkipAll $ctl 'pet control could not be started (the pet menu did not open, or no pet.control start after the first pet menu row)' }
         else {
           Pump 600
           $ended = (@(LogsAfter $startMark 'pet.control' | Where-Object { $_.phase -eq 'end' }).Count -gt 0)
@@ -501,9 +528,9 @@ try {
     else {
       $bs = [double]$place.scale
       Nudge $B 150 200
-      $off = Diff (FrameOf $B) $saved.B
+      $off = PxDiff (FrameOf $B) $saved.B
       $pt = BarPointPx $place 'workspace'
-      if (-not $off -or $off.max -lt 50) { SkipAll $step7 'B did not move away from the saved position' }
+      if (-not (MovedAway $off)) { SkipAll $step7 'B did not move away from the saved position' }
       elseif (-not (FocusWin $B)) { SkipAll $step7 "the test window $($titles.B) did not come to the front" }
       elseif (-not (WaitPetAway ($pt.x / $bs) ($pt.y / $bs))) { SkipAll $step7 'the pet stays over the bar workspace button' }
       else {
@@ -528,7 +555,7 @@ try {
             ClickAt ([int][Math]::Round($rowX * $bs)) ([int][Math]::Round($rowY * $bs))
             $rest8 = WaitRestore $mark2 'bar'
             Pump 800
-            $dB = Diff (FrameOf $B) $saved.B
+            $dB = PxDiff (FrameOf $B) $saved.B
             $r.bar_restores = ($null -ne $rest8 -and $rest8.ok -eq $true -and $rest8.id -eq $wsId -and (WithinTen $dB))
             $r.info_bar_restore = '{0} b_diff: {1}' -f (RestoreText $rest8), (DiffText $dB)
           }
@@ -542,7 +569,10 @@ try {
   # 8. 로그에 시험 창 제목('SureMate-WS')·워크스페이스 이름('smoke ws'와 기본 이름)·이름을 담는 키가 없다(id·건수·까닭·시간만).
   #    아무것도 저장하지 않았으면 제목·이름이 앱을 거치지 않았으므로 판정하지 않는다
   $appLines = @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines) -join "`n"
+  # 앱 로그가 비어 있으면(로그를 읽지 못했거나 앱이 쓰지 않았으면) 아무것도 없다는 판정이 거짓 True가 되므로, 이번 실행의 palette.run·workspace.save 줄이 있어야 판정한다
+  $appLogLines = @(NewLogs 'palette.run').Count + @(NewLogs 'workspace.save').Count
   if (-not $wsId) { SkipAll @('log_has_no_titles', 'log_has_no_names', 'log_has_no_typed_text') 'nothing was saved: see workspace_saved' }
+  elseif ($appLogLines -eq 0) { SkipAll @('log_has_no_titles', 'log_has_no_names', 'log_has_no_typed_text') 'no app log lines' }
   else {
     $r.log_has_no_titles = -not $appLines.Contains('SureMate-WS')
     $names = @(@($wsName, $defaultName) | Where-Object { $_ })

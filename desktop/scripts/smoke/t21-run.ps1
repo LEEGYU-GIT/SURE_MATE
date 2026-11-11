@@ -18,6 +18,14 @@ foreach ($f in $files) {
     return
   }
 }
+# 시험 중 클립보드는 가짜 글로 바뀐다. 시작 전에 글자였으면 내용을 저장해 두었다가 finally에서 되돌린다(내용은 출력하지 않는다).
+# 글자가 아닌 것(파일·그림)이 있었으면 되돌릴 수 없으므로 그 사실만 알린다
+Add-Type -AssemblyName System.Windows.Forms
+$clipText = $null; $clipState = 'empty'
+try {
+  if ([System.Windows.Forms.Clipboard]::ContainsText()) { $clipText = [System.Windows.Forms.Clipboard]::GetText(); if ($clipText) { $clipState = 'text' } }
+  elseif ([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats().Count -gt 0) { $clipState = 'other' }
+} catch { $clipState = 'unreadable' }
 $had = @{}; $backed = @{}
 foreach ($f in $files) { $had[$f] = Test-Path $f; $backed[$f] = $false }
 function WriteSettings {
@@ -49,10 +57,18 @@ try {
   WriteSettings
   # 시험 스크립트는 정상이면 1~2분이고, 모든 대기가 시간을 다 쓰면 약 4분이다(펫이 멈추길 기다리는 최대 25초 포함).
   # 감시 시간이 끝나 시험이 강제로 끝나면 결과 줄을 잃으므로 넉넉히 둔다
-  & "$W\run-smoke.ps1" -Script t21-workspace.ps1 -TimeoutSec 600 -ScriptArgs "-WsHotkey $WsHotkey"
+  & "$W\run-smoke.ps1" -Script t21-workspace.ps1 -TimeoutSec 600 -ScriptArgs "-WsHotkey $WsHotkey -FromRunner"
 } finally {
   foreach ($f in $files) {
     if ($backed[$f]) { Copy-Item "$f.smoke-backup" $f -Force; Remove-Item "$f.smoke-backup" } elseif (-not $had[$f]) { Remove-Item $f -ErrorAction SilentlyContinue }
   }
   "--- settings, workspaces, remembered sentences, usage and intents restored"
+  # 클립보드 되돌리기(다른 프로그램이 잡고 있으면 실패하므로 몇 번 다시 시도한다)
+  $clipDone = $false
+  if ($clipState -eq 'text' -or $clipState -eq 'empty') {
+    for ($i = 0; $i -lt 5 -and -not $clipDone; $i++) {
+      try { if ($clipState -eq 'text') { [System.Windows.Forms.Clipboard]::SetText($clipText) } else { [System.Windows.Forms.Clipboard]::Clear() }; $clipDone = $true } catch { Start-Sleep -Milliseconds 200 }
+    }
+  }
+  "--- clipboard: " + $(if ($clipDone) { "restored (was $clipState)" } else { "NOT restored (was $clipState: only plain text can be restored)" })
 }

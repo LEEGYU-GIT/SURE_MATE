@@ -1,4 +1,4 @@
-﻿# t22: 설정(AI 대상 "복사만", 바를 주 모니터 오른쪽 가장자리 띠·자동 숨김 끔, 가명 처리 되돌리기, 첫 실행 안내 끝냄)을 잠시 바꾸고,
+﻿# t22: 설정(AI 대상 "복사만", 바를 주 모니터 오른쪽 가장자리 띠·자동 숨김 끔, 가명 처리 되돌리기, 첫 실행 안내 완료)을 잠시 바꾸고,
 # 워크스페이스(workspaces.json)·기억한 문장(phrase-map.json)·사용 기록(usage.json)·사용자 단어 목록(intents.json)을 백업한 뒤 지워 빈 상태로
 # t22-natural.ps1을 돌리고 모두 되돌린다. 빈 상태로 시작해야 최근 항목·학습·사용자 단어 목록이 목록 순서를 바꾸지 않는다.
 # workspaces.json.bak(앱이 다시 저장할 때 남기는 이전 파일)도 백업하고 되돌린다.
@@ -15,6 +15,14 @@ foreach ($f in $files) {
     return
   }
 }
+# 시험 중 클립보드는 가짜 글로 바뀐다. 시작 전에 글자였으면 내용을 저장해 두었다가 finally에서 되돌린다(내용은 출력하지 않는다).
+# 글자가 아닌 것(파일·그림)이 있었으면 되돌릴 수 없으므로 그 사실만 알린다
+Add-Type -AssemblyName System.Windows.Forms
+$clipText = $null; $clipState = 'empty'
+try {
+  if ([System.Windows.Forms.Clipboard]::ContainsText()) { $clipText = [System.Windows.Forms.Clipboard]::GetText(); if ($clipText) { $clipState = 'text' } }
+  elseif ([System.Windows.Forms.Clipboard]::GetDataObject().GetFormats().Count -gt 0) { $clipState = 'other' }
+} catch { $clipState = 'unreadable' }
 $had = @{}; $backed = @{}
 foreach ($f in $files) { $had[$f] = Test-Path $f; $backed[$f] = $false }
 function WriteSettings {
@@ -45,10 +53,18 @@ try {
   }
   WriteSettings
   # 정상 실행은 약 2분이고 모든 대기가 시간을 다 쓰면 약 3분이다. 감시 시간이 끝나 시험이 강제로 끝나면 결과 줄을 잃으므로 넉넉히 둔다
-  & "$W\run-smoke.ps1" -Script t22-natural.ps1 -TimeoutSec 420
+  & "$W\run-smoke.ps1" -Script t22-natural.ps1 -TimeoutSec 420 -ScriptArgs '-FromRunner'
 } finally {
   foreach ($f in $files) {
     if ($backed[$f]) { Copy-Item "$f.smoke-backup" $f -Force; Remove-Item "$f.smoke-backup" } elseif (-not $had[$f]) { Remove-Item $f -ErrorAction SilentlyContinue }
   }
   "--- settings, workspaces, remembered sentences, usage and intents restored"
+  # 클립보드 되돌리기(다른 프로그램이 잡고 있으면 실패하므로 몇 번 다시 시도한다)
+  $clipDone = $false
+  if ($clipState -eq 'text' -or $clipState -eq 'empty') {
+    for ($i = 0; $i -lt 5 -and -not $clipDone; $i++) {
+      try { if ($clipState -eq 'text') { [System.Windows.Forms.Clipboard]::SetText($clipText) } else { [System.Windows.Forms.Clipboard]::Clear() }; $clipDone = $true } catch { Start-Sleep -Milliseconds 200 }
+    }
+  }
+  "--- clipboard: " + $(if ($clipDone) { "restored (was $clipState)" } else { "NOT restored (was $clipState: only plain text can be restored)" })
 }
