@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PET_HIDDEN_NOTICE } from '../../shared/pet/pet-copy'
+import { PET_HIDDEN_NOTICE, PET_RECALL_HINT } from '../../shared/pet/pet-copy'
 import { HotkeyManager, type ShortcutBackend } from '../hotkeys/hotkey-manager'
 import { createPetCommands, createPetControlHotkey, petCommandItems } from './pet-commands'
 
@@ -187,8 +187,9 @@ describe('조종 단축키(설계 §14-2): 숨긴 펫은 조종하지 않고 다
     return { press, calls, notes, logs, state }
   }
 
-  it('알림 문구', () => {
-    expect(PET_HIDDEN_NOTICE).toBe('말랑 메이트가 숨어 있어요. 트레이나 바의 펫 단추로 불러 주세요.')
+  it('알림 문구: 다시 부르는 곳은 메뉴 "숨기기" 설명(PET_RECALL_HINT)과 같은 순서(바의 펫 단추 → 트레이)', () => {
+    expect(PET_HIDDEN_NOTICE).toBe('말랑 메이트가 숨어 있어요. 바의 펫 단추나 트레이에서 불러 주세요.')
+    expect(PET_RECALL_HINT).toBe('바의 펫 단추나 트레이에서 다시 불러요')
   })
 
   it('보이면 조종을 켜고 끈다(알림 없음)', () => {
