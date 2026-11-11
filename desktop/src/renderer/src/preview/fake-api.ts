@@ -124,9 +124,18 @@ function fakeSettingsApi(fx: FakeFixtures): SettingsApi {
       listeners.add(cb)
       return () => listeners.delete(cb)
     },
+    onShowTab: () => () => {},
     hotkeyCheck: async () => ({ level: 'ok' }),
     hotkeyRecord: () => {},
-    hotkeySet: async (_id, acc) => ({ ok: true, acc }),
+    // 바꾼 조합을 스냅숏에도 넣어 화면이 실제처럼 다시 그리게 한다(조종 단축키는 비울 수 있다)
+    hotkeySet: async (id, acc) => {
+      if (snap) {
+        const settings = id === 'pet-control' ? { ...snap.settings, pet: { ...snap.settings.pet, controlHotkey: acc } } : snap.settings
+        snap = { ...snap, settings, hotkeys: { ...snap.hotkeys, [id]: { acc, registered: acc !== null } } }
+        for (const cb of listeners) cb(snap)
+      }
+      return { ok: true, acc }
+    },
     openFile: () => {},
     openOnboarding: () => {},
     onboardingCandidates: async () => fx.hotkeyCandidates,

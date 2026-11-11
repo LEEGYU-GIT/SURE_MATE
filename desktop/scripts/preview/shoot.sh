@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 개발 전용: 미리 보기 장면을 배율 1, 1.25, 1.5로 캡처한다.
 # 사용: bash scripts/preview/shoot.sh <출력 폴더> <장면 id...>
+# 장면 크기는 기본 640x600(바탕화면 장면). 설정 창 장면(880x640)은 SCENE_W=880 SCENE_H=640 bash scripts/preview/shoot.sh ...
 # 필요: Node 22, /usr/bin/google-chrome, python3 + Pillow(캡처를 장면 크기로 자르는 데 사용).
 #       Pillow가 없으면 시작 즉시 중단한다. 설치: python3 -m pip install --user Pillow
 # Chrome은 실행마다 임시 프로필(--user-data-dir)을 쓰고 끝나면 지운다(공용 계정의 기본 프로필을 건드리지 않는다).
@@ -24,9 +25,14 @@ PROFILE_DIR="$(mktemp -d "$OUT/chrome-profile.XXXXXX")"
 SERVER_PID=""
 PORT=4178
 # headless=new 는 창 높이에 브라우저 틀(87px)이 포함되어 화면이 그만큼 짧아진다.
-# 틀 높이를 더해 창을 만든 뒤 장면 크기(640x600)로 잘라낸다.
-SCENE_W=640
-SCENE_H=600
+# 틀 높이를 더해 창을 만든 뒤 장면 크기(기본 640x600)로 잘라낸다.
+SCENE_W="${SCENE_W:-640}"
+SCENE_H="${SCENE_H:-600}"
+for v in "$SCENE_W" "$SCENE_H"; do
+  case "$v" in
+    '' | *[!0-9]*) echo "SCENE_W·SCENE_H는 숫자(DIP)여야 합니다: '$v'" >&2; exit 1 ;;
+  esac
+done
 CHROME_H=87
 
 ./node_modules/.bin/vite build -c vite.preview.config.ts

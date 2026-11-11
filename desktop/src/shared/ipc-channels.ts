@@ -6,6 +6,7 @@ import type { Template } from './template/types'
 import type { MaskItem } from './masking/types'
 import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
 import type { SettingsPatch } from './settings/settings-patch'
+import type { SettingsTabId } from './settings/settings-route'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
 import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
 
@@ -118,6 +119,8 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   /** main → 설정 창: 설정이 바뀜(어디서든) */
   settingsChanged: 'settings:changed',
+  /** main → 설정 창: 열려 있는 설정 창에서 이 탭을 고른다(펫 메뉴 "펫 설정" 등, SettingsTabId) */
+  settingsShowTab: 'settings:show-tab',
   settingsHotkeyCheck: 'settings:hotkey-check',
   /** 설정 창 → main(send): 단축키 녹화 시작·끝(녹화 중에는 모든 단축키를 잠시 푼다) */
   settingsHotkeyRecord: 'settings:hotkey-record',
@@ -236,9 +239,12 @@ export interface SettingsApi {
   get(): Promise<SettingsSnapshot | null>
   update(patch: SettingsPatch): Promise<SettingsUpdateResult>
   onChanged(cb: (s: SettingsSnapshot) => void): () => void
+  /** main이 열린 설정 창에서 이 탭을 고르라고 알린다(창을 다시 읽지 않는다) */
+  onShowTab(cb: (tab: SettingsTabId) => void): () => void
   hotkeyCheck(id: SettingsHotkeyId, acc: string): Promise<HotkeyCheck>
   hotkeyRecord(on: boolean): void
-  hotkeySet(id: SettingsHotkeyId, acc: string): Promise<HotkeySetResult>
+  /** acc null은 단축키 비우기(조종 단축키만, 나머지는 main이 거절) */
+  hotkeySet(id: SettingsHotkeyId, acc: string | null): Promise<HotkeySetResult>
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
   onboardingCandidates(): Promise<HotkeyCandidate[]>

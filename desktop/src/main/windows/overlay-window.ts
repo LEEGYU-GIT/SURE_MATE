@@ -2,14 +2,15 @@ import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
 import { PET_WINDOW } from '../../shared/pet/pet-view'
+import type { SettingsHash } from '../../shared/settings/settings-route'
 import type { Rect } from '../../shared/types'
 import { errorText } from '../error-text'
 import { log } from '../log'
 import { nativeStatus } from '../native/win32'
 import { raiseTopmost } from '../native/windows'
 
-/** renderer 번들 안의 화면 경로(App.tsx가 # 경로로 고른다). ''는 팔레트 */
-export type RendererRoute = '' | '/bar' | '/flyout' | '/pet' | '/ime-logger' | '/settings' | '/onboarding'
+/** renderer 번들 안의 화면 경로(App.tsx가 # 경로로 고른다). ''는 팔레트. 설정 창은 처음 열 탭을 붙일 수 있다('/settings?tab=pet') */
+export type RendererRoute = '' | '/bar' | '/flyout' | '/pet' | '/ime-logger' | SettingsHash
 
 /**
  * 바·펼침 창 공통 옵션(설계 §14-1·§9). 포커스를 받지 않고(WS_EX_NOACTIVATE) 작업 표시줄·Alt+Tab에 나오지 않는 투명 창이다.

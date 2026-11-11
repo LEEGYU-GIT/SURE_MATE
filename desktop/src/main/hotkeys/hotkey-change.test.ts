@@ -6,8 +6,8 @@ import { HotkeyManager, type ShortcutBackend } from './hotkey-manager'
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-/** 다른 앱이 잡은 조합(taken)은 등록되지 않는 가짜 등록부 */
-function make(taken: string[] = ['Ctrl+Alt+Space']) {
+/** 다른 앱이 잡은 조합(taken)은 등록되지 않는 가짜 등록부. pet은 말랑 메이트 조종 단축키(기본 없음) */
+function make(taken: string[] = ['Ctrl+Alt+Space'], o: { pet?: string | null } = {}) {
   const registered = new Map<string, () => void>()
   const backend: ShortcutBackend = {
     register: (acc, cb) => {
@@ -20,7 +20,9 @@ function make(taken: string[] = ['Ctrl+Alt+Space']) {
   const manager = new HotkeyManager(backend, () => Date.now())
   manager.bind('palette', 'Alt+`', () => {})
   manager.bind('lookup', 'Ctrl+Alt+W', () => {})
-  const saved: [string, string][] = []
+  const pressed = { pet: 0 }
+  manager.bind('pet-control', o.pet ?? null, () => void pressed.pet++)
+  const saved: [string, string | null][] = []
   const logs: [string, Record<string, unknown>][] = []
   const changer = createHotkeyChanger({
     manager,
@@ -33,7 +35,7 @@ function make(taken: string[] = ['Ctrl+Alt+Space']) {
     timers: globalTimers(),
     log: (e, d) => void logs.push([e, d])
   })
-  return { manager, changer, registered, saved, logs }
+  return { manager, changer, registered, saved, logs, pressed }
 }
 
 describe('check', () => {
@@ -130,5 +132,93 @@ describe('온보딩 후보', () => {
     expect(free.changer.candidates().find((c) => c.suggested)?.acc).toBe('Ctrl+Alt+Space')
     const altSpaceTaken = make(['Alt+Space'])
     expect(altSpaceTaken.changer.candidates().map((c) => c.acc)).toEqual(['Ctrl+Alt+Space', 'Alt+`'])
+  })
+})
+
+describe('말랑 메이트 조종 단축키(pet-control): 다른 단축키처럼 바꾸고, null이면 단축키 없음', () => {
+  it('팔레트·용어 찾기와 같은 조합은 겹침(어느 단축키와 겹치는지 알린다), 팔레트·용어 찾기도 조종 단축키와 겹치면 겹침', () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    const palette = t.changer.check('pet-control', 'alt+`')
+    expect(palette.level).toBe('same-as-other')
+    expect(palette.reason).toContain('팔레트')
+    const lookup = t.changer.check('pet-control', 'Ctrl+Alt+W')
+    expect(lookup.level).toBe('same-as-other')
+    expect(lookup.reason).toContain('용어 찾기')
+    const pet = t.changer.check('palette', 'Ctrl+Alt+P')
+    expect(pet.level).toBe('same-as-other')
+    expect(pet.reason).toContain('말랑 메이트')
+    expect(t.changer.check('pet-control', 'Ctrl+Alt+P')).toEqual({ level: 'ok' })
+    expect(t.changer.check('pet-control', 'Ctrl+Alt+Space').level).toBe('in-use')
+  })
+
+  it('팔레트와 같은 조합으로 바꾸려 하면 거절하고 등록·저장하지 않는다', async () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    const r = await t.changer.set('pet-control', 'Alt+`')
+    expect(r).toMatchObject({ ok: false, reason: expect.stringContaining('팔레트') })
+    expect(t.manager.current('pet-control')).toBe('Ctrl+Alt+P')
+    expect(t.manager.current('palette')).toBe('Alt+`')
+    expect(t.saved).toEqual([])
+  })
+
+  it('녹화하면 조종 단축키까지 모두 잠시 풀고, 바꾸면 다른 단축키를 되살린 뒤 새 조합을 등록·저장한다', async () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    t.changer.startRecording()
+    expect(t.registered.size).toBe(0)
+    expect(await t.changer.set('pet-control', 'Ctrl+Shift+P')).toEqual({ ok: true, acc: 'Ctrl+Shift+P' })
+    expect([...t.registered.keys()].sort()).toEqual(['Alt+`', 'Ctrl+Alt+W', 'Ctrl+Shift+P'])
+    expect(t.saved).toEqual([['pet-control', 'Ctrl+Shift+P']])
+    t.registered.get('Ctrl+Shift+P')?.()
+    expect(t.pressed.pet).toBe(1)
+    // 녹화 시간이 지나도 두 번 되살리지 않는다
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(t.registered.size).toBe(3)
+  })
+
+  it('등록에 실패하면 이전 조합이 그대로 등록돼 있고 저장하지 않는다(로그는 id·결과·까닭)', async () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    const r = await t.changer.set('pet-control', 'Ctrl+Alt+Space')
+    expect(r.ok).toBe(false)
+    expect(t.manager.current('pet-control')).toBe('Ctrl+Alt+P')
+    expect(t.registered.has('Ctrl+Alt+P')).toBe(true)
+    t.registered.get('Ctrl+Alt+P')?.()
+    expect(t.pressed.pet).toBe(1)
+    expect(t.saved).toEqual([])
+    expect(t.logs).toContainEqual(['hotkey.change', { id: 'pet-control', ok: false, reason: 'in-use' }])
+  })
+
+  it('null로 바꾸면 조합을 풀고 단축키 없음으로 저장한다', async () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    expect(await t.changer.set('pet-control', null)).toEqual({ ok: true, acc: null })
+    expect(t.manager.current('pet-control')).toBeUndefined()
+    expect(t.registered.has('Ctrl+Alt+P')).toBe(false)
+    expect(t.saved).toEqual([['pet-control', null]])
+    expect(t.logs).toContainEqual(['hotkey.change', { id: 'pet-control', ok: true, acc: null }])
+  })
+
+  it('녹화 중에 비워도 다른 단축키는 되살린다', async () => {
+    const t = make(['Ctrl+Alt+Space'], { pet: 'Ctrl+Alt+P' })
+    t.changer.startRecording()
+    await t.changer.set('pet-control', null)
+    expect([...t.registered.keys()].sort()).toEqual(['Alt+`', 'Ctrl+Alt+W'])
+  })
+
+  it('단축키가 없던 조종에 새 조합을 정하면 등록되고 누르면 조종 처리기가 불린다', async () => {
+    const t = make()
+    expect(t.manager.current('pet-control')).toBeUndefined()
+    expect(await t.changer.set('pet-control', 'Ctrl+Alt+P')).toEqual({ ok: true, acc: 'Ctrl+Alt+P' })
+    t.registered.get('Ctrl+Alt+P')?.()
+    expect(t.pressed.pet).toBe(1)
+    expect(t.saved).toEqual([['pet-control', 'Ctrl+Alt+P']])
+  })
+
+  it('팔레트·용어 찾기는 비울 수 없다(거절하고 그대로 둔다)', async () => {
+    const t = make()
+    for (const id of ['palette', 'lookup'] as const) {
+      const r = await t.changer.set(id, null)
+      expect(r.ok).toBe(false)
+    }
+    expect(t.manager.current('palette')).toBe('Alt+`')
+    expect(t.manager.current('lookup')).toBe('Ctrl+Alt+W')
+    expect(t.saved).toEqual([])
   })
 })

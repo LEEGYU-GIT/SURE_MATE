@@ -10,12 +10,19 @@ export const ONBOARDING_CANDIDATES = ['Alt+Space', 'Ctrl+Alt+Space', 'Alt+`'] as
 
 export type { HotkeyCheck, HotkeySetResult }
 
+/** 바꿀 수 있는 앱 단축키(겹침 검사는 서로를 본다) */
+export const HOTKEY_IDS: readonly HotkeyId[] = ['palette', 'lookup', 'pet-control']
+/** 비워 둘 수 있는 단축키(말랑 메이트 조종은 기본값이 없다, 설계 §14-2) */
+const CLEARABLE: readonly HotkeyId[] = ['pet-control']
+/** 겹침 안내에 쓰는 단축키 이름 */
+const HOTKEY_NAMES: Record<HotkeyId, string> = { palette: '팔레트', lookup: '용어 찾기', 'pet-control': '말랑 메이트 조종' }
+
 export interface HotkeyChangerDeps {
-  manager: Pick<HotkeyManager, 'rebind' | 'suspendAll' | 'resumeAll' | 'current'>
+  manager: Pick<HotkeyManager, 'rebind' | 'unbind' | 'suspendAll' | 'resumeAll' | 'current'>
   /** 등록해 보고 바로 풀어 다른 앱이 쓰는지 본다(true = 비어 있음) */
   probe(acc: string): boolean
-  /** 설정 파일에 저장(settings.hotkeys[id]) */
-  save(id: HotkeyId, acc: string): Promise<void>
+  /** 설정 파일에 저장(settings.hotkeys[id], 조종 단축키는 settings.pet.controlHotkey). null은 단축키 없음 */
+  save(id: HotkeyId, acc: string | null): Promise<void>
   timers: Timers
   log(event: string, data: Record<string, unknown>): void
 }
@@ -25,7 +32,8 @@ export interface HotkeyChanger {
   /** 키 녹화 중에는 모든 단축키를 잠시 푼다(설계 문서 §6) */
   startRecording(): void
   stopRecording(): void
-  set(id: HotkeyId, acc: string): Promise<HotkeySetResult>
+  /** acc가 null이면 단축키를 비운다(조종 단축키만, 팔레트·용어 찾기는 거절) */
+  set(id: HotkeyId, acc: string | null): Promise<HotkeySetResult>
   candidates(): HotkeyCandidate[]
   dispose(): void
 }
@@ -35,6 +43,7 @@ const same = (a: string | undefined, b: string): boolean => a !== undefined && a
 /**
  * 설정 창·온보딩의 단축키 바꾸기(설계 문서 §6). 바꿀 때는 기존 등록 해제 → 새로 등록 → 실패하면 되돌리기(HotkeyManager.bind).
  * 녹화가 어떻게 끝나든(멈춤·바꾸기·30초·dispose) 단축키를 되살린다.
+ * 말랑 메이트 조종 단축키도 같은 길로 바꾸고, 비우면(null) 등록을 풀고 단축키 없음으로 저장한다.
  */
 export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
   let recording = false
@@ -52,8 +61,8 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
   const check = (id: HotkeyId, acc: string): HotkeyCheck => {
     const rule = checkAccelerator(acc)
     if (rule.level === 'block') return { level: 'block', reason: rule.reason }
-    const other: HotkeyId = id === 'palette' ? 'lookup' : 'palette'
-    if (same(d.manager.current(other), acc)) return { level: 'same-as-other', reason: '다른 단축키와 같은 조합이에요' }
+    const other = HOTKEY_IDS.find((o) => o !== id && same(d.manager.current(o), acc))
+    if (other) return { level: 'same-as-other', reason: `${HOTKEY_NAMES[other]} 단축키와 같은 조합이에요` }
     if (same(d.manager.current(id), acc)) return { level: 'ok' }
     if (!d.probe(acc)) return { level: 'in-use', reason: '다른 앱이 이 조합을 쓰고 있어요' }
     return rule.level === 'warn' ? { level: 'warn', reason: rule.reason } : { level: 'ok' }
@@ -74,6 +83,16 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
     stopRecording,
     async set(id, acc) {
       stopRecording()
+      if (acc === null) {
+        if (!CLEARABLE.includes(id)) {
+          d.log('hotkey.change', { id, ok: false, reason: 'not-clearable' })
+          return { ok: false, reason: `${HOTKEY_NAMES[id]} 단축키는 비워 둘 수 없어요` }
+        }
+        d.manager.unbind(id)
+        await d.save(id, null)
+        d.log('hotkey.change', { id, ok: true, acc: null })
+        return { ok: true, acc: null }
+      }
       const c = check(id, acc)
       if (c.level === 'block' || c.level === 'same-as-other' || c.level === 'in-use') {
         d.log('hotkey.change', { id, ok: false, reason: c.level })

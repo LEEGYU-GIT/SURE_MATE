@@ -1,10 +1,12 @@
 import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
+import { IPC } from '../../shared/ipc-channels'
+import type { SettingsTabId } from '../../shared/settings/settings-route'
 import { log } from '../log'
 import { loadRoute } from './overlay-window'
-import { settingsWindowOptions, type SettingsRoute } from './settings-window-options'
+import { planSettingsOpen, settingsWindowOptions, type SettingsRoute } from './settings-window-options'
 
-export type { SettingsRoute }
+export type { SettingsRoute, SettingsTabId }
 
 let win: BrowserWindow | null = null
 let route: SettingsRoute = '/settings'
@@ -23,26 +25,33 @@ export function sendToSettings(channel: string, ...args: unknown[]): void {
 
 /**
  * 설정 창(설계 문서 §5): 열 때 만들고 닫으면 없앤다(§16 메모리). 하나만 열고, 이미 열려 있으면 그 경로로 바꿔 앞으로 가져온다.
- * closed는 창이 닫힐 때 한 번 부른다(단축키 녹화를 멈추는 등).
+ * tab을 주면 그 탭을 연다(설정 창만): 새 창·경로 바꾸기는 주소에 붙이고, 열린 설정 창은 다시 읽지 않고 화면에 알린다
+ * (planSettingsOpen). closed는 창이 닫힐 때 한 번 부른다(단축키 녹화를 멈추는 등).
  */
-export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void } = {}): void {
+export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void; tab?: SettingsTabId } = {}): void {
   if (o.closed) onClosed = o.closed
-  if (win && !win.isDestroyed()) {
-    if (next !== route) {
+  const open = win && !win.isDestroyed() ? win : null
+  const plan = planSettingsOpen(open ? { route, loading: open.webContents.isLoading() } : null, next, o.tab)
+  if (open) {
+    if (plan.kind === 'switch-route') {
       route = next
       const opts = settingsWindowOptions('', next)
-      win.setResizable(true)
-      win.setMinimumSize(opts.minWidth ?? 0, opts.minHeight ?? 0)
-      win.setSize(opts.width ?? 880, opts.height ?? 640)
-      win.setResizable(opts.resizable !== false)
-      win.setTitle(opts.title ?? 'Sure-Mate')
-      win.center()
-      loadRoute(win, next)
+      open.setResizable(true)
+      open.setMinimumSize(opts.minWidth ?? 0, opts.minHeight ?? 0)
+      open.setSize(opts.width ?? 880, opts.height ?? 640)
+      open.setResizable(opts.resizable !== false)
+      open.setTitle(opts.title ?? 'Sure-Mate')
+      open.center()
+      loadRoute(open, plan.hash)
+    } else if (plan.kind === 'reload') {
+      loadRoute(open, plan.hash)
+    } else if (plan.kind === 'show' && plan.tab) {
+      open.webContents.send(IPC.settingsShowTab, plan.tab)
     }
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
-    log('settings.window', { route: next, reused: true })
+    if (open.isMinimized()) open.restore()
+    open.show()
+    open.focus()
+    log('settings.window', { route: next, reused: true, ...(o.tab ? { tab: o.tab } : {}) })
     return
   }
   route = next
@@ -50,7 +59,7 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
   // 메뉴 막대를 없앤다(Alt를 눌러 단축키를 녹화할 때 기본 메뉴가 나오지 않게)
   w.removeMenu()
   win = w
-  loadRoute(w, next)
+  loadRoute(w, plan.kind === 'create' ? plan.hash : next)
   w.once('ready-to-show', () => {
     if (!w.isDestroyed()) {
       w.show()
@@ -62,7 +71,7 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
     log('settings.window.closed', { route })
     onClosed?.()
   })
-  log('settings.window', { route: next, reused: false })
+  log('settings.window', { route: next, reused: false, ...(o.tab ? { tab: o.tab } : {}) })
 }
 
 /** 설정 창을 닫는다(온보딩을 마쳤을 때) */

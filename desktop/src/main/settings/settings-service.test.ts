@@ -20,7 +20,7 @@ function make(o: { packaged?: boolean; failChange?: boolean } = {}) {
   const svc = createSettingsService({
     current: () => settings,
     change,
-    hotkeys: () => ({ palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } }),
+    hotkeys: () => ({ palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true }, 'pet-control': { acc: null, registered: false } }),
     displays: () => [{ id: '1', label: '주 모니터', primary: true }],
     prompts: () => [{ id: 'meeting-notes', name: '회의록 정리' }],
     packaged: () => o.packaged ?? false,
@@ -68,6 +68,21 @@ it('로그에는 바꾼 필드 이름만(값 없음)', async () => {
   expect(JSON.stringify(t.logs)).not.toContain('intra.example.com')
 })
 
+it('말랑 메이트 탭 저장: 보낸 펫 필드만 바꾸고, 로그에는 필드 이름만', async () => {
+  const t = make()
+  const r = await t.svc.update({ pet: { size: 72, reduceMotion: true } })
+  expect(r.ok).toBe(true)
+  expect(t.get().pet).toEqual({ ...DEFAULT_SETTINGS.pet, size: 72, reduceMotion: true })
+  expect(t.get().bar).toEqual(DEFAULT_SETTINGS.bar)
+  expect(t.logs).toHaveLength(1)
+  expect(t.logs[0][0]).toBe('settings.update')
+  expect(t.logs[0][1]).toEqual({ fields: expect.arrayContaining(['pet.size', 'pet.reduceMotion']) })
+  expect(t.logs[0][1].fields).toHaveLength(2)
+  // 범위 밖이면 저장하지 않는다(끝값으로 바꾸지 않음)
+  expect((await t.svc.update({ pet: { sleepAfterMin: 61 } })).ok).toBe(false)
+  expect(t.get().pet.sleepAfterMin).toBe(DEFAULT_SETTINGS.pet.sleepAfterMin)
+})
+
 it('로그인 시 자동 실행은 설치본에서만 바로 적용한다', async () => {
   const dev = make()
   await dev.svc.update({ launchAtLogin: false })
@@ -106,7 +121,7 @@ it('설정 창 저장(서비스 → 설정 저장 줄 → settings.json)은 펫 
     const svc = createSettingsService({
       current: () => settings,
       change: writer.change,
-      hotkeys: () => ({ palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } }),
+      hotkeys: () => ({ palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true }, 'pet-control': { acc: null, registered: false } }),
       displays: () => [],
       prompts: () => [],
       packaged: () => false,

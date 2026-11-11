@@ -16,7 +16,7 @@ import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
-import { createPetCommands } from './pet/pet-commands'
+import { createPetCommands, createPetControlHotkey } from './pet/pet-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
 import { errorCode, errorText } from './error-text'
@@ -27,6 +27,7 @@ import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
 import { createHotkeyChanger, type HotkeyChanger } from './hotkeys/hotkey-change'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
+import { hotkeyStatuses, withHotkeySetting } from './hotkeys/hotkey-settings'
 import { registerIpc } from './ipc'
 import { log } from './log'
 import type { MaskingCommands } from './masking/masking-commands'
@@ -58,7 +59,7 @@ import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
-import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
 
 app.setName('Sure-Mate')
 
@@ -152,8 +153,6 @@ const ONBOARDING_TEMPLATE = 'meeting-notes'
 
 /** 단축키 바꾸기(설정 창·온보딩). 트레이·단축키를 만드는 startShell에서 만든다 */
 let hotkeyChanger: HotkeyChanger | null = null
-/** 조회 단축키를 등록했는지(설정 창 표시) */
-let lookupBound = false
 const NOT_READY = '단축키를 아직 준비하지 못했어요'
 /** 설정 IPC는 startShell보다 먼저 열리므로, 단축키 바꾸기가 생기기 전에는 거절한다 */
 const changerProxy: HotkeyChanger = {
@@ -169,10 +168,8 @@ const changerProxy: HotkeyChanger = {
 const settingsService = createSettingsService({
   current: () => settings,
   change: changeSettings,
-  hotkeys: () => ({
-    palette: { acc: hotkeys?.current('palette') ?? settings.hotkeys.palette, registered: paletteHotkey() !== null },
-    lookup: { acc: hotkeys?.current('lookup') ?? settings.hotkeys.lookup, registered: lookupBound }
-  }),
+  // 실제로 등록된 조합(못 잡았으면 설정 값과 등록 못 함). 조종 단축키를 비웠으면 acc null
+  hotkeys: () => hotkeyStatuses(settings, (id) => hotkeys?.current(id)),
   displays: () => {
     const primary = screen.getPrimaryDisplay().id
     return screen.getAllDisplays().map((d) => ({ id: String(d.id), label: `${d.label || '모니터'} · ${d.size.width}×${d.size.height}`, primary: d.id === primary }))
@@ -239,9 +236,12 @@ async function exportDictionaryFile(): Promise<unknown> {
   return { ok: true }
 }
 
-/** 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1) */
-function openSettings(route: SettingsRoute = '/settings'): void {
-  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording() })
+/**
+ * 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1).
+ * tab을 주면 그 탭으로 연다(펫 메뉴 "펫 설정" → 'pet'). 열려 있던 설정 창은 다시 읽지 않고 탭만 바꾼다
+ */
+function openSettings(route: SettingsRoute = '/settings', o: { tab?: SettingsTabId } = {}): void {
+  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording(), tab: o.tab })
 }
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
@@ -327,7 +327,8 @@ function startPet(): void {
       bar: bar ? { bar: bar.bar, fullscreen: () => bar.fullscreen() } : null,
       getSettings: () => settings,
       openPalette: () => showPalette({ mode: 'search' }),
-      openSettings: async () => openSettings('/settings'),
+      // 메뉴 "펫 설정": 말랑 메이트 탭으로 연다
+      openSettings: async () => openSettings('/settings', { tab: 'pet' }),
       setPetVisible,
       log
     },
@@ -441,7 +442,8 @@ async function startShell(): Promise<void> {
         return false
       }
     },
-    save: (id, acc) => changeSettings((cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, [id]: acc } })),
+    // 설정 쓰기 한 줄(changeSettings)로 저장한다. 조종 단축키는 pet.controlHotkey(null이면 단축키 없음)
+    save: (id, acc) => changeSettings((cur) => withHotkeySetting(cur, id, acc)),
     timers: realTimers,
     log
   })
@@ -503,12 +505,19 @@ async function startShell(): Promise<void> {
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
     if (!isPaletteVisible()) lookupSelection()
   })
-  lookupBound = lookup.ok
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
 
-  // 말랑 메이트 조종 단축키: 설정에 있을 때만 등록한다(없으면 등록하지 않는다, §19). manager.bind라 기록 중 일시 중지에도 걸린다
+  // 말랑 메이트 조종 단축키(기본 없음, §19): 처리기는 늘 두고 조합이 있을 때만 등록한다. 설정 창에서 정하거나 비우면
+  // hotkeyChanger가 바로 등록·해제한다(다시 시작하지 않아도). manager라 녹화 중 일시 중지에도 걸린다.
+  // 숨긴 펫이면 조종하지 않고 다시 부르는 곳을 알린다(누를 때마다 한 번)
   const petControl = settings.pet.controlHotkey
-  if (petControl && !manager.bind('pet-control', petControl, () => petRuntime?.controller.toggleControl()).ok) {
+  const onPetControl = createPetControlHotkey({
+    isVisible: () => settings.pet.visible,
+    toggleControl: () => petRuntime?.controller.toggleControl(),
+    notify,
+    log
+  })
+  if (!manager.bind('pet-control', petControl, onPetControl).ok) {
     warn(`말랑 메이트 조종 단축키 ${petControl}를 등록하지 못했어요.`)
   }
 

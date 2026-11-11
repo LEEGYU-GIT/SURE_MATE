@@ -122,3 +122,54 @@ it('모든 후보가 안 되면 시도한 목록을 돌려준다', () => {
   expect(new HotkeyManager(b).bindFirst('palette', tried, () => {})).toEqual({ ok: false, tried })
   expect(b.registered.size).toBe(0)
 })
+
+it('조합 없이(null) 묶으면 등록하지 않고 처리기만 둔다. 나중에 rebind로 조합을 붙이면 그 처리기가 불린다', () => {
+  const b = new FakeBackend()
+  const m = new HotkeyManager(b)
+  let n = 0
+  expect(m.bind('pet-control', null, () => n++)).toEqual({ ok: true })
+  expect(m.current('pet-control')).toBeUndefined()
+  expect(b.registered.size).toBe(0)
+  expect(m.rebind('pet-control', 'Ctrl+Alt+P')).toEqual({ ok: true })
+  expect(m.current('pet-control')).toBe('Ctrl+Alt+P')
+  b.fire('Ctrl+Alt+P')
+  expect(n).toBe(1)
+})
+
+it('unbind는 조합을 풀고 잊지만 처리기는 남긴다(일시 중지 뒤 되살리기에도 다시 등록하지 않는다)', () => {
+  const b = new FakeBackend()
+  const m = new HotkeyManager(b)
+  let n = 0
+  m.bind('pet-control', 'Ctrl+Alt+P', () => n++)
+  m.unbind('pet-control')
+  expect(m.current('pet-control')).toBeUndefined()
+  expect(b.registered.has('Ctrl+Alt+P')).toBe(false)
+  m.suspendAll()
+  expect(m.resumeAll()).toEqual({ failed: [] })
+  expect(b.registered.size).toBe(0)
+  // 일시 중지한 동안 떼도 되살리지 않는다
+  m.rebind('pet-control', 'Ctrl+Alt+O')
+  m.suspendAll()
+  m.unbind('pet-control')
+  m.resumeAll()
+  expect(b.registered.size).toBe(0)
+  expect(m.rebind('pet-control', 'Ctrl+Alt+P').ok).toBe(true)
+  b.fire('Ctrl+Alt+P')
+  expect(n).toBe(1)
+})
+
+it('처음 묶을 때 다른 앱이 쓰는 조합이어도 처리기는 남아 나중에 다른 조합으로 rebind할 수 있다', () => {
+  const b = new FakeBackend()
+  b.taken.add('Ctrl+Alt+P')
+  const m = new HotkeyManager(b)
+  let n = 0
+  expect(m.bind('pet-control', 'Ctrl+Alt+P', () => n++)).toEqual({ ok: false, reason: 'in-use' })
+  expect(m.current('pet-control')).toBeUndefined()
+  expect(m.rebind('pet-control', 'Ctrl+Alt+O').ok).toBe(true)
+  b.fire('Ctrl+Alt+O')
+  expect(n).toBe(1)
+})
+
+it('처리기를 정한 적 없는 id의 rebind는 거절한다', () => {
+  expect(new HotkeyManager(new FakeBackend()).rebind('lookup', 'Ctrl+Alt+W').ok).toBe(false)
+})

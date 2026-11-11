@@ -1,5 +1,7 @@
-import { expect, it } from 'vitest'
-import { createPetCommands, petCommandItems } from './pet-commands'
+import { describe, expect, it, vi } from 'vitest'
+import { PET_HIDDEN_NOTICE } from '../../shared/pet/pet-copy'
+import { HotkeyManager, type ShortcutBackend } from '../hotkeys/hotkey-manager'
+import { createPetCommands, createPetControlHotkey, petCommandItems } from './pet-commands'
 
 function fake(over: { visible?: boolean; keysHeld?: boolean; setFails?: boolean } = {}): { run: (id: string) => Promise<boolean>; calls: string[]; notes: string[] } {
   const calls: string[] = []
@@ -81,4 +83,82 @@ it('다른 id는 false, 저장이 실패해도 true로 알린다', async () => {
   const f = fake({ setFails: true })
   expect(await f.run('cmd.pet-visible')).toBe(true)
   expect(f.notes).toHaveLength(1)
+})
+
+describe('조종 단축키(설계 §14-2): 숨긴 펫은 조종하지 않고 다시 부르는 곳을 알린다', () => {
+  function hotkey(visible: boolean) {
+    const calls: string[] = []
+    const notes: string[] = []
+    const logs: [string, Record<string, unknown>][] = []
+    const state = { visible }
+    const press = createPetControlHotkey({
+      isVisible: () => state.visible,
+      toggleControl: () => calls.push('toggle'),
+      notify: (m) => notes.push(m),
+      log: (e, d) => void logs.push([e, d])
+    })
+    return { press, calls, notes, logs, state }
+  }
+
+  it('알림 문구', () => {
+    expect(PET_HIDDEN_NOTICE).toBe('말랑 메이트가 숨어 있어요. 트레이나 바의 펫 단추로 불러 주세요.')
+  })
+
+  it('보이면 조종을 켜고 끈다(알림 없음)', () => {
+    const h = hotkey(true)
+    h.press()
+    h.press()
+    expect(h.calls).toEqual(['toggle', 'toggle'])
+    expect(h.notes).toEqual([])
+  })
+
+  it('숨겼으면 조종을 시작하지 않고 누를 때마다 한 번 알린다(로그는 숨김 여부만)', () => {
+    const h = hotkey(false)
+    h.press()
+    expect(h.calls).toEqual([])
+    expect(h.notes).toEqual([PET_HIDDEN_NOTICE])
+    h.press()
+    expect(h.notes).toEqual([PET_HIDDEN_NOTICE, PET_HIDDEN_NOTICE])
+    expect(h.logs).toEqual([
+      ['pet.controlHotkey', { hidden: true }],
+      ['pet.controlHotkey', { hidden: true }]
+    ])
+    // 다시 보이면 조종한다
+    h.state.visible = true
+    h.press()
+    expect(h.calls).toEqual(['toggle'])
+  })
+
+  it('누르고 있는 동안의 자동 반복에는 한 번만 알린다(단축키 관리자가 반복을 거른다)', () => {
+    vi.useFakeTimers()
+    try {
+      const registered = new Map<string, () => void>()
+      const backend: ShortcutBackend = {
+        register: (acc, cb) => {
+          registered.set(acc, cb)
+          return true
+        },
+        unregister: (acc) => void registered.delete(acc)
+      }
+      let held = true
+      const manager = new HotkeyManager(backend, () => Date.now(), () => held)
+      const h = hotkey(false)
+      manager.bind('pet-control', 'Ctrl+Alt+P', h.press)
+      const fire = (): void => registered.get('Ctrl+Alt+P')?.()
+      fire()
+      vi.advanceTimersByTime(500)
+      for (let i = 0; i < 20; i++) {
+        fire()
+        vi.advanceTimersByTime(33)
+      }
+      expect(h.notes).toHaveLength(1)
+      held = false
+      vi.advanceTimersByTime(300)
+      held = true
+      fire()
+      expect(h.notes).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

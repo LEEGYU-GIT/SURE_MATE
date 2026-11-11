@@ -3,6 +3,7 @@ import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
 import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
 import type { PetView } from '../shared/pet/pet-view'
+import type { SettingsTabId } from '../shared/settings/settings-route'
 import type { SettingsSnapshot } from '../shared/settings/settings-snapshot'
 
 const settings: SettingsApi = {
@@ -12,6 +13,12 @@ const settings: SettingsApi = {
     const listener = (_e: IpcRendererEvent, s: SettingsSnapshot): void => cb(s)
     ipcRenderer.on(IPC.settingsChanged, listener)
     return () => ipcRenderer.removeListener(IPC.settingsChanged, listener)
+  },
+  // 받은 탭 id는 화면(SettingsApp)이 다시 확인한다
+  onShowTab: (cb) => {
+    const listener = (_e: IpcRendererEvent, tab: SettingsTabId): void => cb(tab)
+    ipcRenderer.on(IPC.settingsShowTab, listener)
+    return () => ipcRenderer.removeListener(IPC.settingsShowTab, listener)
   },
   hotkeyCheck: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeyCheck, id, acc),
   hotkeyRecord: (on) => ipcRenderer.send(IPC.settingsHotkeyRecord, on),

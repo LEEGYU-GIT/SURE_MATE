@@ -1,5 +1,5 @@
 import type { PaletteItem } from '../../shared/types'
-import { PET_CONTROL_KEYS, PET_RECALL_HINT } from '../../shared/pet/pet-copy'
+import { PET_CONTROL_KEYS, PET_HIDDEN_NOTICE, PET_RECALL_HINT } from '../../shared/pet/pet-copy'
 import { errorText } from '../error-text'
 
 /** 바를 끈 뒤에도 말랑 메이트를 다시 부르고 조종할 수 있게 하는 팔레트 명령(§16 키보드만으로 사용). 조종은 펫이 보일 때만 */
@@ -65,5 +65,29 @@ export function createPetCommands(d: PetCommandDeps): { run(id: string): Promise
       }
       return true
     }
+  }
+}
+
+export interface PetControlHotkeyDeps {
+  /** 설정 pet.visible(사용자가 숨겼는지) */
+  isVisible(): boolean
+  /** 조종 시작·끝(전체 화면 앱으로 숨은 동안은 컨트롤러가 무시한다) */
+  toggleControl(): void
+  notify(message: string): void
+  log(event: string, data: Record<string, unknown>): void
+}
+
+/**
+ * 조종 단축키 처리기(설계 §14-2). 사용자가 숨긴 펫은 조종을 시작하지 않고 다시 부르는 곳을 알린다.
+ * 누를 때마다 한 번 불린다: 누르고 있는 동안의 자동 반복은 HotkeyManager가 거른다.
+ */
+export function createPetControlHotkey(d: PetControlHotkeyDeps): () => void {
+  return () => {
+    if (d.isVisible()) {
+      d.toggleControl()
+      return
+    }
+    d.notify(PET_HIDDEN_NOTICE)
+    d.log('pet.controlHotkey', { hidden: true })
   }
 }

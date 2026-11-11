@@ -1,11 +1,13 @@
-import { useRef, useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { isImeComposing } from '../../../shared/ime'
+import { isSettingsTabId } from '../../../shared/settings/settings-route'
 import { AiTab } from './AiTab'
 import { BarTab } from './BarTab'
 import { GeneralTab } from './GeneralTab'
 import { GlossaryTab } from './GlossaryTab'
 import { HotkeysTab } from './HotkeysTab'
 import { MaskingTab } from './MaskingTab'
+import { PetTab } from './PetTab'
 import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
 import { SettingsContext, useSettingsState } from './use-settings'
@@ -18,7 +20,8 @@ const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   prompts: PromptsTab,
   masking: MaskingTab,
   glossary: GlossaryTab,
-  bar: BarTab
+  bar: BarTab,
+  pet: PetTab
 }
 
 /**
@@ -32,6 +35,17 @@ export function SettingsApp({ initialTab = 'general' }: { initialTab?: SettingsT
   const index = SETTINGS_TABS.findIndex((t) => t.id === tab)
   const View = VIEWS[tab]
   const current = SETTINGS_TABS[index]
+
+  // 열려 있는 설정 창에서 main이 탭을 고르라고 알린다(펫 메뉴 "펫 설정" → 말랑 메이트). 창을 다시 읽지 않아 쓰던 값이 남는다
+  useEffect(
+    () =>
+      window.sureMate.settings.onShowTab((next) => {
+        if (!isSettingsTabId(next)) return
+        setTab(next)
+        tabRefs.current[SETTINGS_TABS.findIndex((t) => t.id === next)]?.focus()
+      }),
+    []
+  )
 
   return (
     <div className="flex h-full flex-col bg-surface-solid font-ui text-fg select-none">
