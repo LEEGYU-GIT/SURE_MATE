@@ -6,7 +6,7 @@ export interface ShortcutBackend {
   unregister(acc: string): void
 }
 
-export type HotkeyId = 'palette' | 'lookup'
+export type HotkeyId = 'palette' | 'lookup' | 'pet-control'
 
 export type BindResult = { ok: true } | { ok: false; reason: 'in-use' | 'blocked'; detail?: string }
 
@@ -16,14 +16,17 @@ const REPEAT_WINDOW_MS = 250
 const HOLD_POLL_MS = 30
 const MAX_HOLD_MS = 3000
 
-type Entry = { acc: string; handler: () => void; wrapped: () => void; active: boolean }
+type Entry = { acc: string; wrapped: () => void; active: boolean }
 
 /**
  * 전역 단축키 등록을 관리한다.
  * Electron globalShortcut은 다른 앱이 잡은 조합이면 false만 돌려주므로, 결과를 확인하고 실패하면 이전 조합으로 되돌린다.
  */
 export class HotkeyManager {
+  /** 지금 조합이 있는 단축키 */
   private readonly entries = new Map<HotkeyId, Entry>()
+  /** id마다 하나인 처리기. 조합을 떼거나(unbind) 등록에 실패해도 남아 rebind로 다시 붙인다 */
+  private readonly handlers = new Map<HotkeyId, () => void>()
 
   constructor(
     private readonly backend: ShortcutBackend,
@@ -32,7 +35,13 @@ export class HotkeyManager {
     private readonly isHeld?: (acc: string) => boolean
   ) {}
 
-  bind(id: HotkeyId, acc: string, handler: () => void): BindResult {
+  /** acc가 null이면 등록하지 않고 처리기만 둔다(기본 조합이 없는 말랑 메이트 조종 단축키) */
+  bind(id: HotkeyId, acc: string | null, handler: () => void): BindResult {
+    this.handlers.set(id, handler)
+    if (acc === null) {
+      this.unbind(id)
+      return { ok: true }
+    }
     const check = checkAccelerator(acc)
     if (check.level === 'block') return { ok: false, reason: 'blocked', detail: check.reason }
 
@@ -50,8 +59,15 @@ export class HotkeyManager {
       if (previous?.active) this.backend.register(previous.acc, previous.wrapped)
       return { ok: false, reason: 'in-use' }
     }
-    this.entries.set(id, { acc, handler, wrapped, active: true })
+    this.entries.set(id, { acc, wrapped, active: true })
     return { ok: true }
+  }
+
+  /** 조합을 떼고 잊는다. 처리기는 남아 rebind로 다시 붙일 수 있다(조종 단축키 비우기) */
+  unbind(id: HotkeyId): void {
+    const entry = this.entries.get(id)
+    if (entry?.active) this.backend.unregister(entry.acc)
+    this.entries.delete(id)
   }
 
   /** 후보를 앞에서부터 시도해 처음 등록되는 조합을 쓴다(다른 앱이 기본 조합을 잡은 경우 대비). */
@@ -63,9 +79,9 @@ export class HotkeyManager {
   }
 
   rebind(id: HotkeyId, acc: string): BindResult {
-    const entry = this.entries.get(id)
-    if (!entry) return { ok: false, reason: 'blocked', detail: '먼저 bind 해야 함' }
-    return this.bind(id, acc, entry.handler)
+    const handler = this.handlers.get(id)
+    if (!handler) return { ok: false, reason: 'blocked', detail: '먼저 bind 해야 함' }
+    return this.bind(id, acc, handler)
   }
 
   suspendAll(): void {

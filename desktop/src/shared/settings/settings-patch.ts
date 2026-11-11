@@ -1,6 +1,7 @@
 import { allAiTargets, BUILTIN_AI_TARGETS, isOpenableUrl, type AiTarget } from '../ai-targets'
 import { BAR_LIMITS, type BarSettings } from '../bar/bar-settings'
 import { ALL_CATEGORIES, type MaskCategory } from '../masking/types'
+import { PET_ACTIVITIES, PET_LIMITS, PET_SIZES, type PetActivity, type PetSettings, type PetSize } from '../pet/pet-settings'
 import type { MaskingMode } from '../types'
 import { isInternalDomain, isRemoveLabel, PALETTE_DISPLAYS, SETTING_MASKING_MODES, SETTINGS_LIMITS, type PaletteDisplay, type Settings } from './settings'
 
@@ -8,7 +9,7 @@ export { SETTINGS_LIMITS }
 
 /**
  * 설정 창이 보내는 바뀐 값(설계 문서 §14). 보낸 필드만 바꾸고 나머지는 지금 값을 그대로 둔다.
- * 단축키는 이 길로 바꾸지 않는다(등록해 보고 실패하면 되돌려야 하므로 hotkey-change.ts).
+ * 단축키는 이 길로 바꾸지 않는다(등록해 보고 실패하면 되돌려야 하므로 hotkey-change.ts). 말랑 메이트 조종 단축키도 같다.
  * removeLabels의 null은 그 분류를 기본 표기로 되돌린다.
  */
 export interface SettingsPatch {
@@ -24,17 +25,22 @@ export interface SettingsPatch {
   }
   ai?: { defaultTarget?: string; custom?: AiTarget[] }
   bar?: Partial<Omit<BarSettings, 'positions'>>
+  pet?: Partial<Omit<PetSettings, 'controlHotkey'>>
 }
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const TOP_KEYS = ['palette', 'launchAtLogin', 'onboardingDone', 'masking', 'ai', 'bar'] as const
+const TOP_KEYS = ['palette', 'launchAtLogin', 'onboardingDone', 'masking', 'ai', 'bar', 'pet'] as const
 const MASKING_KEYS = ['mode', 'categories', 'internalDomains', 'ttlHours', 'removeLabels'] as const
 const AI_KEYS = ['defaultTarget', 'custom'] as const
 const BAR_KEYS = ['shape', 'edge', 'monitor', 'pinnedPrompts', 'autoHide', 'opacity', 'wikiCardMs', 'wikiCardWidth'] as const
 const BAR_SHAPES = ['edge', 'capsule', 'off'] as const
 const BAR_EDGES = ['left', 'right'] as const
+/** 켬·끔 펫 필드와 오류 글에 쓰는 이름(설정 창의 행 이름) */
+const PET_SWITCHES = { visible: '보이기', bubbles: '말풍선', reactions: '반응', reduceMotion: '움직임 줄이기' } as const
+/** controlHotkey는 알려진 키지만 이 길로 받지 않는다(아래에서 까닭을 따로 알린다) */
+const PET_KEYS = [...(Object.keys(PET_SWITCHES) as (keyof typeof PET_SWITCHES)[]), 'size', 'activity', 'sleepAfterMin', 'controlHotkey'] as const
 
 const idText = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max
 const intIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
@@ -77,6 +83,10 @@ export function validateSettingsPatch(raw: unknown, cur: Settings): { ok: true; 
   if (raw.bar !== undefined) {
     if (!isObj(raw.bar)) errors.push('바 설정의 형식이 맞지 않아요')
     else validateBar(raw.bar, patch, errors, unknownKeys)
+  }
+  if (raw.pet !== undefined) {
+    if (!isObj(raw.pet)) errors.push('말랑 메이트 설정의 형식이 맞지 않아요')
+    else validatePet(raw.pet, patch, errors, unknownKeys)
   }
   return errors.length ? { ok: false, errors } : { ok: true, patch }
 }
@@ -213,6 +223,36 @@ function validateBar(b: Obj, patch: SettingsPatch, errors: string[], unknownKeys
   patch.bar = out
 }
 
+/**
+ * 말랑 메이트(설계 문서 §14): 파일을 읽을 때의 sanitizePetSettings와 같은 값만 받는다. 다만 파일과 달리
+ * 범위 밖 숫자를 끝값으로 바꾸거나 반올림하지 않고 거절한다(화면이 보낸 값이 몰래 바뀌지 않게).
+ */
+function validatePet(p: Obj, patch: SettingsPatch, errors: string[], unknownKeys: UnknownKeys): void {
+  unknownKeys(p, PET_KEYS, 'pet.')
+  const out: NonNullable<SettingsPatch['pet']> = {}
+  if (p.controlHotkey !== undefined) errors.push('조종 단축키는 단축키 녹화로만 바꿀 수 있어요')
+  for (const [k, name] of Object.entries(PET_SWITCHES) as [keyof typeof PET_SWITCHES, string][]) {
+    const v = p[k]
+    if (v === undefined) continue
+    if (typeof v !== 'boolean') errors.push(`말랑 메이트 ${name} 값은 켬·끔이어야 해요`)
+    else out[k] = v
+  }
+  if (p.size !== undefined) {
+    if (!PET_SIZES.includes(p.size as PetSize)) errors.push(`말랑 메이트 크기는 ${PET_SIZES.join('·')} 가운데 하나예요`)
+    else out.size = p.size as PetSize
+  }
+  if (p.activity !== undefined) {
+    if (!PET_ACTIVITIES.includes(p.activity as PetActivity)) errors.push('말랑 메이트 활발함 값이 맞지 않아요')
+    else out.activity = p.activity as PetActivity
+  }
+  if (p.sleepAfterMin !== undefined) {
+    const { min, max } = PET_LIMITS.sleepAfterMin
+    if (!intIn(p.sleepAfterMin, min, max)) errors.push(`졸기까지 시간은 ${min}~${max}분(정수)이에요`)
+    else out.sleepAfterMin = p.sleepAfterMin
+  }
+  patch.pet = out
+}
+
 /** 검사한 패치를 지금 설정에 덮는다(보낸 필드만, 새 객체) */
 export function applySettingsPatch(cur: Settings, p: SettingsPatch): Settings {
   const next = structuredClone(cur)
@@ -234,5 +274,6 @@ export function applySettingsPatch(cur: Settings, p: SettingsPatch): Settings {
   }
   if (p.ai) next.ai = { ...next.ai, ...p.ai }
   if (p.bar) next.bar = { ...next.bar, ...p.bar }
+  if (p.pet) next.pet = { ...next.pet, ...p.pet }
   return next
 }

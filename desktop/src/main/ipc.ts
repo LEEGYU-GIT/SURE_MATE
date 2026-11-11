@@ -6,8 +6,10 @@ import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-conten
 import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
 import type { SearchContextPayload } from '../shared/natural/natural-ipc'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
+import { parsePetBool, parsePetKey, parsePetMenuAction, parsePetRect } from '../shared/pet/pet-ipc'
+import type { PetKey, PetMenuAction, PetView } from '../shared/pet/pet-view'
 import { parsePromptRequest } from '../shared/prompt-request'
-import type { PaletteItem } from '../shared/types'
+import type { PaletteItem, Rect } from '../shared/types'
 import type { WorkspaceEdit } from '../shared/workspace/edit'
 import {
   parseWorkspaceEdit,
@@ -38,6 +40,20 @@ export interface OverlayIpc {
   flyoutAction(a: FlyoutAction): Promise<boolean>
 }
 
+/** 펫 창 IPC가 부르는 런타임(main/pet/pet-runtime.ts). 값은 모두 검사를 마친 것이다 */
+export interface PetIpc {
+  /** 보낸 창 확인용 펫 창 webContents id */
+  petContentsId: number
+  /** 지금 펫 화면 상태(숨긴 동안 null) */
+  petView(): PetView | null
+  petPress(down: boolean): void
+  petContextMenu(): void
+  petMenu(a: PetMenuAction): void
+  petKey(k: PetKey, down: boolean): void
+  petBubbleClick(): void
+  petBubbleRect(r: Rect | null): void
+}
+
 /** 워크스페이스 IPC가 부르는 기능(설계 §11). 값은 모두 검사를 마친 것이다 */
 export interface WorkspaceIpc {
   get(id: string): Promise<WorkspaceView | null>
@@ -61,6 +77,8 @@ export interface IpcDeps {
   saveImeLog: (label: string, json: string) => Promise<string>
   /** 바·펼침 창 런타임. 바를 시작하지 못했거나 앱을 끝내는 중이면 null */
   overlay: () => OverlayIpc | null
+  /** 말랑 메이트 런타임(바 다음에 만든다). 아직 없거나 시작하지 못했거나 앱을 끝내는 중이면 null */
+  pet: () => PetIpc | null
   /** 팔레트 창의 webContents id(팔레트 채널은 이 창이 보낸 것만 받는다). 창이 없으면 null */
   paletteContentsId: () => number | null
   /** 한글 입력 기록기 창의 webContents id(기록 저장은 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
@@ -147,6 +165,7 @@ export function registerIpc(d: IpcDeps): void {
     sentBy(e, d.imeLoggerContentsId()) ? d.saveImeLog(String(label), String(json)) : ''
   )
   registerOverlayIpc(d.overlay)
+  registerPetIpc(d.pet)
   registerWorkspaceIpc(d)
 }
 
@@ -259,5 +278,46 @@ function registerOverlayIpc(overlay: () => OverlayIpc | null): void {
   handle<boolean>(IPC.flyoutAction, 'flyout', false, (o, raw) => {
     const a = parseFlyoutAction(raw)
     return a ? o.flyoutAction(a) : false
+  })
+}
+
+/**
+ * 말랑 메이트 창 IPC. 펫 창의 webContents가 보낸 것만 받고(다른 창이 보낸 메시지는 버린다), 값은 검사를 통과한 것만 넘긴다.
+ * 펫 런타임은 바 다음에 만들어지므로 getter로 받는다(그 전에는 null). 처리 중 오류는 기록만 하고 던지지 않는다.
+ */
+function registerPetIpc(pet: () => PetIpc | null): void {
+  const from = (e: Sender): PetIpc | null => {
+    const p = pet()
+    return p && e.sender.id === p.petContentsId ? p : null
+  }
+  const on = (channel: string, fn: (p: PetIpc, ...args: unknown[]) => unknown): void => {
+    ipcMain.on(channel, (e, ...args: unknown[]) => {
+      const p = from(e)
+      if (p) void attempt(channel, undefined, () => fn(p, ...args))
+    })
+  }
+
+  ipcMain.handle(IPC.petGetView, (e) => {
+    const p = from(e)
+    return p ? attempt<PetView | null>(IPC.petGetView, null, () => p.petView()) : null
+  })
+  on(IPC.petPress, (p, raw) => {
+    const down = parsePetBool(raw)
+    if (down !== null) p.petPress(down)
+  })
+  on(IPC.petContextMenu, (p) => p.petContextMenu())
+  on(IPC.petMenu, (p, raw) => {
+    const a = parsePetMenuAction(raw)
+    if (a) p.petMenu(a)
+  })
+  on(IPC.petKey, (p, k, down) => {
+    const key = parsePetKey(k, down)
+    if (key) p.petKey(key.key, key.down)
+  })
+  on(IPC.petBubbleClick, (p) => p.petBubbleClick())
+  // null은 말풍선이 사라짐(넘긴다), undefined는 틀린 값(버린다)
+  on(IPC.petBubbleRect, (p, raw) => {
+    const r = parsePetRect(raw)
+    if (r !== undefined) p.petBubbleRect(r)
   })
 }

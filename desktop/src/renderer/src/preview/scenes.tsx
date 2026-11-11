@@ -970,6 +970,30 @@ export const SCENES: Scene[] = [
   settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts'),
   settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
   settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
+  settingsScene('settings-pet', '설정: 말랑 메이트(기본값, 조종 단축키 없음)', 'pet'),
+  settingsScene('settings-pet-set', '설정: 말랑 메이트(숨김·크게·차분·졸기 15분·움직임 줄이기, 조종 단축키 Ctrl+Alt+P)', 'pet', petSet),
+  settingsScene('settings-pet-set-end', '설정: 말랑 메이트 아래쪽(말풍선 끔, 조종 단축키 Ctrl+Alt+P 쓰는 중)', 'pet', petSet, { scrollEnd: true }),
+  settingsScene(
+    'settings-pet-taken',
+    '설정: 말랑 메이트 아래쪽(조종 단축키를 다른 앱이 써서 등록 못 함)',
+    'pet',
+    (s) => {
+      s.settings.pet = { ...s.settings.pet, size: 40, controlHotkey: 'Ctrl+Alt+M' }
+      s.hotkeys['pet-control'] = { acc: 'Ctrl+Alt+M', registered: false }
+    },
+    { scrollEnd: true }
+  ),
+  settingsScene('settings-pet-recording', '설정: 말랑 메이트 아래쪽(조종 단축키 정하기를 눌러 녹화 중)', 'pet', undefined, { scrollEnd: true, click: '조종 단축키 정하기' }),
+  settingsScene(
+    'settings-pet-narrow',
+    '설정: 말랑 메이트 아래쪽, 가장 좁은 창 720×520(조종 단축키 등록 못 함)',
+    'pet',
+    (s) => {
+      s.settings.pet = { ...s.settings.pet, controlHotkey: 'Ctrl+Alt+M' }
+      s.hotkeys['pet-control'] = { acc: 'Ctrl+Alt+M', registered: false }
+    },
+    { scrollEnd: true, width: 720, height: 520 }
+  ),
   onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
   onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
   onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
@@ -1003,7 +1027,7 @@ function settingsSnapshot(): SettingsSnapshot {
   return {
     settings,
     aiTargets: allAiTargets(settings.ai.custom),
-    hotkeys: { palette: { acc: 'Ctrl+Alt+Space', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } },
+    hotkeys: { palette: { acc: 'Ctrl+Alt+Space', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true }, 'pet-control': { acc: null, registered: false } },
     displays: [
       { id: '1', label: '내장 모니터 · 1536×864', primary: true },
       { id: '2', label: '외부 모니터 · 2560×1440', primary: false }
@@ -1013,13 +1037,48 @@ function settingsSnapshot(): SettingsSnapshot {
   }
 }
 
-/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
-function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
+/** 말랑 메이트 탭 미리 보기: 기본값을 모두 바꾼 상태(숨김, 크게, 차분, 졸기 15분, 말풍선 끔, 움직임 줄이기, 조종 단축키 있음) */
+function petSet(s: SettingsSnapshot): void {
+  s.settings.pet = { ...s.settings.pet, visible: false, size: 72, activity: 'calm', sleepAfterMin: 15, bubbles: false, reduceMotion: true, controlHotkey: 'Ctrl+Alt+P' }
+  s.hotkeys['pet-control'] = { acc: 'Ctrl+Alt+P', registered: true }
+}
+
+/**
+ * 미리 보기 준비: 설정을 읽어 그린 뒤 이름이 click으로 시작하는 단추를 누르고(녹화 칸 보기), 내용 칸을 끝까지 내린다
+ * (880×640 창에서 아래쪽 구역 보기). 캡처는 가상 시간 3초 시점이라 매번 같다
+ */
+function ScenePrep({ scrollEnd, click }: { scrollEnd?: boolean; click?: string }): null {
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = []
+    timers.push(
+      setTimeout(() => {
+        if (click) document.querySelector<HTMLButtonElement>(`button[aria-label^="${click}"]`)?.click()
+        if (scrollEnd) timers.push(setTimeout(() => document.getElementById('settings-panel')?.scrollTo({ top: 100000 }), 100))
+      }, 300)
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [scrollEnd, click])
+  return null
+}
+
+/**
+ * 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리). tweak으로 미리 보기 상태를 바꾸고,
+ * prep의 width·height로 창 크기를 바꾼다(최소 720×520 확인: SCENE_W=720 SCENE_H=520으로 찍는다)
+ */
+function settingsScene(
+  id: string,
+  title: string,
+  tab: SettingsTabId,
+  tweak?: (s: SettingsSnapshot) => void,
+  prep?: { scrollEnd?: boolean; click?: string; width?: number; height?: number }
+): Scene {
+  const snapshot = settingsSnapshot()
+  tweak?.(snapshot)
   return {
     id,
     title,
     fixtures: {
-      settings: settingsSnapshot(),
+      settings: snapshot,
       dictionary: [
         { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
         { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
@@ -1028,8 +1087,9 @@ function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
       glossary: PACK.slice(0, 12)
     },
     render: () => (
-      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ width: prep?.width ?? 880, height: prep?.height ?? 640, overflow: 'hidden', position: 'relative' }}>
         <SettingsApp initialTab={tab} />
+        {prep ? <ScenePrep scrollEnd={prep.scrollEnd} click={prep.click} /> : null}
       </div>
     )
   }

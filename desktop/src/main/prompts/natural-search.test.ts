@@ -26,9 +26,9 @@ const testTerm = (id: string, term: string): GlossaryEntry => ({
   version: 1
 })
 const userTerms = [testTerm('u-exact', '정확'), testTerm('u-accuracy', '정확도'), testTerm('u-mean', '평균')]
-// TODO(10b): 워크스페이스 항목과 펫 명령이 들어오면 buildPaletteItems에 petVisible: true, workspaces(workspacePaletteItems로 만든
-// 'QA 모드'·'보고서 모드'·'회의 모드')를 넘긴다
-const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge' })
+// 펫 명령은 M6을 합치며 들어왔다(petVisible: true).
+// TODO(10b): 워크스페이스 항목이 들어오면 workspaces(workspacePaletteItems로 만든 'QA 모드'·'보고서 모드'·'회의 모드')도 넘긴다
+const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge', petVisible: true })
 const index = buildPaletteIndex(items)
 const pack = parseIntentPack(builtinIntents).pack!
 const NOW = Date.parse('2026-11-11T09:00:00.000Z')

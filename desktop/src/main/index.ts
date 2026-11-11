@@ -18,6 +18,7 @@ import type { MaskingMode } from '../shared/types'
 import { monitorFingerprint } from '../shared/workspace/monitors'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
+import { createPetCommands, createPetControlHotkey } from './pet/pet-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
 import { errorCode, errorText } from './error-text'
@@ -28,6 +29,7 @@ import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
 import { createHotkeyChanger, type HotkeyChanger } from './hotkeys/hotkey-change'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
+import { hotkeyStatuses, withHotkeySetting } from './hotkeys/hotkey-settings'
 import { registerIpc } from './ipc'
 import { log } from './log'
 import type { MaskingCommands } from './masking/masking-commands'
@@ -45,6 +47,8 @@ import { createNaturalCommands, createPickHandler } from './natural/natural-comm
 import { createPhraseStore } from './natural/phrase-store'
 import { createUsageStore } from './natural/usage-store'
 import { notify } from './notify'
+import { electronPetEnv } from './pet/pet-env'
+import { createPetRuntime, type PetRuntime } from './pet/pet-runtime'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
 import type { PromptSession } from './prompts/prompt-session'
 import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
@@ -62,7 +66,7 @@ import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
-import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
 import { createWorkspaceCommands, workspaceMenuContent, workspacePaletteItems } from './workspace/workspace-items'
 import { createWorkspaceRuntime } from './workspace/workspace-runtime'
 
@@ -87,6 +91,15 @@ const barCommands = createBarCommands({
   notify,
   log
 })
+const petCommands = createPetCommands({
+  isVisible: () => settings.pet.visible,
+  setVisible: setPetVisible,
+  startControl: () => petRuntime?.controller.startControl(),
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  notify,
+  log
+})
 const settingsCommands = createSettingsCommands({
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
@@ -105,6 +118,8 @@ let shell: { tray: Tray; refresh: () => void } | null = null
 let hotkeys: HotkeyManager | null = null
 /** Sure-Mate 바와 펼침 창. 시작하지 못했거나 앱을 끝낸 뒤에는 null(팔레트·트레이는 그대로 동작) */
 let barRuntime: BarRuntime | null = null
+/** 말랑 메이트(바 다음에 만든다). 시작하지 못했거나 앱을 끝낸 뒤에는 null(바·팔레트·트레이는 그대로 동작) */
+let petRuntime: PetRuntime | null = null
 /** 팔레트 위키와 위키 카드의 설명 복사(앱이 준비되면 만든다) */
 let glossaryRuntime: GlossaryRuntime | null = null
 /** 선택 텍스트 위키 카드(조회 단축키, 카드의 [클립보드 글로 찾기]) */
@@ -119,11 +134,12 @@ function togglePalette(): void {
   else showPalette({ mode: 'search' })
 }
 
-/** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그린다 */
+/** 바뀐 설정을 적용한다: 트레이 툴팁·메뉴와 바를 다시 그리고 말랑 메이트가 다시 판단한다(보이기·크기·가명 처리 선글라스 등) */
 function applySettings(next: Settings): void {
   settings = next
   shell?.refresh()
   barRuntime?.refresh()
+  petRuntime?.refresh()
   settingsService.changed()
 }
 
@@ -151,8 +167,6 @@ const ONBOARDING_TEMPLATE = 'meeting-notes'
 
 /** 단축키 바꾸기(설정 창·온보딩). 트레이·단축키를 만드는 startShell에서 만든다 */
 let hotkeyChanger: HotkeyChanger | null = null
-/** 조회 단축키를 등록했는지(설정 창 표시) */
-let lookupBound = false
 const NOT_READY = '단축키를 아직 준비하지 못했어요'
 /** 설정 IPC는 startShell보다 먼저 열리므로, 단축키 바꾸기가 생기기 전에는 거절한다 */
 const changerProxy: HotkeyChanger = {
@@ -168,10 +182,8 @@ const changerProxy: HotkeyChanger = {
 const settingsService = createSettingsService({
   current: () => settings,
   change: changeSettings,
-  hotkeys: () => ({
-    palette: { acc: hotkeys?.current('palette') ?? settings.hotkeys.palette, registered: paletteHotkey() !== null },
-    lookup: { acc: hotkeys?.current('lookup') ?? settings.hotkeys.lookup, registered: lookupBound }
-  }),
+  // 실제로 등록된 조합(못 잡았으면 설정 값과 등록 못 함). 조종 단축키를 비웠으면 acc null
+  hotkeys: () => hotkeyStatuses(settings, (id) => hotkeys?.current(id)),
   displays: () => {
     const primary = screen.getPrimaryDisplay().id
     return screen.getAllDisplays().map((d) => ({ id: String(d.id), label: `${d.label || '모니터'} · ${d.size.width}×${d.size.height}`, primary: d.id === primary }))
@@ -238,9 +250,12 @@ async function exportDictionaryFile(): Promise<unknown> {
   return { ok: true }
 }
 
-/** 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1) */
-function openSettings(route: SettingsRoute = '/settings'): void {
-  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording() })
+/**
+ * 설정 창을 연다(설계 문서 §5). 닫히면 단축키 녹화를 멈춘다(Review Focus 1).
+ * tab을 주면 그 탭으로 연다(펫 메뉴 "펫 설정" → 'pet'). 열려 있던 설정 창은 다시 읽지 않고 탭만 바꾼다
+ */
+function openSettings(route: SettingsRoute = '/settings', o: { tab?: SettingsTabId } = {}): void {
+  openSettingsWindow(route, { closed: () => hotkeyChanger?.stopRecording(), tab: o.tab })
 }
 
 /** 가명 처리 기본값(팔레트 명령·바 메뉴). 파일을 다시 읽어 모드만 바꾼다 */
@@ -257,9 +272,21 @@ async function setBarShape(shape: BarShape): Promise<void> {
   shell?.refresh()
 }
 
-/** 말랑 메이트 보이기·숨기기: 차례가 왔을 때 바에 보이는 상태를 뒤집는다(M6 펫 창이 이 값을 읽는다) */
+/**
+ * 말랑 메이트 보이기·숨기기(바 펫 단추): 차례가 왔을 때 보이는 상태를 뒤집는다(빠르게 두 번 누르면 두 번 바뀐다).
+ * setPetVisible과 같은 저장 줄(설정 쓰기)을 지나고, 저장 뒤 applySettings가 펫을 다시 판단한다
+ */
 async function togglePet(): Promise<void> {
   await settingsWriter.togglePet()
+}
+
+/**
+ * 말랑 메이트 보이기 값을 저장한다(펫 메뉴 "숨기기", 팔레트·트레이). 설정 창·바 펫 단추와 같은 저장 줄(changeSettings → 설정 쓰기)만
+ * 지나고(두 번째 저장 경로를 만들지 않는다), 저장 뒤 applySettings → petRuntime.refresh()가 펫을 숨기거나 띄운다
+ */
+async function setPetVisible(visible: boolean): Promise<void> {
+  await changeSettings((cur) => ({ ...cur, pet: { ...cur.pet, visible } }))
+  log('pet.visible', { visible })
 }
 
 /**
@@ -298,7 +325,7 @@ function startBar(): void {
     // 메뉴는 이미 닫혔고 포커스는 원래 창에 있다. 알림(이름 포함)·바쁨·Win32 불가는 서비스가 처리한다
     onWorkspaceAction: async (a) => {
       if (a.type === 'workspace-edit') {
-        // 편집 화면은 설정 창에 둔다(Task 8이 워크스페이스 탭으로 잇는다)
+        // 편집 화면은 설정 창에 둔다(Task 8이 워크스페이스 탭을 더한 뒤 openSettings('/settings', { tab: 'workspace' })로 잇는다)
         openSettings('/settings')
         return true
       }
@@ -308,8 +335,32 @@ function startBar(): void {
       return true
     },
     notify,
-    log
+    log,
+    // 말랑 메이트(바 다음에 만들어지므로 그 전에는 아무것도 하지 않는다)
+    onFullscreen: (on) => petRuntime?.setFullscreen(on),
+    afterRaise: () => petRuntime?.raise(),
+    onBarChange: () => petRuntime?.worldChanged()
   })
+}
+
+/**
+ * 말랑 메이트(설계 §14-2). 바 다음에 띄운다: 바 런타임의 전체 화면 상태를 읽고 바 변화·맨 앞 순서에 이어진다.
+ * 바를 시작하지 못했으면 바 없는 세계에서 바닥만 다니고 전체 화면 앱에서 숨지 못한다. 여기서 실패해도 바·팔레트는 동작한다
+ */
+function startPet(): void {
+  const bar = barRuntime
+  petRuntime = createPetRuntime(
+    {
+      bar: bar ? { bar: bar.bar, fullscreen: () => bar.fullscreen() } : null,
+      getSettings: () => settings,
+      openPalette: () => showPalette({ mode: 'search' }),
+      // 메뉴 "펫 설정": 말랑 메이트 탭으로 연다
+      openSettings: async () => openSettings('/settings', { tab: 'pet' }),
+      setPetVisible,
+      log
+    },
+    electronPetEnv()
+  )
 }
 
 /**
@@ -337,6 +388,7 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
+  if (await petCommands.run(id)) return
   if (await settingsCommands.run(id)) return
   // 지금 배치 저장(cmd.workspace-save)·워크스페이스 불러오기(workspace:<id>)
   if (workspaceCommands && (await workspaceCommands.run(id))) return
@@ -420,7 +472,8 @@ async function startShell(): Promise<void> {
         return false
       }
     },
-    save: (id, acc) => changeSettings((cur) => ({ ...cur, hotkeys: { ...cur.hotkeys, [id]: acc } })),
+    // 설정 쓰기 한 줄(changeSettings)로 저장한다. 조종 단축키는 pet.controlHotkey(null이면 단축키 없음)
+    save: (id, acc) => changeSettings((cur) => withHotkeySetting(cur, id, acc)),
     timers: realTimers,
     log
   })
@@ -441,6 +494,14 @@ async function startShell(): Promise<void> {
       }),
     barSnoozed: () => barRuntime?.bar.snoozed() ?? false,
     onUnsnooze: () => barRuntime?.bar.unsnooze(),
+    petVisible: () => settings.pet.visible,
+    onPetVisible: (visible) =>
+      void setPetVisible(visible).catch((e) => {
+        log('pet.trayVisibleError', { error: errorText(e) })
+        notify('처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.')
+        // 눌러서 먼저 바뀐 체크를 저장된 값으로 되돌린다
+        shell?.refresh()
+      }),
     onToggleSuspend: () => {
       if (suspended) {
         const { failed } = manager.resumeAll()
@@ -474,8 +535,21 @@ async function startShell(): Promise<void> {
   const lookup = manager.bind('lookup', settings.hotkeys.lookup, () => {
     if (!isPaletteVisible()) lookupSelection()
   })
-  lookupBound = lookup.ok
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
+
+  // 말랑 메이트 조종 단축키(기본 없음, §19): 처리기는 늘 두고 조합이 있을 때만 등록한다. 설정 창에서 정하거나 비우면
+  // hotkeyChanger가 바로 등록·해제한다(다시 시작하지 않아도). manager라 녹화 중 일시 중지에도 걸린다.
+  // 숨긴 펫이면 조종하지 않고 다시 부르는 곳을 알린다(누를 때마다 한 번)
+  const petControl = settings.pet.controlHotkey
+  const onPetControl = createPetControlHotkey({
+    isVisible: () => settings.pet.visible,
+    toggleControl: () => petRuntime?.controller.toggleControl(),
+    notify,
+    log
+  })
+  if (!manager.bind('pet-control', petControl, onPetControl).ok) {
+    warn(`말랑 메이트 조종 단축키 ${petControl}를 등록하지 못했어요.`)
+  }
 
   flushFileErrors()
 
@@ -640,7 +714,13 @@ if (!app.requestSingleInstanceLock()) {
         applySettings(settings)
         // 워크스페이스 구역: "지금 배치 저장"과 저장한 배치(지금 모니터 구성과 다르면 부제에 알린다)
         const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()))
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape, workspaces: workspaceItems })
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, {
+          maskingMode: settings.masking.mode,
+          glossary,
+          barShape: settings.bar.shape,
+          petVisible: settings.pet.visible,
+          workspaces: workspaceItems
+        })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
@@ -677,6 +757,8 @@ if (!app.requestSingleInstanceLock()) {
         remove: (id) => workspaceService.remove(id),
         saveAs: (name) => workspaceCmds.saveAs(name)
       },
+      // 펫 채널은 펫 창이 보낸 것만 받는다(펫 런타임은 바 다음에 만든다)
+      pet: () => petRuntime,
       // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창, 워크스페이스 편집은 설정 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
       paletteContentsId,
       imeLoggerContentsId,
@@ -799,6 +881,14 @@ if (!app.requestSingleInstanceLock()) {
       log('bar.startError', { error: errorText(e) })
     }
 
+    // 말랑 메이트는 바 다음에 띄운다(펫이 실패해도 바·팔레트·트레이는 동작한다)
+    try {
+      startPet()
+    } catch (e) {
+      petRuntime = null
+      log('pet.startError', { error: errorText(e) })
+    }
+
     // 첫 실행 안내(설계 문서 §6). 끝내지 않았으면 다음 실행에도 띄운다
     if (shouldShowOnboarding(settings)) openSettings('/onboarding')
   })
@@ -808,6 +898,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()
+    // 펫의 동작 고리·커서 조회·맨 앞 유지 타이머와 화면·앱 일 구독을 멈춘다(바보다 먼저: 펫이 바에 이어져 있다)
+    petRuntime?.dispose()
+    petRuntime = null
     // 맨 앞 유지·전체 화면 확인·펼침 창 타이머와 화면 이벤트 구독을 멈춘다
     barRuntime?.dispose()
     barRuntime = null

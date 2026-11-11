@@ -101,7 +101,7 @@ function StepHotkey({ state, onPick }: { state: OnboardingState; onPick(acc: str
   const pick = async (acc: string): Promise<void> => {
     setProblem(null)
     const r = await api.hotkeySet('palette', acc)
-    if (r.ok) onPick(r.acc)
+    if (r.ok) onPick(r.acc ?? acc)
     else setProblem(`${acc}: ${r.reason}`)
   }
 

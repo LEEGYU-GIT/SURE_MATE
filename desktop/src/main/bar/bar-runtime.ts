@@ -16,6 +16,7 @@ import { createFlyoutWindow } from '../windows/flyout-window'
 import { createBarActions, createFlyoutActions } from './bar-actions'
 import { createBarController, type BarController, type BarInputs } from './bar-controller'
 import { createFullscreenWatch } from './fullscreen-watch'
+import { fullscreenInOrder, linkBarPort, raiseInOrder, safely } from './pet-link'
 
 export interface BarRuntimeOptions {
   /** 바가 그릴 입력(설정·템플릿·단축키). 부를 때마다 지금 값을 돌려준다 */
@@ -44,11 +45,22 @@ export interface BarRuntimeOptions {
   onWorkspaceAction(a: Extract<FlyoutAction, { type: 'workspace-run' | 'workspace-save' | 'workspace-edit' }>): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
+  /**
+   * 말랑 메이트(M6): 전체 화면 앱 시작(true)·끝(false). 켜질 때는 바를 숨기기 전에, 꺼질 때는 바를 다시 보인 뒤에 부른다
+   * (펫이 바와 함께 숨었다 돌아와도 앉은 자리를 지킨다)
+   */
+  onFullscreen(on: boolean): void
+  /** 말랑 메이트: 바·(보이면) 펼침 창을 맨 앞으로 올린 바로 뒤(펫을 그 앞에 올린다, 설계 §14-2 "펫은 늘 바보다 앞") */
+  afterRaise(): void
+  /** 말랑 메이트: 바 창을 놓거나 보이거나 숨기거나 바 화면이 바뀐 뒤(끌기·자동 숨김·모양·잠시 숨김). 펫 세계가 바뀐다 */
+  onBarChange(): void
 }
 
 export interface BarRuntime extends OverlayIpc {
   bar: BarController
   flyout: FlyoutController
+  /** 지금 전체 화면 앱이 앞에 있는지(전체 화면 감시가 마지막으로 읽은 값, 감시를 못 하면 false). 펫이 시작할 때 읽는다 */
+  fullscreen(): boolean
   /** 설정·템플릿이 바뀐 뒤 바를 다시 그린다 */
   refresh(): void
   /** 타이머·화면 이벤트·전체 화면 감시를 멈추고 창을 닫는다 */
@@ -92,15 +104,13 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
     const labelFor = (id: string): string | null => labelOf(bar.state().items, id)
 
     const bar: BarController = createBarController({
-      window: barWin.port,
+      // 바 창을 놓거나 보이거나 숨긴 뒤 펫 세계가 바뀌었다고 알린다(펫 런타임이 34ms에 한 번 이하로 묶는다)
+      window: linkBarPort(barWin.port, () => o.onBarChange()),
       displays: getMonitors,
       inputs: o.inputs,
       savePosition: o.savePosition,
-      // 바 → (보이면) 펼침 창 순서로 맨 앞에 올린다. M6이 펫 창을 이 순서 끝에 더한다
-      raise: () => {
-        barWin.raise()
-        if (flyoutWin.visible()) flyoutWin.raise()
-      },
+      // 바 → (보이면) 펼침 창 → 펫 순서로 맨 앞에 올린다(2초마다·바가 보일 때)
+      raise: raiseInOrder({ bar: () => barWin.raise(), flyout: flyoutWin, after: () => o.afterRaise() }),
       onVisibleChange: (visible) => {
         if (!visible) flyout.barHidden()
         o.onVisibleChange(visible)
@@ -111,7 +121,14 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
     undo.push(() => bar.dispose())
 
     const flyout: FlyoutController = createFlyoutController({
-      window: flyoutWin.port,
+      // 펼침 창이 내용을 띄우며 스스로 올라오면 펫을 다시 그 앞에 올린다(맨 앞 순서가 2초마다 뒤바뀌지 않게)
+      window: {
+        ...flyoutWin.port,
+        raise: () => {
+          flyoutWin.port.raise()
+          safely(() => o.afterRaise())
+        }
+      },
       barAnchor: (id) => bar.anchor(id),
       barEdge: () => o.inputs().bar.edge,
       cursorWorkArea: () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea,
@@ -162,7 +179,13 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       log: o.log
     })
 
-    const watch = createFullscreenWatch({ query: notificationState, onChange: (on) => bar.setFullscreen(on), timers: realTimers, log: o.log })
+    // 켜질 때는 펫이 먼저 숨고, 꺼질 때는 바가 나온 다음 펫이 나온다(Review Focus 2)
+    const watch = createFullscreenWatch({
+      query: notificationState,
+      onChange: fullscreenInOrder({ bar: (on) => bar.setFullscreen(on), pet: (on) => o.onFullscreen(on) }),
+      timers: realTimers,
+      log: o.log
+    })
     undo.push(() => watch.stop())
 
     // 모니터 연결·배율이 바뀌면 바를 다시 놓고(200ms 기다려 한 번) 보이는 카드도 다시 놓는다
@@ -186,6 +209,7 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
     return {
       bar,
       flyout,
+      fullscreen: () => watch.current(),
       barContentsId: barWin.win.webContents.id,
       flyoutContentsId: flyoutWin.win.webContents.id,
       barState: () => bar.state(),

@@ -1,6 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
+import { settingsHash, type SettingsHash, type SettingsRoute, type SettingsTabId } from '../../shared/settings/settings-route'
 
-export type SettingsRoute = '/settings' | '/onboarding'
+export type { SettingsRoute }
 
 /** 제목 줄 색: 토큰 --surface-palette-solid, 창 단추 글자는 --text-2(§14-4) */
 const SURFACE = '#1E212A'
@@ -26,4 +27,25 @@ export function settingsWindowOptions(preload: string, route: SettingsRoute): Br
     backgroundColor: SURFACE,
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
   }
+}
+
+/**
+ * 설정 창을 열 때 할 일. 열린 창은 다시 쓴다: 경로가 바뀌면(첫 실행 안내 ↔ 설정) 크기를 바꿔 다시 읽고, 같은 설정 창이면
+ * 다시 읽지 않고 탭만 바꾸라고 알린다(다시 읽으면 녹화 중인 단축키·아직 저장하지 않은 입력이 사라진다).
+ * 아직 읽는 중인 창은 알림을 받을 화면이 없을 수 있어 탭을 붙여 다시 읽는다(잃을 것이 없다).
+ */
+export type SettingsOpenPlan =
+  | { kind: 'create'; hash: SettingsHash }
+  | { kind: 'switch-route'; hash: SettingsHash }
+  | { kind: 'reload'; hash: SettingsHash }
+  /** 앞으로 가져오기만. tab이 있으면 화면에 그 탭을 고르라고 보낸다 */
+  | { kind: 'show'; tab: SettingsTabId | null }
+
+export function planSettingsOpen(open: { route: SettingsRoute; loading: boolean } | null, next: SettingsRoute, tab?: SettingsTabId): SettingsOpenPlan {
+  const hash = settingsHash(next, tab)
+  if (!open) return { kind: 'create', hash }
+  if (open.route !== next) return { kind: 'switch-route', hash }
+  const pick = next === '/settings' ? (tab ?? null) : null
+  if (pick && open.loading) return { kind: 'reload', hash }
+  return { kind: 'show', tab: pick }
 }

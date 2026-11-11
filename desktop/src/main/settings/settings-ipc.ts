@@ -41,7 +41,7 @@ export interface SettingsIpcDeps {
 
 type Sender = { sender: { id: number } }
 const BAD = '요청 형식이 맞지 않아요'
-const HOTKEY_IDS: readonly SettingsHotkeyId[] = ['palette', 'lookup']
+const HOTKEY_IDS: readonly SettingsHotkeyId[] = ['palette', 'lookup', 'pet-control']
 const isHotkeyId = (v: unknown): v is SettingsHotkeyId => HOTKEY_IDS.includes(v as SettingsHotkeyId)
 const isAcc = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64
 
@@ -64,8 +64,9 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
     if (on) d.hotkeys.startRecording()
     else d.hotkeys.stopRecording()
   })
+  // acc null은 비우기(조종 단축키). 어느 단축키를 비울 수 있는지는 단축키 바꾸기가 판단한다
   ipcMain.handle(IPC.settingsHotkeySet, (e, id: unknown, acc: unknown) =>
-    fromSettings(e) && isHotkeyId(id) && isAcc(acc) ? d.hotkeys.set(id, acc) : { ok: false, reason: BAD }
+    fromSettings(e) && isHotkeyId(id) && (acc === null || isAcc(acc)) ? d.hotkeys.set(id, acc) : { ok: false, reason: BAD }
   )
   ipcMain.on(IPC.settingsOpenFile, (e, which: unknown) => {
     if (fromSettings(e) && (which === 'settings' || which === 'logs')) d.openFile(which)

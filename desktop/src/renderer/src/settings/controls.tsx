@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { isImeComposing } from '../../../shared/ime'
 
 // 설정 창 공통 조작(설계 문서 §14·§14-4). 팔레트와 같은 토큰: 행 글자 14(--text-1), 설명 13(--text-2), 구역 머리 12/600.
@@ -234,7 +234,8 @@ export function Button({
   onClick,
   disabled,
   children,
-  label
+  label,
+  ref
 }: {
   kind?: 'primary' | 'secondary' | 'danger'
   onClick(): void
@@ -242,6 +243,8 @@ export function Button({
   children: ReactNode
   /** 글자만으로 무엇을 하는지 모를 때(아이콘 단추 등) */
   label?: string
+  /** 옆 조작이 사라질 때 포커스를 이 단추로 돌려줄 때(키보드만으로 사용, §16) */
+  ref?: Ref<HTMLButtonElement>
 }): React.JSX.Element {
   const look =
     kind === 'primary'
@@ -251,6 +254,7 @@ export function Button({
         : 'border border-line text-fg hover:bg-row-hover'
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       disabled={disabled}

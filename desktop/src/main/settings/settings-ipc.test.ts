@@ -20,7 +20,7 @@ const PALETTE = { sender: { id: 1 } }
 const snapshot: SettingsSnapshot = {
   settings: DEFAULT_SETTINGS,
   aiTargets: [],
-  hotkeys: { palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } },
+  hotkeys: { palette: { acc: 'Alt+`', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true }, 'pet-control': { acc: null, registered: false } },
   displays: [],
   prompts: [],
   packaged: false
@@ -34,7 +34,7 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
       check: vi.fn(() => ({ level: 'ok' as const })),
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      set: vi.fn(async (_id: string, acc: string) => ({ ok: true as const, acc })),
+      set: vi.fn(async (_id: string, acc: string | null) => ({ ok: true as const, acc })),
       candidates: vi.fn(() => []),
       dispose: vi.fn()
     },
@@ -88,12 +88,22 @@ it('저장 요청은 서비스에 그대로 넘긴다(검사는 서비스가 한
   expect(d.service.update).toHaveBeenCalledWith({ bar: { opacity: 0.8 } })
 })
 
-it('단축키: id는 palette·lookup만, 조합은 64자 안의 글자, 녹화는 켬·끔만', async () => {
+it('단축키: id는 palette·lookup·pet-control만, 조합은 64자 안의 글자, 녹화는 켬·끔만', async () => {
   expect(await handle(IPC.settingsHotkeySet, SETTINGS, 'palette', 'Alt+K')).toEqual({ ok: true, acc: 'Alt+K' })
+  expect(await handle(IPC.settingsHotkeySet, SETTINGS, 'pet-control', 'Ctrl+Alt+P')).toEqual({ ok: true, acc: 'Ctrl+Alt+P' })
+  expect(d.hotkeys.set).toHaveBeenLastCalledWith('pet-control', 'Ctrl+Alt+P')
   expect(await handle(IPC.settingsHotkeySet, SETTINGS, 'quit', 'Alt+K')).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
   expect(await handle(IPC.settingsHotkeySet, SETTINGS, 'palette', 'x'.repeat(65))).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
   expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, 'lookup', 'Alt+K')).toEqual({ level: 'ok' })
+  expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, 'pet-control', 'Alt+K')).toEqual({ level: 'ok' })
   expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, 'lookup', 3)).toEqual({ level: 'block', reason: '요청 형식이 맞지 않아요' })
+  expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, 'pet-control', null)).toEqual({ level: 'block', reason: '요청 형식이 맞지 않아요' })
+  // 비우기(null)는 바꾸기로만 넘긴다(어느 단축키를 비울 수 있는지는 단축키 바꾸기가 판단한다). 빈 글·다른 값은 거절
+  await handle(IPC.settingsHotkeySet, SETTINGS, 'pet-control', null)
+  expect(d.hotkeys.set).toHaveBeenLastCalledWith('pet-control', null)
+  for (const bad of ['', undefined, 0, {}]) expect(await handle(IPC.settingsHotkeySet, SETTINGS, 'pet-control', bad)).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
+  expect(d.hotkeys.set).toHaveBeenCalledTimes(3)
+  expect(await handle(IPC.settingsHotkeySet, PALETTE, 'pet-control', null)).toEqual({ ok: false, reason: '요청 형식이 맞지 않아요' })
   send(IPC.settingsHotkeyRecord, SETTINGS, true)
   send(IPC.settingsHotkeyRecord, SETTINGS, false)
   send(IPC.settingsHotkeyRecord, SETTINGS, 'yes')

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PET_LIMITS } from '../pet/pet-settings'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
 import { applySettingsPatch, SETTINGS_LIMITS, validateSettingsPatch } from './settings-patch'
 
@@ -15,9 +16,10 @@ const patchOf = (raw: unknown, s: Settings = cur()) => {
 
 describe('알 수 없는 키', () => {
   it('최상위·하위의 모르는 키는 이름을 들어 거절한다(단축키·버전은 이 길로 바꾸지 않는다)', () => {
-    for (const k of ['hotkeys', 'version', 'foo', 'pet']) expect(errorsOf({ [k]: 1 }).join()).toContain(k)
+    for (const k of ['hotkeys', 'version', 'foo']) expect(errorsOf({ [k]: 1 }).join()).toContain(k)
     expect(errorsOf({ masking: { color: 'red' } }).join()).toContain('masking.color')
     expect(errorsOf({ bar: { positions: [] } }).join()).toContain('bar.positions')
+    expect(errorsOf({ pet: { character: 'cat' } }).join()).toContain('pet.character')
     expect(errorsOf(null).length).toBeGreaterThan(0)
     expect(errorsOf([]).length).toBeGreaterThan(0)
   })
@@ -91,6 +93,79 @@ describe('빼기 모드 표기', () => {
     expect(patchOf({ masking: { removeLabels: { client: ' 협력사 ', ip: '[주소]' } } }).masking?.removeLabels).toEqual({ client: '협력사', ip: '[주소]' })
     for (const bad of ['', ' ', 'x'.repeat(SETTINGS_LIMITS.removeLabel + 1), '줄\n바꿈', '{{a}}']) expect(errorsOf({ masking: { removeLabels: { client: bad } } })).not.toEqual([])
     expect(errorsOf({ masking: { removeLabels: { money: '돈' } } })).not.toEqual([])
+  })
+})
+
+describe('말랑 메이트(pet, 설계 문서 §14)', () => {
+  it('맞는 값은 필드마다 그대로 받는다', () => {
+    const { min, max } = PET_LIMITS.sleepAfterMin
+    const valid: [string, unknown][] = [
+      ['visible', false],
+      ['visible', true],
+      ['size', 40],
+      ['size', 56],
+      ['size', 72],
+      ['activity', 'calm'],
+      ['activity', 'normal'],
+      ['activity', 'lively'],
+      ['sleepAfterMin', min],
+      ['sleepAfterMin', 3],
+      ['sleepAfterMin', max],
+      ['bubbles', false],
+      ['reactions', false],
+      ['reduceMotion', true]
+    ]
+    for (const [k, v] of valid) expect(patchOf({ pet: { [k]: v } }).pet, `${k}=${String(v)}`).toEqual({ [k]: v })
+  })
+
+  it('틀린 값은 필드마다 까닭을 들어 거절하고, 범위 밖 숫자를 끝값으로 바꿔 받지 않는다', () => {
+    const { max } = PET_LIMITS.sleepAfterMin
+    const invalid: [string, unknown, string][] = [
+      ['visible', 'yes', '보이기'],
+      ['size', 64, '크기'],
+      ['size', '56', '크기'],
+      ['size', 0, '크기'],
+      ['activity', 'fast', '활발함'],
+      ['activity', '', '활발함'],
+      ['sleepAfterMin', 0, '졸기'],
+      ['sleepAfterMin', max + 1, '졸기'],
+      ['sleepAfterMin', 2.5, '졸기'],
+      ['sleepAfterMin', '3', '졸기'],
+      ['sleepAfterMin', Number.NaN, '졸기'],
+      ['sleepAfterMin', Number.POSITIVE_INFINITY, '졸기'],
+      ['bubbles', 1, '말풍선'],
+      ['reactions', null, '반응'],
+      ['reduceMotion', 'on', '움직임 줄이기']
+    ]
+    for (const [k, v, word] of invalid) {
+      const r = validateSettingsPatch({ pet: { [k]: v } }, cur())
+      expect(r.ok, `${k}=${String(v)}`).toBe(false)
+      if (!r.ok) expect(r.errors.join(' / '), `${k}=${String(v)}`).toContain(word)
+    }
+  })
+
+  it('조종 단축키는 이 길로 바꾸지 않는다(등록해 보고 실패하면 되돌려야 하므로 단축키 바꾸기로)', () => {
+    expect(errorsOf({ pet: { controlHotkey: 'Ctrl+Alt+P' } }).join()).toContain('단축키')
+    expect(errorsOf({ pet: { controlHotkey: null } })).not.toEqual([])
+  })
+
+  it('형식이 틀리면 거절하고, 한 필드라도 틀리면 맞는 필드도 받지 않는다', () => {
+    for (const bad of [1, null, [], 'pet']) expect(errorsOf({ pet: bad })).not.toEqual([])
+    expect(validateSettingsPatch({ pet: { size: 72, sleepAfterMin: 0 } }, cur()).ok).toBe(false)
+  })
+
+  it('펫 패치는 보낸 펫 필드만 바꾸고 다른 설정(단축키·바·가명 처리)과 나머지 펫 필드는 그대로 둔다', () => {
+    const s = cur()
+    s.masking.mode = 'off'
+    s.bar.opacity = 0.8
+    s.hotkeys.palette = 'Alt+`'
+    s.pet.controlHotkey = 'Ctrl+Alt+P'
+    s.pet.activity = 'lively'
+    const next = applySettingsPatch(s, patchOf({ pet: { size: 72, reduceMotion: true } }, s))
+    expect(next.pet).toEqual({ ...s.pet, size: 72, reduceMotion: true })
+    expect({ ...next, pet: s.pet }).toEqual(s)
+    // 원래 객체는 바꾸지 않는다
+    expect(s.pet.size).toBe(56)
   })
 })
 

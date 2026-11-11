@@ -14,6 +14,10 @@ export interface TrayMenuOptions {
   /** 바가 잠시 숨김(30분) 중인지 */
   barSnoozed: () => boolean
   onUnsnooze: () => void
+  /** 말랑 메이트가 보이는지 */
+  petVisible: () => boolean
+  /** 트레이 체크 항목에서 바꾼 보이기 값(저장은 부르는 쪽이 한다) */
+  onPetVisible: (visible: boolean) => void
   onQuit: () => void
 }
 
@@ -38,6 +42,7 @@ export function trayMenuTemplate(o: TrayMenuOptions, s: { suspended: boolean; on
         }))
       ]
     },
+    { label: '말랑 메이트 보이기', type: 'checkbox', checked: o.petVisible(), click: (item) => o.onPetVisible(item.checked) },
     { type: 'separator' },
     { label: '단축키 일시 중지', type: 'checkbox', checked: s.suspended, click: s.onToggleSuspend },
     { type: 'separator' },

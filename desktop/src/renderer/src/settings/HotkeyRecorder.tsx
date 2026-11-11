@@ -55,7 +55,7 @@ export function HotkeyRecorder({
     }
     const set = await api.hotkeySet(id, r.acc)
     busy.current = false
-    if (set.ok) onDone({ acc: set.acc, warning: set.warning })
+    if (set.ok) onDone({ acc: set.acc ?? r.acc, warning: set.warning })
     else setProblem(`${r.acc}: ${set.reason}`)
   }
 

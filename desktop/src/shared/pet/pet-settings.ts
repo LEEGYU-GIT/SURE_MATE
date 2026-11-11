@@ -18,8 +18,9 @@ export interface PetSettings {
 
 export const PET_LIMITS = { sleepAfterMin: { min: 1, max: 60 }, hotkeyLength: 64 } as const
 
-const SIZES: readonly PetSize[] = [40, 56, 72]
-const ACTIVITIES: readonly PetActivity[] = ['calm', 'normal', 'lively']
+/** 받는 크기·활발함(파일을 읽을 때와 설정 창이 보낸 값 검사가 같은 목록을 쓴다) */
+export const PET_SIZES: readonly PetSize[] = [40, 56, 72]
+export const PET_ACTIVITIES: readonly PetActivity[] = ['calm', 'normal', 'lively']
 
 /** 활발함별 걷는 속도(DIP/초) */
 export const WALK_SPEED: Record<PetActivity, number> = { calm: 40, normal: 60, lively: 90 }
@@ -47,8 +48,8 @@ export function sanitizePetSettings(raw: unknown): PetSettings {
   const hotkey = typeof r.controlHotkey === 'string' ? r.controlHotkey.trim() : ''
   return {
     visible: bool(r.visible, d.visible),
-    size: SIZES.includes(r.size as PetSize) ? (r.size as PetSize) : d.size,
-    activity: ACTIVITIES.includes(r.activity as PetActivity) ? (r.activity as PetActivity) : d.activity,
+    size: PET_SIZES.includes(r.size as PetSize) ? (r.size as PetSize) : d.size,
+    activity: PET_ACTIVITIES.includes(r.activity as PetActivity) ? (r.activity as PetActivity) : d.activity,
     sleepAfterMin:
       typeof r.sleepAfterMin === 'number' && Number.isFinite(r.sleepAfterMin) ? Math.min(max, Math.max(min, Math.round(r.sleepAfterMin))) : d.sleepAfterMin,
     bubbles: bool(r.bubbles, d.bubbles),

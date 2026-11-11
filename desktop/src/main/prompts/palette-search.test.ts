@@ -9,7 +9,7 @@ import { buildPaletteItems } from './palette-items'
 // 설치 파일에 들어가는 실제 기본 자료(프롬프트·상용구 팩, 용어 팩)로 팔레트 검색 전체를 돌린다(설계 문서 §9 완료 기준)
 const templates = parseTemplatePack(builtinPrompts, 'builtin').templates
 const glossary = parseGlossaryPack(builtinGlossary, 'builtin').entries
-const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary, barShape: 'edge' })
+const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary, barShape: 'edge', petVisible: true })
 const index = buildPaletteIndex(items)
 const top = (query: string): string | undefined => filterItems(items, query, index)[0]?.id
 

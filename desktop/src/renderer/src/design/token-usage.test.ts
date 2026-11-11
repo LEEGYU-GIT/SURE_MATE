@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// 설계 문서 §14-4 완료 기준: 바·펼침 창·펫 화면은 토큰 밖의 색·모서리 값을 쓰지 않는다(펫 그림의 흰색도 --white).
+// 설계 문서 §14-4 완료 기준: 바·펼침 창·펫·설정 화면은 토큰 밖의 색·모서리 값을 쓰지 않는다(펫 그림의 흰색도 --white).
 const FORBIDDEN: { name: string; re: RegExp }[] = [
   { name: '16진수 색', re: /#[0-9a-fA-F]{3,8}\b/ },
   { name: 'rgb()·rgba()', re: /\brgba?\(/ },
@@ -18,7 +18,7 @@ const FORBIDDEN: { name: string; re: RegExp }[] = [
 const violations = (text: string): string[] => FORBIDDEN.filter((f) => f.re.test(text)).map((f) => f.name)
 
 const src = fileURLToPath(new URL('../', import.meta.url))
-const FOLDERS = ['bar', 'flyout', 'pet'].map((f) => join(src, f)).filter((dir) => existsSync(dir))
+const FOLDERS = ['bar', 'flyout', 'pet', 'settings', 'onboarding'].map((f) => join(src, f)).filter((dir) => existsSync(dir))
 
 /** 화면 파일: 컴포넌트(.tsx)와 스타일(.css). 시험 파일과 순수 모듈(.ts)은 뺀다 */
 function screenFiles(dir: string): string[] {
@@ -29,10 +29,10 @@ function screenFiles(dir: string): string[] {
   })
 }
 
-describe('바·펼침 창·펫 화면은 §14-4 토큰만 쓴다', () => {
-  it('검사 대상이 비어 있지 않다(바 화면 Bar.tsx, 펫 그림 PetSprite.tsx·character.tsx·pet.css 포함)', () => {
+describe('바·펼침 창·펫·설정 화면은 §14-4 토큰만 쓴다', () => {
+  it('검사 대상이 비어 있지 않다(바 화면 Bar.tsx, 펫 그림 PetSprite.tsx·character.tsx·pet.css, 설정 창 말랑 메이트 탭 포함)', () => {
     const files = FOLDERS.flatMap(screenFiles)
-    for (const name of [join('bar', 'Bar.tsx'), join('pet', 'PetSprite.tsx'), join('pet', 'character.tsx'), join('pet', 'Pet.tsx'), join('pet', 'pet.css')]) {
+    for (const name of [join('bar', 'Bar.tsx'), join('pet', 'PetSprite.tsx'), join('pet', 'character.tsx'), join('pet', 'Pet.tsx'), join('pet', 'pet.css'), join('settings', 'PetTab.tsx'), join('settings', 'controls.tsx')]) {
       expect(
         files.some((f) => f.endsWith(name)),
         name
