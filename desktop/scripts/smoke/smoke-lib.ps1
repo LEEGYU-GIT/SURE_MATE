@@ -40,7 +40,7 @@ public static class W {
 "@
 # 좌표는 물리 픽셀로 다룬다(앱 로그의 DIP × 배율). 창·캡처·커서가 같은 좌표계를 쓰도록 DPI 인식으로 둔다
 [void][W]::SetProcessDPIAware()
-$VK = @{ 'ctrl' = 0x11; 'alt' = 0x12; 'shift' = 0x10; 'space' = 0x20; ' ' = 0x20; '`' = 0xC0; 'f9' = 0x78; 'esc' = 0x1B; 'enter' = 0x0D; 'backspace' = 0x08; 'tab' = 0x09; '/' = 0xBF; '.' = 0xBE; '-' = 0xBD; ',' = 0xBC }
+$VK = @{ 'ctrl' = 0x11; 'alt' = 0x12; 'shift' = 0x10; 'space' = 0x20; ' ' = 0x20; '`' = 0xC0; 'f9' = 0x78; 'esc' = 0x1B; 'f4' = 0x73; 'enter' = 0x0D; 'backspace' = 0x08; 'tab' = 0x09; '/' = 0xBF; '.' = 0xBE; '-' = 0xBD; ',' = 0xBC }
 function Key([byte]$vk, [switch]$Up) { $scan = [byte][W]::MapVirtualKey($vk, 0); [W]::keybd_event($vk, $scan, $(if ($Up) { 2 } else { 0 }), [UIntPtr]::Zero) }
 function Tap([byte]$vk) { Key $vk; Key $vk -Up }
 # 글자·숫자는 문자 코드가 곧 가상 키, 기호(/ . - ,)와 공백은 $VK 표로 바꾼다(US·한국어 자판 같은 자리)
@@ -181,4 +181,129 @@ function Shot([string]$name) {
   $g.CopyFromScreen([int]($b.x * $s), [int]($b.y * $s), 0, 0, (New-Object System.Drawing.Size $w, $h))
   $path = Join-Path $dir "$name.png"; $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
   "$name = $path ($w x $h)"
+}
+
+# ---- M6 말랑 메이트(t20) ----
+# 앱 프로세스 찾기용: dev 앱의 electron은 이 저장소의 desktop 폴더 것만, 설치본은 Sure-Mate
+$script:desktopDir = (Resolve-Path "$PSScriptRoot\..\..").Path
+# 로그 줄의 시각(t, ISO 8601 UTC)을 DateTime(UTC)으로. PowerShell 5.1은 문자열, 7은 DateTime으로 읽는다
+function LogTime($ev) {
+  $t = $ev.t
+  if ($t -is [datetime]) { return $t.ToUniversalTime() }
+  return [DateTime]::Parse([string]$t, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+}
+# 마지막 app.ready 줄 바로 다음 줄 번호(LogsAfter·WaitLog의 mark로 쓴다)와 그 줄의 시각
+function ReadyMark {
+  $lines = @(Get-Content $logFile -Encoding UTF8)
+  for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i] -match '"event":"app.ready"') { return ($i + 1) } }
+  return 0
+}
+function ReadyTime {
+  $lines = @(Get-Content $logFile -Encoding UTF8)
+  for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i] -match '"event":"app.ready"') { return (LogTime ($lines[$i] | ConvertFrom-Json)) } }
+  return $null
+}
+# 이번 앱 실행의 마지막 pet.state 줄(mode를 주면 그 mode만). mode: climb·sit·sleep·wake·held·land. box·window는 화면 DIP
+function LastPet([string]$mode = '') {
+  $all = @(SinceAppReady 'pet.state')
+  if ($mode -ne '') { $all = @($all | Where-Object { $_.mode -eq $mode }) }
+  if ($all.Count -eq 0) { return $null }
+  return $all[-1]
+}
+# 펫 몸 상자(box)의 가운데(DIP)
+function PetCenter($pet) {
+  [pscustomobject]@{ x = $pet.box.x + $pet.box.width / 2; y = $pet.box.y + $pet.box.height / 2 }
+}
+# 지금 화면에 보이는 펫 창(320x240 DIP)의 사각형(DIP). 숨었으면 $null. 펫 창은 크기가 고정이라 크기로 찾는다
+function PetWindowRect([double]$scale) {
+  $tw = 320 * $scale; $th = 240 * $scale; $names = @{}
+  for ($c = [W]::GetTopWindow([IntPtr]::Zero); $c -ne [IntPtr]::Zero; $c = [W]::GetWindow($c, 2)) {
+    if (-not [W]::IsWindowVisible($c)) { continue }
+    $r = New-Object 'W+RECT'
+    if (-not [W]::GetWindowRect($c, [ref]$r)) { continue }
+    if ([Math]::Abs(($r.Right - $r.Left) - $tw) -gt 3 -or [Math]::Abs(($r.Bottom - $r.Top) - $th) -gt 3) { continue }
+    $id = [int][W]::Pid($c)
+    if (-not $names.ContainsKey($id)) { $names[$id] = (Get-Process -Id $id -ErrorAction SilentlyContinue).ProcessName }
+    if ($names[$id] -ne 'electron' -and $names[$id] -ne 'Sure-Mate') { continue }
+    return [pscustomobject]@{ x = $r.Left / $scale; y = $r.Top / $scale; width = ($r.Right - $r.Left) / $scale; height = ($r.Bottom - $r.Top) / $scale }
+  }
+  return $null
+}
+# 펫의 지금 자리. 창 사각형이 마지막 pet.state의 window와 같으면 그 줄의 box(정확), 아니면 창 아래 가운데로 어림한다
+# (어림은 창이 화면 가장자리에 눌리지 않은 자리에서만 맞는다). 보이지 않으면 $null
+function PetNow([double]$scale, [int]$size = 56) {
+  $win = PetWindowRect $scale
+  if (-not $win) { return $null }
+  $last = LastPet
+  $exact = $false
+  $box = $null
+  if ($last -and $last.window -and [Math]::Abs($last.window.x - $win.x) -le 2 -and [Math]::Abs($last.window.y - $win.y) -le 2) { $box = $last.box; $exact = $true }
+  if (-not $box) { $box = [pscustomobject]@{ x = $win.x + $win.width / 2 - $size / 2; y = $win.y + $win.height - $size; width = $size; height = $size } }
+  [pscustomobject]@{ box = $box; window = $win; exact = $exact }
+}
+# 펫 창이 stableMs 동안 움직이지 않을 때까지 기다려 지금 자리를 돌려준다(시간 안에 안 서면 $null)
+function WaitPetStill([double]$scale, [int]$stableMs = 500, [int]$timeoutMs = 25000, [int]$size = 56) {
+  $end = (Get-Date).AddMilliseconds($timeoutMs)
+  $prev = $null; $since = Get-Date
+  do {
+    $w = PetWindowRect $scale
+    if ($w) {
+      if ($prev -and [Math]::Abs($w.x - $prev.x) -lt 0.6 -and [Math]::Abs($w.y - $prev.y) -lt 0.6) {
+        if (((Get-Date) - $since).TotalMilliseconds -ge $stableMs) { return (PetNow $scale $size) }
+      } else { $prev = $w; $since = Get-Date }
+    } else { $prev = $null }
+    Pump 60
+  } while ((Get-Date) -lt $end)
+  return $null
+}
+# 오른쪽 클릭 메뉴 사각형(DIP). main의 menuSlot과 같은 규칙: 4행(조종하기·재우기/깨우기·숨기기·펫 설정), 너비 176, 행 32, 안쪽 여백 4,
+# 위쪽 자리가 있으면 펫 상자 위, 아니면 여유가 큰 옆. 창 가장자리 여백은 위 16·옆 24·아래 32. bounds는 모니터 전체 사각형(DIP)
+function PetMenuRect($box, $win, $bounds, [int]$rows = 4) {
+  $w = 176; $h = $rows * 32 + 8
+  $xLo = $win.x + 24; $xHi = $win.x + $win.width - 24 - $w
+  $ay = $box.y - 8 - $h
+  if ($ay -ge ($win.y + 16) -and $ay -ge ($bounds.y + 16)) {
+    $x = [Math]::Min([Math]::Max($box.x + $box.width / 2 - $w / 2, $xLo), $xHi)
+    return [pscustomobject]@{ x = $x; y = $ay; width = $w; height = $h; side = 'above' }
+  }
+  $left = (($box.x - $win.x) -gt ($win.x + $win.width - ($box.x + $box.width)))
+  $x = if ($left) { $box.x - 8 - $w } else { $box.x + $box.width + 8 }
+  $y = [Math]::Min([Math]::Max($box.y + $box.height / 2 - $h / 2, $win.y + 16), $win.y + $win.height - 32 - $h)
+  $x = [Math]::Min([Math]::Max($x, $xLo), $xHi)
+  [pscustomobject]@{ x = $x; y = $y; width = $w; height = $h; side = $(if ($left) { 'left' } else { 'right' }) }
+}
+# 메뉴 행(0부터)의 가운데(DIP)
+function PetMenuRowPoint($menu, [int]$row) {
+  [pscustomobject]@{ x = $menu.x + $menu.width / 2; y = $menu.y + 4 + 32 * $row + 16 }
+}
+# 방향키는 확장 키(extended)로 보내야 KeyboardEvent.code가 ArrowLeft 등이 된다(없으면 Numpad 코드가 된다). 스캔 코드도 함께 보낸다
+function ExtKey([byte]$vk, [switch]$Up) {
+  $scan = [byte][W]::MapVirtualKey($vk, 0)
+  [W]::keybd_event($vk, $scan, $(if ($Up) { 3 } else { 1 }), [UIntPtr]::Zero)
+}
+# fromDip에서 누르고(0.15초 쉼) ms 동안 16ms 간격으로 toDip까지 끈 뒤, holdMs만큼 멈췄다가 뗀다(holdMs 0이면 움직이는 중에 뗀다).
+# 좌표는 DIP, 마우스는 물리 픽셀(DIP × 배율). 뗀 시각(Get-Date)을 돌려준다
+function DragPath($fromDip, $toDip, [int]$ms, [double]$scale = 1, [int]$holdMs = 0) {
+  $fx = [int][Math]::Round($fromDip.x * $scale); $fy = [int][Math]::Round($fromDip.y * $scale)
+  $tx = [int][Math]::Round($toDip.x * $scale); $ty = [int][Math]::Round($toDip.y * $scale)
+  MoveTo $fx $fy; Pump 350
+  [W]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero); Pump 150
+  $n = [Math]::Max(1, [int]($ms / 16))
+  for ($i = 1; $i -le $n; $i++) {
+    MoveTo ($fx + [int][Math]::Round(($tx - $fx) * $i / $n)) ($fy + [int][Math]::Round(($ty - $fy) * $i / $n))
+    Start-Sleep -Milliseconds 16
+  }
+  if ($holdMs -gt 0) { Pump $holdMs }
+  [W]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+  return (Get-Date)
+}
+# Sure-Mate 프로세스(dev 앱의 electron은 이 저장소 것만, 설치본은 Sure-Mate)
+function AppProcs {
+  @(Get-Process -ErrorAction SilentlyContinue | Where-Object { ($_.ProcessName -eq 'electron' -and $_.Path -like "$script:desktopDir*") -or $_.ProcessName -eq 'Sure-Mate' })
+}
+# 앱 프로세스 CPU 초의 합
+function CpuSeconds {
+  $sum = 0.0
+  foreach ($p in (AppProcs)) { try { $sum += $p.TotalProcessorTime.TotalSeconds } catch { } }
+  return $sum
 }
