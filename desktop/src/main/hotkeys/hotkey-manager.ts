@@ -6,7 +6,7 @@ export interface ShortcutBackend {
   unregister(acc: string): void
 }
 
-export type HotkeyId = 'palette' | 'lookup'
+export type HotkeyId = 'palette' | 'lookup' | 'pet-control'
 
 export type BindResult = { ok: true } | { ok: false; reason: 'in-use' | 'blocked'; detail?: string }
 

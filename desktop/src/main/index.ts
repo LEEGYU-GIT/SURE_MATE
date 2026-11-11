@@ -16,6 +16,7 @@ import type { Template } from '../shared/template/types'
 import type { MaskingMode } from '../shared/types'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
+import { createPetCommands } from './pet/pet-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
 import { DEV_COMMAND_ITEMS, isDevCommand, runDevCommand } from './dev/dev-commands'
 import { errorCode, errorText } from './error-text'
@@ -75,6 +76,15 @@ let maskingCommands: MaskingCommands | null = null
 const barCommands = createBarCommands({
   getShape: () => settings.bar.shape,
   setShape: setBarShape,
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  notify,
+  log
+})
+const petCommands = createPetCommands({
+  isVisible: () => settings.pet.visible,
+  setVisible: setPetVisible,
+  startControl: () => petRuntime?.controller.startControl(),
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   notify,
@@ -350,6 +360,7 @@ async function runItem(id: string): Promise<void> {
   if (maskingCommands && (await maskingCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
+  if (await petCommands.run(id)) return
   if (await settingsCommands.run(id)) return
   if (id.startsWith('prompt:') && prompts) {
     lastPreparedTemplate = id.slice('prompt:'.length)
@@ -451,6 +462,14 @@ async function startShell(): Promise<void> {
       }),
     barSnoozed: () => barRuntime?.bar.snoozed() ?? false,
     onUnsnooze: () => barRuntime?.bar.unsnooze(),
+    petVisible: () => settings.pet.visible,
+    onPetVisible: (visible) =>
+      void setPetVisible(visible).catch((e) => {
+        log('pet.trayVisibleError', { error: errorText(e) })
+        notify('처리하지 못했어요. 다시 해 보고, 계속 안 되면 앱을 다시 켜 주세요.')
+        // 눌러서 먼저 바뀐 체크를 저장된 값으로 되돌린다
+        shell?.refresh()
+      }),
     onToggleSuspend: () => {
       if (suspended) {
         const { failed } = manager.resumeAll()
@@ -486,6 +505,12 @@ async function startShell(): Promise<void> {
   })
   lookupBound = lookup.ok
   if (!lookup.ok) warn(`조회 단축키 ${settings.hotkeys.lookup}를 등록하지 못했어요.`)
+
+  // 말랑 메이트 조종 단축키: 설정에 있을 때만 등록한다(없으면 등록하지 않는다, §19). manager.bind라 기록 중 일시 중지에도 걸린다
+  const petControl = settings.pet.controlHotkey
+  if (petControl && !manager.bind('pet-control', petControl, () => petRuntime?.controller.toggleControl()).ok) {
+    warn(`말랑 메이트 조종 단축키 ${petControl}를 등록하지 못했어요.`)
+  }
 
   flushFileErrors()
 
@@ -619,7 +644,7 @@ if (!app.requestSingleInstanceLock()) {
         glossaryEntries = glossary
         // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
         applySettings(settings)
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape })
+        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, { maskingMode: settings.masking.mode, glossary, barShape: settings.bar.shape, petVisible: settings.pet.visible })
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
