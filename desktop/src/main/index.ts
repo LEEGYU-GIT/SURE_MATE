@@ -27,7 +27,7 @@ import { createGlossaryRuntime, type GlossaryRuntime } from './glossary/glossary
 import { createGlossaryCache, saveUserEntries } from './glossary/glossary-store'
 import { createPackCommands, PACK_MAX_BYTES } from './glossary/pack-commands'
 import { createWikiCard, type WikiCard } from './glossary/wiki-card'
-import { createHotkeyChanger, type HotkeyChanger } from './hotkeys/hotkey-change'
+import { createHotkeyChanger, resumeFailedNotice, type HotkeyChanger } from './hotkeys/hotkey-change'
 import { HotkeyManager } from './hotkeys/hotkey-manager'
 import { hotkeyStatuses, withHotkeySetting } from './hotkeys/hotkey-settings'
 import { registerIpc } from './ipc'
@@ -67,6 +67,7 @@ import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
 import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
+import { createWorkspaceHotkeys } from './workspace/workspace-hotkeys'
 import { createWorkspaceCommands, workspaceMenuContent, workspacePaletteItems } from './workspace/workspace-items'
 import { createWorkspaceRuntime } from './workspace/workspace-runtime'
 
@@ -173,6 +174,7 @@ const changerProxy: HotkeyChanger = {
   check: (id, acc) => hotkeyChanger?.check(id, acc) ?? { level: 'block', reason: NOT_READY },
   startRecording: () => hotkeyChanger?.startRecording(),
   stopRecording: () => hotkeyChanger?.stopRecording(),
+  recording: () => hotkeyChanger?.recording() ?? false,
   set: async (id, acc) => (hotkeyChanger ? hotkeyChanger.set(id, acc) : { ok: false, reason: NOT_READY }),
   candidates: () => hotkeyChanger?.candidates() ?? [],
   dispose: () => hotkeyChanger?.dispose()
@@ -460,6 +462,12 @@ async function startShell(): Promise<void> {
     isAcceleratorHeld
   )
   hotkeys = manager
+  // 트레이 "단축키 일시 중지". 키 녹화와 따로 기록한다: 녹화가 끝나도 일시 중지 중이면 되살리지 않고,
+  // 녹화 중에 일시 중지를 끄면 녹화가 끝날 때 되살린다
+  let suspended = false
+  // 워크스페이스 단축키(설계 §11): 누르면 그 배치를 불러온다. 설정 창에서 바꾸면 workspaces.json에 저장한다
+  const workspaces = workspaceSvc
+  const workspaceHotkeys = workspaces ? createWorkspaceHotkeys({ manager, service: workspaces, log }) : null
   hotkeyChanger = createHotkeyChanger({
     manager,
     // 등록해 보고 바로 풀어 다른 앱이 쓰는지 본다
@@ -475,10 +483,12 @@ async function startShell(): Promise<void> {
     // 설정 쓰기 한 줄(changeSettings)로 저장한다. 조종 단축키는 pet.controlHotkey(null이면 단축키 없음)
     save: (id, acc) => changeSettings((cur) => withHotkeySetting(cur, id, acc)),
     timers: realTimers,
-    log
+    log,
+    userSuspended: () => suspended,
+    warn,
+    workspaces: workspaceHotkeys ?? undefined
   })
 
-  let suspended = false
   shell = createTray({
     paletteHotkey,
     maskingMode: () => settings.masking.mode,
@@ -503,13 +513,12 @@ async function startShell(): Promise<void> {
         shell?.refresh()
       }),
     onToggleSuspend: () => {
-      if (suspended) {
-        const { failed } = manager.resumeAll()
-        if (failed.length) warn(`다시 등록하지 못한 단축키가 있어요: ${failed.join(', ')}`)
-      } else {
-        manager.suspendAll()
-      }
       suspended = !suspended
+      if (suspended) manager.suspendAll()
+      else if (!hotkeyChanger?.recording()) {
+        const { failed } = manager.resumeAll()
+        if (failed.length) warn(resumeFailedNotice(failed, workspaceHotkeys?.name))
+      }
       return suspended
     },
     onQuit: () => app.quit()
@@ -549,6 +558,14 @@ async function startShell(): Promise<void> {
   })
   if (!manager.bind('pet-control', petControl, onPetControl).ok) {
     warn(`말랑 메이트 조종 단축키 ${petControl}를 등록하지 못했어요.`)
+  }
+
+  // 워크스페이스 단축키는 팔레트·조회·조종 단축키 다음에 등록한다(같은 조합이면 앞의 것이 남는다). 못 잡은 조합은 한 번에 알리고
+  // 로그에는 id·까닭만 남긴다(workspace.hotkey). 저장·편집·삭제·단축키 저장으로 목록이 바뀔 때마다 다시 맞춘다
+  if (workspaces && workspaceHotkeys) {
+    const { failed } = workspaceHotkeys.sync(await workspaces.list())
+    if (failed.length) warn(`워크스페이스 단축키를 등록하지 못했어요: ${failed.map((f) => f.hotkey).join(', ')}`)
+    workspaces.onChange((list) => void workspaceHotkeys.sync(list))
   }
 
   flushFileErrors()

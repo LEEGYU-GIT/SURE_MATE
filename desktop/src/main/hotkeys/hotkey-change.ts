@@ -1,7 +1,9 @@
+import { sameAccelerator, UNKNOWN_KEY } from '../../shared/hotkeys/accelerator-input'
 import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult } from '../../shared/settings/settings-snapshot'
+import { WORKSPACE_NOTES } from '../../shared/workspace/messages'
 import type { Timers } from '../timers'
-import { checkAccelerator } from './accelerator-rules'
-import type { HotkeyId, HotkeyManager } from './hotkey-manager'
+import { acceleratorKeyCode, checkAccelerator } from './accelerator-rules'
+import { type HotkeyId, type HotkeyManager, isWorkspaceHotkey, type WorkspaceHotkeyId, workspaceIdOf } from './hotkey-manager'
 
 /** 녹화가 이만큼 이어지면(창을 떠났거나 잊음) 저절로 멈추고 단축키를 되살린다 */
 export const RECORD_TIMEOUT_MS = 30000
@@ -10,21 +12,50 @@ export const ONBOARDING_CANDIDATES = ['Alt+Space', 'Ctrl+Alt+Space', 'Alt+`'] as
 
 export type { HotkeyCheck, HotkeySetResult }
 
-/** 바꿀 수 있는 앱 단축키(겹침 검사는 서로를 본다) */
-export const HOTKEY_IDS: readonly HotkeyId[] = ['palette', 'lookup', 'pet-control']
-/** 비워 둘 수 있는 단축키(말랑 메이트 조종은 기본값이 없다, 설계 §14-2) */
-const CLEARABLE: readonly HotkeyId[] = ['pet-control']
-/** 겹침 안내에 쓰는 단축키 이름 */
-const HOTKEY_NAMES: Record<HotkeyId, string> = { palette: '팔레트', lookup: '용어 찾기', 'pet-control': '말랑 메이트 조종' }
+type AppHotkeyId = Exclude<HotkeyId, WorkspaceHotkeyId>
+/** 안내 문구에 쓰는 앱 단축키 이름 */
+const APP_HOTKEY_NAMES: Record<AppHotkeyId, string> = { palette: '팔레트', lookup: '용어 찾기', 'pet-control': '말랑 메이트 조종' }
+const IN_USE = '다른 앱이 이 조합을 쓰고 있어요'
+const SAVE_FAILED = '단축키를 저장하지 못했어요. 다시 해 주세요'
+
+/** 워크스페이스 이름(없으면 null). 안내 문구에만 쓰고 로그에는 넣지 않는다 */
+type WorkspaceName = (workspaceId: string) => string | null
+
+/** 안내 문구(설정 창·트레이)에 쓰는 단축키 이름. 워크스페이스 단축키는 ‘이름’ 워크스페이스(이름을 모르면 워크스페이스) */
+export function hotkeyName(id: HotkeyId, workspaceName?: WorkspaceName): string {
+  if (!isWorkspaceHotkey(id)) return APP_HOTKEY_NAMES[id]
+  const name = workspaceName?.(workspaceIdOf(id))
+  return name ? `‘${name}’ 워크스페이스` : '워크스페이스'
+}
+
+/** 일시 중지(녹화·트레이)를 풀 때 다시 등록하지 못한 단축키 알림 */
+export function resumeFailedNotice(failed: HotkeyId[], workspaceName?: WorkspaceName): string {
+  return `다시 등록하지 못한 단축키가 있어요: ${failed.map((id) => hotkeyName(id, workspaceName)).join(', ')}`
+}
+
+/** 워크스페이스 단축키(workspace:<id>)를 맡는 쪽(main/workspace/workspace-hotkeys.ts) */
+export interface WorkspaceHotkeySide {
+  /** 워크스페이스가 있으면 처리기(누르면 불러오기)를 붙이고 true, 없으면 false */
+  prepare(workspaceId: string): Promise<boolean>
+  /** workspaces.json에 저장한다. false면 저장하지 못함 */
+  save(workspaceId: string, acc: string | null): Promise<boolean>
+  name: WorkspaceName
+}
 
 export interface HotkeyChangerDeps {
-  manager: Pick<HotkeyManager, 'rebind' | 'unbind' | 'suspendAll' | 'resumeAll' | 'current'>
+  manager: Pick<HotkeyManager, 'rebind' | 'unbind' | 'suspendAll' | 'resumeAll' | 'current' | 'ids'>
   /** 등록해 보고 바로 풀어 다른 앱이 쓰는지 본다(true = 비어 있음) */
   probe(acc: string): boolean
-  /** 설정 파일에 저장(settings.hotkeys[id], 조종 단축키는 settings.pet.controlHotkey). null은 단축키 없음 */
+  /** 설정 파일에 저장(settings.hotkeys[id], 조종 단축키는 settings.pet.controlHotkey). null은 단축키 없음. 워크스페이스 단축키는 workspaces.save */
   save(id: HotkeyId, acc: string | null): Promise<void>
   timers: Timers
   log(event: string, data: Record<string, unknown>): void
+  /** 트레이 "단축키 일시 중지"가 켜져 있는지. 켜져 있으면 녹화가 끝나도 되살리지 않는다(일시 중지를 끌 때 되살린다) */
+  userSuspended?(): boolean
+  /** 녹화를 끝내며 다시 등록하지 못한 단축키 알림(트레이) */
+  warn?(message: string): void
+  /** 워크스페이스 단축키. 없으면 workspace:<id>는 모두 없는 워크스페이스로 거절한다 */
+  workspaces?: WorkspaceHotkeySide
 }
 
 export interface HotkeyChanger {
@@ -32,40 +63,70 @@ export interface HotkeyChanger {
   /** 키 녹화 중에는 모든 단축키를 잠시 푼다(설계 문서 §6) */
   startRecording(): void
   stopRecording(): void
-  /** acc가 null이면 단축키를 비운다(조종 단축키만, 팔레트·용어 찾기는 거절) */
+  /** 녹화 중인지(트레이 일시 중지를 끌 때 녹화 중이면 되살리지 않고 녹화가 끝날 때 되살린다) */
+  recording(): boolean
+  /** acc가 null이면 단축키를 비운다(조종·워크스페이스 단축키만, 팔레트·용어 찾기는 거절) */
   set(id: HotkeyId, acc: string | null): Promise<HotkeySetResult>
   candidates(): HotkeyCandidate[]
   dispose(): void
 }
 
-const same = (a: string | undefined, b: string): boolean => a !== undefined && a.toLowerCase() === b.toLowerCase()
+const same = (a: string | undefined, b: string): boolean => a !== undefined && sameAccelerator(a, b)
 
 /**
  * 설정 창·온보딩의 단축키 바꾸기(설계 문서 §6). 바꿀 때는 기존 등록 해제 → 새로 등록 → 실패하면 되돌리기(HotkeyManager.bind).
- * 녹화가 어떻게 끝나든(멈춤·바꾸기·30초·dispose) 단축키를 되살린다.
- * 말랑 메이트 조종 단축키도 같은 길로 바꾸고, 비우면(null) 등록을 풀고 단축키 없음으로 저장한다.
+ * 녹화가 어떻게 끝나든(멈춤·바꾸기·30초·dispose) 단축키를 되살린다. 다만 트레이에서 일시 중지했으면 그대로 둔다.
+ * 말랑 메이트 조종·워크스페이스 단축키도 같은 길로 바꾸고, 비우면(null) 등록을 풀고 단축키 없음으로 저장한다.
+ * 워크스페이스 단축키는 workspaces.json에 저장하고, 저장하지 못하면 등록도 되돌린다.
  */
 export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
   let recording = false
   let timer: unknown = null
+  const name = (id: HotkeyId): string => hotkeyName(id, d.workspaces?.name)
 
   const stopRecording = (): void => {
     if (timer !== null) d.timers.clearTimeout(timer)
     timer = null
     if (!recording) return
     recording = false
+    // 녹화와 트레이 일시 중지는 따로 기록한다: 일시 중지 중이면 그것을 끌 때 되살린다
+    if (d.userSuspended?.()) return
     const { failed } = d.manager.resumeAll()
-    if (failed.length) d.log('hotkey.resume.failed', { ids: failed })
+    if (!failed.length) return
+    d.log('hotkey.resume.failed', { ids: failed })
+    d.warn?.(resumeFailedNotice(failed, d.workspaces?.name))
   }
 
   const check = (id: HotkeyId, acc: string): HotkeyCheck => {
+    // 주 키를 모르면 누르고 있는지 알 수 없어 자동 반복을 거르지 못한다(키 녹화는 아는 키만 만든다)
+    if (acceleratorKeyCode(acc) === null) return { level: 'block', reason: UNKNOWN_KEY }
     const rule = checkAccelerator(acc)
     if (rule.level === 'block') return { level: 'block', reason: rule.reason }
-    const other = HOTKEY_IDS.find((o) => o !== id && same(d.manager.current(o), acc))
-    if (other) return { level: 'same-as-other', reason: `${HOTKEY_NAMES[other]} 단축키와 같은 조합이에요` }
+    // 등록된 모든 단축키(팔레트·용어 찾기·조종·워크스페이스)와 견준다. 보조키 순서·대소문자는 따지지 않는다
+    const other = d.manager.ids().find((o) => o !== id && same(d.manager.current(o), acc))
+    if (other) return { level: 'same-as-other', reason: `${name(other)} 단축키와 같은 조합이에요` }
     if (same(d.manager.current(id), acc)) return { level: 'ok' }
-    if (!d.probe(acc)) return { level: 'in-use', reason: '다른 앱이 이 조합을 쓰고 있어요' }
+    if (!d.probe(acc)) return { level: 'in-use', reason: IN_USE }
     return rule.level === 'warn' ? { level: 'warn', reason: rule.reason } : { level: 'ok' }
+  }
+
+  /** 워크스페이스 단축키면 그 워크스페이스가 있는지 보고 처리기를 붙인다(앱 단축키는 늘 true) */
+  const prepare = async (id: HotkeyId): Promise<boolean> =>
+    !isWorkspaceHotkey(id) || ((await d.workspaces?.prepare(workspaceIdOf(id))) ?? false)
+
+  /** 저장했는지. 설정 파일 저장은 실패해도 이번 실행에 적용하므로(설정 쓰기) 늘 true */
+  const save = async (id: HotkeyId, acc: string | null): Promise<boolean> => {
+    if (!isWorkspaceHotkey(id)) {
+      await d.save(id, acc)
+      return true
+    }
+    return (await d.workspaces?.save(workspaceIdOf(id), acc)) ?? false
+  }
+
+  /** 저장하지 못하면 등록도 바꾸기 전으로 되돌린다. 그사이 지워진 워크스페이스는 풀기만 한다 */
+  const rollback = async (id: HotkeyId, previous: string | undefined): Promise<void> => {
+    if (previous !== undefined && (await prepare(id))) d.manager.rebind(id, previous)
+    else d.manager.unbind(id)
   }
 
   return {
@@ -81,29 +142,34 @@ export function createHotkeyChanger(d: HotkeyChangerDeps): HotkeyChanger {
       }, RECORD_TIMEOUT_MS)
     },
     stopRecording,
+    recording: () => recording,
     async set(id, acc) {
       stopRecording()
+      // 로그에는 id와 까닭만(워크스페이스 이름은 안내 문구에만)
+      const fail = (reason: string, why: string): HotkeySetResult => {
+        d.log('hotkey.change', { id, ok: false, reason: why })
+        return { ok: false, reason }
+      }
+      if (!(await prepare(id))) return fail(WORKSPACE_NOTES.missing, 'missing')
+      const previous = d.manager.current(id)
       if (acc === null) {
-        if (!CLEARABLE.includes(id)) {
-          d.log('hotkey.change', { id, ok: false, reason: 'not-clearable' })
-          return { ok: false, reason: `${HOTKEY_NAMES[id]} 단축키는 비워 둘 수 없어요` }
-        }
+        if (!isWorkspaceHotkey(id) && id !== 'pet-control') return fail(`${name(id)} 단축키는 비워 둘 수 없어요`, 'not-clearable')
         d.manager.unbind(id)
-        await d.save(id, null)
+        if (!(await save(id, null))) {
+          await rollback(id, previous)
+          return fail(SAVE_FAILED, 'save-failed')
+        }
         d.log('hotkey.change', { id, ok: true, acc: null })
         return { ok: true, acc: null }
       }
       const c = check(id, acc)
-      if (c.level === 'block' || c.level === 'same-as-other' || c.level === 'in-use') {
-        d.log('hotkey.change', { id, ok: false, reason: c.level })
-        return { ok: false, reason: c.reason ?? '이 조합은 쓸 수 없어요' }
-      }
+      if (c.level === 'block' || c.level === 'same-as-other' || c.level === 'in-use') return fail(c.reason ?? '이 조합은 쓸 수 없어요', c.level)
       const r = d.manager.rebind(id, acc)
-      if (!r.ok) {
-        d.log('hotkey.change', { id, ok: false, reason: r.reason })
-        return { ok: false, reason: r.reason === 'in-use' ? '다른 앱이 이 조합을 쓰고 있어요' : (r.detail ?? '이 조합은 쓸 수 없어요') }
+      if (!r.ok) return fail(r.reason === 'in-use' ? IN_USE : (r.detail ?? '이 조합은 쓸 수 없어요'), r.reason)
+      if (!(await save(id, acc))) {
+        await rollback(id, previous)
+        return fail(SAVE_FAILED, 'save-failed')
       }
-      await d.save(id, acc)
       d.log('hotkey.change', { id, ok: true, acc })
       return c.level === 'warn' ? { ok: true, acc, warning: c.reason } : { ok: true, acc }
     },

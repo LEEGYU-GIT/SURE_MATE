@@ -1,17 +1,19 @@
 import type { Settings } from '../../shared/settings/settings'
 import type { SettingsSnapshot } from '../../shared/settings/settings-snapshot'
-import type { HotkeyId } from './hotkey-manager'
+import { type HotkeyId, isWorkspaceHotkey } from './hotkey-manager'
 
-/** 설정에 저장된 조합(조종 단축키는 settings.pet.controlHotkey, 없으면 null) */
+/** 설정에 저장된 조합(조종 단축키는 settings.pet.controlHotkey, 없으면 null). 워크스페이스 단축키는 workspaces.json에 있어 null */
 export function hotkeySetting(s: Settings, id: HotkeyId): string | null {
+  if (isWorkspaceHotkey(id)) return null
   return id === 'pet-control' ? s.pet.controlHotkey : s.hotkeys[id]
 }
 
 /**
  * 단축키 바꾸기가 저장할 새 설정(설정 쓰기 changeSettings에 넘긴다). 조종 단축키는 pet.controlHotkey, 나머지는 hotkeys.
- * 팔레트·용어 찾기는 비울 수 없어 null이면 그대로 돌려준다.
+ * 팔레트·용어 찾기는 비울 수 없어 null이면 그대로 돌려준다. 워크스페이스 단축키는 workspaces.json에 저장하므로 그대로 돌려준다.
  */
 export function withHotkeySetting(s: Settings, id: HotkeyId, acc: string | null): Settings {
+  if (isWorkspaceHotkey(id)) return s
   if (id === 'pet-control') return { ...s, pet: { ...s.pet, controlHotkey: acc } }
   if (acc === null) return s
   return { ...s, hotkeys: { ...s.hotkeys, [id]: acc } }

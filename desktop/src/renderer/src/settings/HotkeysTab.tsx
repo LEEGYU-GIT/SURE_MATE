@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import type { SettingsHotkeyId } from '../../../shared/settings/settings-snapshot'
+import type { AppHotkeyId, SettingsHotkeyId } from '../../../shared/settings/settings-snapshot'
 import { Button, Section } from './controls'
 import { HotkeyRecorder } from './HotkeyRecorder'
 import { useSettingsCtx } from './use-settings'
 
-const ROWS: { id: SettingsHotkeyId; label: string; description: string }[] = [
+const ROWS: { id: AppHotkeyId; label: string; description: string }[] = [
   { id: 'palette', label: '팔레트 열기', description: '프롬프트·용어·상용구·명령을 찾는 팔레트를 열고 닫아요' },
   { id: 'lookup', label: '선택한 글로 용어 찾기', description: '고른 글에 나온 용어를 바 옆 위키 카드로 보여 줘요' }
 ]

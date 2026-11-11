@@ -173,3 +173,41 @@ it('처음 묶을 때 다른 앱이 쓰는 조합이어도 처리기는 남아 �
 it('처리기를 정한 적 없는 id의 rebind는 거절한다', () => {
   expect(new HotkeyManager(new FakeBackend()).rebind('lookup', 'Ctrl+Alt+W').ok).toBe(false)
 })
+
+it('ids()는 지금 조합이 있는 단축키(워크스페이스 포함). unbind하면 풀리고 빠지며, 모르는 id의 unbind는 아무것도 하지 않는다', () => {
+  const b = new FakeBackend()
+  const m = new HotkeyManager(b)
+  m.bind('palette', 'Alt+`', () => {})
+  m.bind('workspace:ws-1', 'Ctrl+Alt+1', () => {})
+  // 조합 없이 처리기만 둔 것은 들어가지 않는다
+  m.bind('workspace:ws-2', null, () => {})
+  expect([...m.ids()].sort()).toEqual(['palette', 'workspace:ws-1'])
+  m.unbind('workspace:ws-1')
+  expect(b.registered.has('Ctrl+Alt+1')).toBe(false)
+  expect(m.ids()).toEqual(['palette'])
+  m.unbind('workspace:nope')
+  m.unbind('lookup')
+  expect(m.ids()).toEqual(['palette'])
+  expect([...b.registered.keys()]).toEqual(['Alt+`'])
+})
+
+it('일시 중지 중에 묶으면 등록해 보기만 하고(다른 앱이 쓰면 in-use) 되살릴 때 다른 단축키와 함께 등록한다', () => {
+  const b = new FakeBackend()
+  b.taken.add('Ctrl+Alt+9')
+  const m = new HotkeyManager(b)
+  let n = 0
+  m.bind('palette', 'Alt+`', () => {})
+  m.suspendAll()
+  expect(m.bind('workspace:ws-1', 'Ctrl+Alt+1', () => n++)).toEqual({ ok: true })
+  expect(b.registered.size).toBe(0)
+  expect(m.current('workspace:ws-1')).toBe('Ctrl+Alt+1')
+  expect(m.bind('workspace:ws-2', 'Ctrl+Alt+9', () => {})).toEqual({ ok: false, reason: 'in-use' })
+  expect(m.current('workspace:ws-2')).toBeUndefined()
+  expect(m.resumeAll()).toEqual({ failed: [] })
+  expect([...b.registered.keys()].sort()).toEqual(['Alt+`', 'Ctrl+Alt+1'])
+  b.fire('Ctrl+Alt+1')
+  expect(n).toBe(1)
+  // 되살린 뒤에는 바로 등록한다
+  expect(m.bind('workspace:ws-3', 'Ctrl+Alt+3', () => {})).toEqual({ ok: true })
+  expect(b.registered.has('Ctrl+Alt+3')).toBe(true)
+})

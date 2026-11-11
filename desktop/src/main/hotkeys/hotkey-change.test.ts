@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { globalTimers } from '../bar/test-timers'
-import { createHotkeyChanger, RECORD_TIMEOUT_MS } from './hotkey-change'
-import { HotkeyManager, type ShortcutBackend } from './hotkey-manager'
+import { createHotkeyChanger, hotkeyName, RECORD_TIMEOUT_MS } from './hotkey-change'
+import { type HotkeyId, HotkeyManager, type ShortcutBackend } from './hotkey-manager'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -220,5 +220,98 @@ describe('말랑 메이트 조종 단축키(pet-control): 다른 단축키처럼
     expect(t.manager.current('palette')).toBe('Alt+`')
     expect(t.manager.current('lookup')).toBe('Ctrl+Alt+W')
     expect(t.saved).toEqual([])
+  })
+})
+
+describe('녹화와 트레이 "단축키 일시 중지"는 따로 기록한다(M7)', () => {
+  /** 일시 중지·되살리기 횟수를 세는 가짜 manager. resumeAll이 실패하면 팔레트·워크스페이스 하나를 돌려준다 */
+  function rec(o: { failResume?: boolean } = {}) {
+    const calls = { suspend: 0, resume: 0 }
+    const warns: string[] = []
+    const logs: [string, Record<string, unknown>][] = []
+    const state = { userSuspended: false }
+    const failed: HotkeyId[] = o.failResume ? ['palette', 'workspace:ws-1'] : []
+    const changer = createHotkeyChanger({
+      manager: {
+        rebind: () => ({ ok: true }),
+        unbind: () => {},
+        suspendAll: () => void calls.suspend++,
+        resumeAll: () => {
+          calls.resume++
+          return { failed }
+        },
+        current: () => undefined,
+        ids: () => []
+      },
+      probe: () => true,
+      save: async () => {},
+      timers: globalTimers(),
+      log: (e, d) => void logs.push([e, d]),
+      userSuspended: () => state.userSuspended,
+      warn: (m) => void warns.push(m),
+      workspaces: { prepare: async () => true, save: async () => true, name: (id) => (id === 'ws-1' ? 'QA 모드' : null) }
+    })
+    return { changer, calls, warns, logs, state }
+  }
+
+  it('녹화를 시작하면 한 번만 모두 풀고(다시 시작해도 그대로), 멈추면 한 번 되살린다', () => {
+    const t = rec()
+    t.changer.startRecording()
+    t.changer.startRecording()
+    expect(t.calls.suspend).toBe(1)
+    expect(t.changer.recording()).toBe(true)
+    t.changer.stopRecording()
+    t.changer.stopRecording()
+    expect(t.calls.resume).toBe(1)
+    expect(t.changer.recording()).toBe(false)
+  })
+
+  it('트레이에서 일시 중지했으면 녹화가 끝나도(멈춤·바꾸기·30초) 되살리지 않는다', async () => {
+    const t = rec()
+    t.state.userSuspended = true
+    t.changer.startRecording()
+    t.changer.stopRecording()
+    t.changer.startRecording()
+    await t.changer.set('palette', 'Ctrl+Shift+K')
+    t.changer.startRecording()
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(t.changer.recording()).toBe(false)
+    expect(t.calls.resume).toBe(0)
+    // 일시 중지를 끈 뒤의 녹화는 끝날 때 되살린다
+    t.state.userSuspended = false
+    t.changer.startRecording()
+    t.changer.stopRecording()
+    expect(t.calls.resume).toBe(1)
+  })
+
+  it('멈추지 않아도 30초가 지나면 한 번 되살리고 녹화가 끝난다', () => {
+    const t = rec()
+    t.changer.startRecording()
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS - 1)
+    expect(t.calls.resume).toBe(0)
+    vi.advanceTimersByTime(1)
+    expect(t.calls.resume).toBe(1)
+    expect(t.changer.recording()).toBe(false)
+    vi.advanceTimersByTime(RECORD_TIMEOUT_MS)
+    expect(t.calls.resume).toBe(1)
+  })
+
+  it('되살리지 못한 단축키가 있으면 이름으로 한 번 알리고, 로그에는 id만 남긴다', () => {
+    const t = rec({ failResume: true })
+    t.changer.startRecording()
+    t.changer.stopRecording()
+    expect(t.warns).toEqual(['다시 등록하지 못한 단축키가 있어요: 팔레트, ‘QA 모드’ 워크스페이스'])
+    expect(t.logs).toContainEqual(['hotkey.resume.failed', { ids: ['palette', 'workspace:ws-1'] }])
+    expect(JSON.stringify(t.logs)).not.toContain('QA 모드')
+  })
+})
+
+describe('단축키 이름(안내 문구용)', () => {
+  it('앱 단축키는 고정 이름, 워크스페이스는 그 이름(모르면 워크스페이스)', () => {
+    expect(hotkeyName('palette')).toBe('팔레트')
+    expect(hotkeyName('pet-control')).toBe('말랑 메이트 조종')
+    expect(hotkeyName('workspace:ws-1', (id) => (id === 'ws-1' ? 'QA 모드' : null))).toBe('‘QA 모드’ 워크스페이스')
+    expect(hotkeyName('workspace:ws-9', () => null)).toBe('워크스페이스')
+    expect(hotkeyName('workspace:ws-9')).toBe('워크스페이스')
   })
 })

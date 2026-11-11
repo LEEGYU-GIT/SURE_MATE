@@ -1,14 +1,17 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc-channels'
-import type { SettingsHotkeyId } from '../../shared/settings/settings-snapshot'
+import type { AppHotkeyId, SettingsHotkeyId } from '../../shared/settings/settings-snapshot'
+import { parseWorkspaceId } from '../../shared/workspace/workspace-ipc'
 import type { HotkeyChanger } from '../hotkeys/hotkey-change'
+import { WORKSPACE_HOTKEY_PREFIX } from '../hotkeys/hotkey-manager'
 import type { SettingsService } from './settings-service'
 
 export interface SettingsIpcDeps {
   /** 지금 열린 설정 창의 webContents id(없으면 null) */
   contentsId(): number | null
   service: SettingsService
-  hotkeys: HotkeyChanger
+  /** 녹화 중인지는 트레이 일시 중지만 본다 */
+  hotkeys: Omit<HotkeyChanger, 'recording'>
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
   finishOnboarding(): Promise<void>
@@ -41,8 +44,11 @@ export interface SettingsIpcDeps {
 
 type Sender = { sender: { id: number } }
 const BAD = '요청 형식이 맞지 않아요'
-const HOTKEY_IDS: readonly SettingsHotkeyId[] = ['palette', 'lookup', 'pet-control']
-const isHotkeyId = (v: unknown): v is SettingsHotkeyId => HOTKEY_IDS.includes(v as SettingsHotkeyId)
+const APP_HOTKEY_IDS: readonly AppHotkeyId[] = ['palette', 'lookup', 'pet-control']
+/** 앱 단축키 id, 또는 workspace:<워크스페이스 id>(id는 workspaces.json 규칙: 영문·숫자·하이픈 1~64자) */
+const isHotkeyId = (v: unknown): v is SettingsHotkeyId =>
+  APP_HOTKEY_IDS.includes(v as AppHotkeyId) ||
+  (typeof v === 'string' && v.startsWith(WORKSPACE_HOTKEY_PREFIX) && parseWorkspaceId(v.slice(WORKSPACE_HOTKEY_PREFIX.length)) !== null)
 const isAcc = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64
 
 /**

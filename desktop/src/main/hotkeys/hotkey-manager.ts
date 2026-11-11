@@ -6,7 +6,14 @@ export interface ShortcutBackend {
   unregister(acc: string): void
 }
 
-export type HotkeyId = 'palette' | 'lookup' | 'pet-control'
+/** 워크스페이스 단축키(설계 §11): workspace:<워크스페이스 id> */
+export type WorkspaceHotkeyId = `workspace:${string}`
+export type HotkeyId = 'palette' | 'lookup' | 'pet-control' | WorkspaceHotkeyId
+
+export const WORKSPACE_HOTKEY_PREFIX = 'workspace:'
+export const workspaceHotkeyId = (workspaceId: string): WorkspaceHotkeyId => `workspace:${workspaceId}`
+export const isWorkspaceHotkey = (id: HotkeyId): id is WorkspaceHotkeyId => id.startsWith(WORKSPACE_HOTKEY_PREFIX)
+export const workspaceIdOf = (id: WorkspaceHotkeyId): string => id.slice(WORKSPACE_HOTKEY_PREFIX.length)
 
 export type BindResult = { ok: true } | { ok: false; reason: 'in-use' | 'blocked'; detail?: string }
 
@@ -27,6 +34,8 @@ export class HotkeyManager {
   private readonly entries = new Map<HotkeyId, Entry>()
   /** id마다 하나인 처리기. 조합을 떼거나(unbind) 등록에 실패해도 남아 rebind로 다시 붙인다 */
   private readonly handlers = new Map<HotkeyId, () => void>()
+  /** suspendAll 뒤 resumeAll 전(키 녹화·트레이 일시 중지). 이때 묶은 조합은 resumeAll이 다른 단축키와 함께 등록한다 */
+  private suspended = false
 
   constructor(
     private readonly backend: ShortcutBackend,
@@ -59,7 +68,9 @@ export class HotkeyManager {
       if (previous?.active) this.backend.register(previous.acc, previous.wrapped)
       return { ok: false, reason: 'in-use' }
     }
-    this.entries.set(id, { acc, wrapped, active: true })
+    // 일시 중지 중이면 다른 앱이 쓰는지만 확인하고 풀어 둔다(녹화 중에 워크스페이스 단축키를 다시 맞춰도 눌리지 않게)
+    if (this.suspended) this.backend.unregister(acc)
+    this.entries.set(id, { acc, wrapped, active: !this.suspended })
     return { ok: true }
   }
 
@@ -85,6 +96,7 @@ export class HotkeyManager {
   }
 
   suspendAll(): void {
+    this.suspended = true
     for (const entry of this.entries.values()) {
       if (entry.active) this.backend.unregister(entry.acc)
       entry.active = false
@@ -92,6 +104,7 @@ export class HotkeyManager {
   }
 
   resumeAll(): { failed: HotkeyId[] } {
+    this.suspended = false
     const failed: HotkeyId[] = []
     for (const [id, entry] of this.entries) {
       if (entry.active) continue
@@ -103,5 +116,10 @@ export class HotkeyManager {
 
   current(id: HotkeyId): string | undefined {
     return this.entries.get(id)?.acc
+  }
+
+  /** 지금 조합이 있는 단축키(일시 중지 중인 것 포함, 처리기만 둔 것은 빼고). 겹침 검사가 모두를 본다 */
+  ids(): HotkeyId[] {
+    return [...this.entries.keys()]
   }
 }

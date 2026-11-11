@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { acceleratorFromKey } from '../../../shared/hotkeys/accelerator-input'
 import type { SettingsHotkeyId } from '../../../shared/settings/settings-snapshot'
-import { acceleratorFromKey } from './accelerator-input'
 
 /**
  * 단축키 녹화 칸(설계 문서 §6). 칸에 포커스가 오면 모든 전역 단축키를 잠시 풀고(main), 떠나면 되살린다.

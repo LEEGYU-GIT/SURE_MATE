@@ -111,6 +111,24 @@ it('단축키: id는 palette·lookup·pet-control만, 조합은 64자 안의 글
   expect(d.hotkeys.stopRecording).toHaveBeenCalledTimes(1)
 })
 
+it('워크스페이스 단축키: id는 workspace:<워크스페이스 id>(영문·숫자·하이픈 1~64자), 설정 창에서 보낸 것만', async () => {
+  const uuid = '3f2a9c1e-0b7d-4c55-9e3a-1d2b3c4d5e6f'
+  expect(await handle(IPC.settingsHotkeySet, SETTINGS, `workspace:${uuid}`, 'Ctrl+Alt+1')).toEqual({ ok: true, acc: 'Ctrl+Alt+1' })
+  expect(d.hotkeys.set).toHaveBeenLastCalledWith(`workspace:${uuid}`, 'Ctrl+Alt+1')
+  await handle(IPC.settingsHotkeySet, SETTINGS, 'workspace:ws-1', null)
+  expect(d.hotkeys.set).toHaveBeenLastCalledWith('workspace:ws-1', null)
+  expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, 'workspace:ws-1', 'Ctrl+Alt+1')).toEqual({ level: 'ok' })
+  expect(d.hotkeys.check).toHaveBeenLastCalledWith('workspace:ws-1', 'Ctrl+Alt+1')
+  const bad = { ok: false, reason: '요청 형식이 맞지 않아요' }
+  for (const id of ['workspace:', 'workspace:a/b', 'workspace:ws 1', `workspace:${'a'.repeat(65)}`, 'workspaces:ws-1', 'ws-1', ' workspace:ws-1']) {
+    expect(await handle(IPC.settingsHotkeySet, SETTINGS, id, 'Ctrl+Alt+1')).toEqual(bad)
+    expect(await handle(IPC.settingsHotkeyCheck, SETTINGS, id, 'Ctrl+Alt+1')).toEqual({ level: 'block', reason: '요청 형식이 맞지 않아요' })
+  }
+  expect(await handle(IPC.settingsHotkeySet, SETTINGS, `workspace:${'a'.repeat(64)}`, 'Ctrl+Alt+1')).toEqual({ ok: true, acc: 'Ctrl+Alt+1' })
+  expect(await handle(IPC.settingsHotkeySet, PALETTE, 'workspace:ws-1', 'Ctrl+Alt+1')).toEqual(bad)
+  expect(d.hotkeys.set).toHaveBeenCalledTimes(3)
+})
+
 it('파일 열기는 settings·logs만, 온보딩 열기·끝내기·후보', async () => {
   send(IPC.settingsOpenFile, SETTINGS, 'settings')
   send(IPC.settingsOpenFile, SETTINGS, 'C:\\Windows\\notepad.exe')

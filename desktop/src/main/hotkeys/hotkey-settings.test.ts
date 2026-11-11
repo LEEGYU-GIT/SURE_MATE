@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings/settings'
 import { globalTimers } from '../bar/test-timers'
 import { createHotkeyChanger } from './hotkey-change'
 import { HotkeyManager, type ShortcutBackend } from './hotkey-manager'
-import { hotkeyStatuses, withHotkeySetting } from './hotkey-settings'
+import { hotkeySetting, hotkeyStatuses, withHotkeySetting } from './hotkey-settings'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -76,4 +76,11 @@ it('연결(index.ts와 같은 모양): 조종 단축키를 정하면 바로 등�
   expect(settings.pet.controlHotkey).toBeNull()
   expect(status()).toEqual({ acc: null, registered: false })
   expect(registered.has('Ctrl+Alt+P')).toBe(false)
+})
+
+it('워크스페이스 단축키는 settings.json에 없다(workspaces.json에 저장): 설정 값 없음, 설정은 그대로', () => {
+  const s = base()
+  expect(hotkeySetting(s, 'workspace:ws-1')).toBeNull()
+  expect(withHotkeySetting(s, 'workspace:ws-1', 'Ctrl+Alt+1')).toBe(s)
+  expect(withHotkeySetting(s, 'workspace:ws-1', null)).toBe(s)
 })
