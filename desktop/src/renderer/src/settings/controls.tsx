@@ -266,6 +266,95 @@ export function Button({
   )
 }
 
+/** 그 자리에 보이는 결과 한 줄: ok는 보조 글, warn은 주황, error는 빨강(화면 읽기 프로그램이 바로 읽는다) */
+export type Notice = { text: string; tone: 'ok' | 'warn' | 'error' }
+const NOTICE_TONE: Record<Notice['tone'], string> = { ok: 'text-fg-2', warn: 'text-warn', error: 'text-danger' }
+
+export function NoticeLine({
+  notice,
+  className = '',
+  tabIndex,
+  ref
+}: {
+  notice: Notice
+  className?: string
+  /** -1이면 화면이 이 줄로 포커스를 옮길 수 있다(누른 단추가 사라질 때, 키보드만으로 사용 §16) */
+  tabIndex?: number
+  ref?: Ref<HTMLParagraphElement>
+}): React.JSX.Element {
+  return (
+    <p ref={ref} tabIndex={tabIndex} role={notice.tone === 'error' ? 'alert' : 'status'} className={`text-small leading-5 break-keep ${NOTICE_TONE[notice.tone]} ${className}`}>
+      {notice.text}
+    </p>
+  )
+}
+
+/**
+ * 되돌릴 수 없는 지우기(워크스페이스 지우기, 기억한 문장 모두 지우기, 사용 기록 지우기): 한 번 누르면 armed 글로 바뀌고 두 번째에
+ * onConfirm. 포커스가 단추를 떠나면(다른 곳을 누름·Tab·창 바꿈) 되돌린다. 시간이 지나도 되돌리지 않는다(두 번 누르는 데 시간이
+ * 걸리는 사용자도 끝낼 수 있게, WCAG 2.2.1). 바뀐 글은 화면 읽기 프로그램에도 알린다.
+ * context는 화면 읽기 프로그램만 읽는 앞말이다(보이는 글이 단추 이름 안에 그대로 있게: '기억한 문장 모두 지우기').
+ */
+export function ConfirmButton({
+  children,
+  armed: armedText,
+  context,
+  onArm,
+  onConfirm,
+  describedBy,
+  disabled,
+  ref
+}: {
+  children: ReactNode
+  armed: string
+  context?: string
+  /** 처음 누를 때(지난 실패 문구 지우기 등) */
+  onArm?(): void
+  onConfirm(): Promise<void>
+  describedBy?: string
+  disabled?: boolean
+  ref?: Ref<HTMLButtonElement>
+}): React.JSX.Element {
+  const [armed, setArmed] = useState(false)
+  const busy = useRef(false)
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        disabled={disabled}
+        aria-describedby={describedBy}
+        onBlur={() => setArmed(false)}
+        onClick={async () => {
+          if (busy.current) return
+          if (!armed) {
+            onArm?.()
+            setArmed(true)
+            return
+          }
+          busy.current = true
+          setArmed(false)
+          try {
+            await onConfirm()
+          } finally {
+            busy.current = false
+          }
+        }}
+        className={`h-8 shrink-0 rounded-control border px-3 text-small whitespace-nowrap text-danger transition-colors duration-(--dur-hover) disabled:cursor-not-allowed disabled:opacity-45 ${
+          armed ? 'border-danger bg-danger/15 font-semibold' : 'border-line hover:bg-danger/10'
+        }`}
+      >
+        {context ? <span className="sr-only">{context}</span> : null}
+        {armed ? armedText : children}
+      </button>
+      {/* 화면 읽기 프로그램이 바뀐 단추 글을 알게 */}
+      <span role="status" className="sr-only">
+        {armed ? armedText : ''}
+      </span>
+    </>
+  )
+}
+
 /** 한 줄 입력칸. 한글 조합 중 Enter는 무시하고, 조합이 아닌 Enter 또는 칸을 떠날 때 onCommit */
 export function TextField({
   value,

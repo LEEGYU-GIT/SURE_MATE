@@ -78,6 +78,45 @@ it('수정 시각·크기가 같으면 다시 읽지 않고, 바뀌면 다시 �
   expect((await cache.get()).fillers).toEqual(['음', '어'])
 })
 
+it('state: 파일이 없으면 기본 목록(builtin), 문제 없음', async () => {
+  expect(await createIntentCache(dir, builtin, vi.fn()).state()).toEqual({ pack: base, source: 'builtin', errors: [] })
+})
+
+it('state: 읽을 수 있는 사용자 파일이면 그 목록(user)', async () => {
+  await writeFile(path(), JSON.stringify(user))
+  const s = await createIntentCache(dir, builtin, vi.fn()).state()
+  expect(s.source).toBe('user')
+  expect(s.pack.intents.map((r) => r.id)).toEqual(['mine'])
+  expect(s.errors).toEqual([])
+})
+
+it('state: 깨진 파일은 기본 목록과 문제 한 건(파일 이름·내용 없이 코드만), 알림은 한 번', async () => {
+  await writeFile(path(), '{"fillers": ["가상자동차 비밀')
+  const onErrors = vi.fn()
+  const cache = createIntentCache(dir, builtin, onErrors)
+  const s = await cache.state()
+  expect(s).toEqual({ pack: base, source: 'builtin', errors: ['읽지 못함(PARSE)'] })
+  expect(JSON.stringify(s)).not.toContain('가상자동차')
+  // 설정 창이 다시 물어도(파일이 그대로면) 다시 읽거나 다시 알리지 않는다
+  expect(await cache.state()).toBe(s)
+  expect(await cache.get()).toBe(s.pack)
+  expect(onErrors).toHaveBeenCalledTimes(1)
+  expect(onErrors).toHaveBeenCalledWith([`${INTENTS_FILE}: 읽지 못함(PARSE)`])
+})
+
+it('state: 일부 값을 뺀 파일은 사용자 목록과 문제 목록(순번·까닭만, 단어 없이)', async () => {
+  await writeFile(path(), JSON.stringify({ ...user, fillers: ['음', '음'], endings: ['해줘', 3, '가상자동차'.repeat(5)] }))
+  const s = await createIntentCache(dir, builtin, vi.fn()).state()
+  expect(s.source).toBe('user')
+  expect(s.errors).toEqual(['군말 2번째: 중복', '어미 2번째: 문자열이 아님', '어미 3번째: 20자 초과'])
+  expect(JSON.stringify(s.errors)).not.toContain('가상자동차')
+})
+
+it('state: 형식이 다른 파일은 기본 목록과 그 까닭', async () => {
+  await writeFile(path(), JSON.stringify({ format: 'other', version: 1 }))
+  expect(await createIntentCache(dir, builtin, vi.fn()).state()).toEqual({ pack: base, source: 'builtin', errors: ['단어 목록 형식이나 판이 다름'] })
+})
+
 it('ensureUserIntents는 없을 때만 기본 목록을 쓰고 두 번째는 덮어쓰지 않는다', async () => {
   expect(await ensureUserIntents(dir, builtin)).toBe(path())
   expect(await readFile(path(), 'utf8')).toBe(JSON.stringify(builtin, null, 2))

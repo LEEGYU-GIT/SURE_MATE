@@ -16,8 +16,9 @@ const snap = (opacity = 1): SettingsSnapshot => ({
 })
 
 describe('탭 목록', () => {
-  it('설계 §14 순서(지금 있는 기능), id가 겹치지 않는다', () => {
-    expect(SETTINGS_TABS.map((t) => t.label)).toEqual(['일반', '단축키', 'AI 대상', '프롬프트·상용구', '가명 처리', '용어 사전', '워크스페이스', '바', '말랑 메이트'])
+  it('설계 §14 순서(펫 다음 마지막이 말하듯 입력), id가 겹치지 않는다', () => {
+    expect(SETTINGS_TABS.map((t) => t.label)).toEqual(['일반', '단축키', 'AI 대상', '프롬프트·상용구', '가명 처리', '용어 사전', '워크스페이스', '바', '말랑 메이트', '말하듯 입력'])
+    expect(SETTINGS_TABS.at(-1)).toEqual({ id: 'natural', label: '말하듯 입력' })
     expect(new Set(SETTINGS_TABS.map((t) => t.id)).size).toBe(SETTINGS_TABS.length)
   })
   it('말랑 메이트 탭이 있고, 이름표 목록의 id는 main이 여는 탭 id(shared)와 같은 순서다', () => {
@@ -29,6 +30,7 @@ describe('탭 목록', () => {
     expect(initialTabOf('#/settings')).toBe('general')
     expect(initialTabOf('#/settings?tab=nope')).toBe('general')
     expect(initialTabOf('#/settings?tab=workspace&ws=ws-qa')).toBe('workspace')
+    expect(initialTabOf('#/settings?tab=natural')).toBe('natural')
   })
   it('처음 열 워크스페이스: 워크스페이스 탭 주소의 id(팔레트 Ctrl+Enter·지금 배치 저장), 없거나 틀리면 null(목록)', () => {
     expect(initialWorkspaceOf('#/settings?tab=workspace&ws=ws-qa')).toBe('ws-qa')

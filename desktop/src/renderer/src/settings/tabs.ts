@@ -3,8 +3,8 @@ import { tabFromHash, workspaceFromHash, type SettingsTabId } from '../../../sha
 export type { SettingsTabId }
 
 /**
- * 설정 창 탭(설계 문서 §14 순서, 지금 있는 기능). 말하듯 입력은 M7이 한 줄 더한다.
- * id는 shared/settings/settings-route.ts의 SETTINGS_TAB_IDS에도 같은 순서로 더한다(main이 그 탭으로 설정 창을 연다).
+ * 설정 창 탭(설계 문서 §14 순서). 탭을 더할 때는 id를 shared/settings/settings-route.ts의 SETTINGS_TAB_IDS에도 같은 순서로
+ * 더한다(main이 그 탭으로 설정 창을 연다).
  */
 export const SETTINGS_TABS = [
   { id: 'general', label: '일반' },
@@ -15,7 +15,8 @@ export const SETTINGS_TABS = [
   { id: 'glossary', label: '용어 사전' },
   { id: 'workspace', label: '워크스페이스' },
   { id: 'bar', label: '바' },
-  { id: 'pet', label: '말랑 메이트' }
+  { id: 'pet', label: '말랑 메이트' },
+  { id: 'natural', label: '말하듯 입력' }
 ] as const satisfies readonly { id: SettingsTabId; label: string }[]
 
 /** 처음 열 탭: 주소에 붙은 탭('#/settings?tab=pet'), 없거나 모르면 일반 */

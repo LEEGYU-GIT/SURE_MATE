@@ -2,7 +2,7 @@ import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
 import type { MaskTerm } from './masking/dictionary'
-import type { SearchContextPayload } from './natural/natural-ipc'
+import type { NaturalChangeResult, NaturalOpenResult, NaturalView, SearchContextPayload } from './natural/natural-ipc'
 import type { Template } from './template/types'
 import type { MaskItem } from './masking/types'
 import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
@@ -173,7 +173,19 @@ export const IPC = {
   /** 설정 창 → main(invoke): 지우기 */
   workspaceRemove: 'workspace:remove',
   /** 팔레트 → main(invoke): `@이름` 줄 — 그 이름으로 지금 배치 저장(같은 이름이 있으면 다시 저장) */
-  workspaceSaveAs: 'workspace:save-as'
+  workspaceSaveAs: 'workspace:save-as',
+  /** 설정 창 → main(invoke): 말하듯 입력 탭 보기(기억한 문장·사용 기록 수·단어 목록, 설계 §13·§14) */
+  naturalView: 'natural:view',
+  /** main → 설정 창: 기억한 문장·사용 기록이 바뀜(팔레트 선택·기억하기, 지우기) */
+  naturalChanged: 'natural:changed',
+  /** 설정 창 → main(invoke): 기억한 문장 하나 지우기(정규화한 문장 키) */
+  naturalForget: 'natural:forget',
+  /** 설정 창 → main(invoke): 기억한 문장 모두 지우기 */
+  naturalForgetAll: 'natural:forget-all',
+  /** 설정 창 → main(invoke): 사용 기록 지우기 */
+  naturalClearUsage: 'natural:clear-usage',
+  /** 설정 창 → main(invoke): 단어 목록 파일 열기(팔레트 명령 cmd.open-intents와 같은 흐름) */
+  naturalOpenIntents: 'natural:open-intents'
 } as const
 
 /**
@@ -278,6 +290,18 @@ export interface SureMateApi {
   removeWorkspace(id: string): Promise<boolean>
   /** 팔레트 `@이름` 줄: 그 이름으로 지금 배치 저장(같은 이름·별칭이 있으면 다시 저장). 성공하면 main이 팔레트를 숨긴다 */
   saveWorkspaceAs(name: string): Promise<WorkspaceSaveResult>
+  /** 설정 창 말하듯 입력 탭(설계 §13·§14): 기억한 문장·사용 기록 수·단어 목록. 설정 창이 아닌 창이 부르거나 읽지 못하면 null */
+  naturalView(): Promise<NaturalView | null>
+  /** 기억한 문장·사용 기록이 바뀌면(어디서든) 새 보기. 돌려받은 함수로 그만 듣는다 */
+  onNaturalChanged(cb: (v: NaturalView) => void): () => void
+  /** 기억한 문장 하나를 지운다(화면에 보인 문장 키 그대로). 지운 수와 새 보기를 돌려준다 */
+  forgetPhrase(key: string): Promise<NaturalChangeResult>
+  /** 기억한 문장을 모두 지운다 */
+  forgetAllPhrases(): Promise<NaturalChangeResult>
+  /** 사용 기록(팔레트 빈 화면의 최근 항목·동점 순서)을 지운다 */
+  clearUsage(): Promise<NaturalChangeResult>
+  /** 단어 목록 파일을 연다(없으면 기본 목록으로 만든다). 열 프로그램이 없으면 폴더를 열고 opened false */
+  openIntentsFile(): Promise<NaturalOpenResult>
 }
 
 /** 설정 창·온보딩이 쓰는 main 기능 */

@@ -14,7 +14,7 @@ import type { GlossaryEntry } from '../shared/glossary/types'
 import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
-import type { MaskingMode } from '../shared/types'
+import type { MaskingMode, PaletteItem } from '../shared/types'
 import { monitorFingerprint } from '../shared/workspace/monitors'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
@@ -44,7 +44,8 @@ import { nativeStatus } from './native/win32'
 import { getForegroundWindow } from './native/windows'
 import { buildPaletteItems } from './prompts/palette-items'
 import { createIntentCache, ensureUserIntents } from './natural/intent-store'
-import { createNaturalCommands, createPickHandler } from './natural/natural-commands'
+import { createNaturalCommands, openIntentsFile, type IntentFileDeps } from './natural/natural-commands'
+import { createNaturalService } from './natural/natural-service'
 import { createPhraseStore } from './natural/phrase-store'
 import { createUsageStore } from './natural/usage-store'
 import { notify } from './notify'
@@ -766,18 +767,53 @@ if (!app.requestSingleInstanceLock()) {
     })
     // 말하듯 입력(설계 §13): 단어 목록(기본본 + 사용자 intents.json), 기억한 문장, 사용 기록은 모두 이 PC에만 저장한다
     const intentCache = createIntentCache(userData, builtinIntents, (errors) => reportFileErrors('말하듯 입력 단어 목록', 'intents.loadErrors', errors))
-    const phraseStore = createPhraseStore(userData)
-    const usageStore = createUsageStore(userData)
-    naturalCommands = createNaturalCommands({
+    // 단어 목록 파일 열기: 팔레트 명령(cmd.open-intents)과 설정 창 말하듯 입력 탭이 같은 흐름(없으면 만들고 열기, 못 열면 폴더와 알림)
+    const intentFile: IntentFileDeps = {
       ensure: () => ensureUserIntents(userData, builtinIntents),
       openFile: (path) => electronShell.openPath(path),
       showInFolder: (path) => electronShell.showItemInFolder(path),
-      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
-      hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
       notify,
       log
+    }
+    naturalCommands = createNaturalCommands({
+      ...intentFile,
+      waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+      hidePalette: (restoreFocus) => hidePalette({ restoreFocus })
     })
-    const handlePick = createPickHandler({ usage: usageStore, phrases: phraseStore, pack: () => intentCache.get(), notify, log })
+    /** 지금 팔레트 항목(팔레트 목록과 같은 규칙). 설정 창 말하듯 입력 탭은 이것으로 기억한 문장·의도 대상의 이름과 구역을 찾는다 */
+    const paletteItemsOf = async (list: Template[], glossary: GlossaryEntry[]): Promise<PaletteItem[]> => {
+      // 워크스페이스 구역: "지금 배치 저장"과 저장한 배치(지금 모니터 구성과 다르면 부제에 알린다)
+      const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()))
+      return buildPaletteItems(list, DEV_COMMAND_ITEMS, {
+        maskingMode: settings.masking.mode,
+        glossary,
+        barShape: settings.bar.shape,
+        petVisible: settings.pet.visible,
+        // 졸고 있으면 "재우기" 대신 "깨우기"(M4)
+        petSleeping: petRuntime?.controller.status().mode === 'sleep',
+        workspaces: workspaceItems
+      })
+    }
+    // 기억한 문장·사용 기록: 팔레트 검색 문맥과 설정 창 말하듯 입력 탭이 같은 저장소를 쓴다. 저장소가 바꾼 값을 메모리에 바로 두고
+    // 팔레트는 보일 때마다 검색 문맥을 새로 받으므로, 설정 창에서 지운 문장·기록은 다음 검색부터 빠진다(따로 지울 캐시가 없다)
+    const naturalService = createNaturalService({
+      phrases: createPhraseStore(userData),
+      usage: createUsageStore(userData),
+      intents: () => intentCache.state(),
+      items: async () => paletteItemsOf(await templateCache.get(), (await glossaryCache.get()).entries),
+      openIntents: () => openIntentsFile(intentFile),
+      notify,
+      log,
+      now: Date.now
+    })
+    // 열린 설정 창의 말하듯 입력 탭이 어디서 바뀐 것이든(팔레트 선택·기억하기, 지우기) 새 보기를 그리게 한다(문장은 로그에 남기지 않는다)
+    naturalService.onChange(() => {
+      if (settingsContentsId() === null) return
+      void naturalService
+        .view()
+        .then((v) => sendToSettings(IPC.naturalChanged, v))
+        .catch((e) => log('natural.pushError', { error: errorText(e) }))
+    })
     workspaceSvc = workspaceService
     // 시작할 때 한 번 읽어 깨진 파일을 바로 알린다
     await workspaceService.list()
@@ -792,17 +828,7 @@ if (!app.requestSingleInstanceLock()) {
         glossaryEntries = glossary
         // 고정 프롬프트의 이름·목록이 바뀌었을 수 있어 바도 다시 그린다
         applySettings(settings)
-        // 워크스페이스 구역: "지금 배치 저장"과 저장한 배치(지금 모니터 구성과 다르면 부제에 알린다)
-        const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()))
-        return buildPaletteItems(templates, DEV_COMMAND_ITEMS, {
-          maskingMode: settings.masking.mode,
-          glossary,
-          barShape: settings.bar.shape,
-          petVisible: settings.pet.visible,
-          // 졸고 있으면 "재우기" 대신 "깨우기"(M4)
-          petSleeping: petRuntime?.controller.status().mode === 'sleep',
-          workspaces: workspaceItems
-        })
+        return paletteItemsOf(templates, glossary)
       },
       previewPrompt: (req) => session.preview(req),
       runPrompt: async (req) => {
@@ -815,15 +841,8 @@ if (!app.requestSingleInstanceLock()) {
       },
       cancelPrompt: () => session.cancel(),
       wiki,
-      natural: {
-        searchContext: async () => ({
-          pack: await intentCache.get(),
-          learned: [...(await phraseStore.all())],
-          usage: [...(await usageStore.all())],
-          now: Date.now()
-        }),
-        pick: handlePick
-      },
+      // 검색 문맥·선택 기록은 팔레트 창, 보기·지우기·단어 목록 파일 열기는 설정 창이 보낸 것만 받는다
+      natural: naturalService,
       saveImeLog,
       getStatus: () => ({
         paletteHotkey: paletteHotkey(),
@@ -845,7 +864,7 @@ if (!app.requestSingleInstanceLock()) {
       },
       // 펫 채널은 펫 창이 보낸 것만 받는다(펫 런타임은 바 다음에 만든다)
       pet: () => petRuntime,
-      // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창, 워크스페이스 편집은 설정 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
+      // 팔레트 채널은 팔레트 창, 기록 저장은 기록기 창, 워크스페이스 편집·말하듯 입력 탭은 설정 창이 보낸 것만 받는다(모든 창이 같은 preload를 쓴다)
       paletteContentsId,
       imeLoggerContentsId,
       settingsContentsId

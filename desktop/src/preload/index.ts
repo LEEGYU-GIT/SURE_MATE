@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
 import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import type { NaturalView } from '../shared/natural/natural-ipc'
 import type { PetView } from '../shared/pet/pet-view'
 import type { SettingsTabId } from '../shared/settings/settings-route'
 import type { SettingsSnapshot } from '../shared/settings/settings-snapshot'
@@ -128,7 +129,17 @@ const api: SureMateApi = {
   runWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRun, id),
   saveWorkspaceNew: () => ipcRenderer.invoke(IPC.workspaceSaveNew),
   removeWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRemove, id),
-  saveWorkspaceAs: (name) => ipcRenderer.invoke(IPC.workspaceSaveAs, name)
+  saveWorkspaceAs: (name) => ipcRenderer.invoke(IPC.workspaceSaveAs, name),
+  naturalView: () => ipcRenderer.invoke(IPC.naturalView),
+  onNaturalChanged: (cb) => {
+    const listener = (_e: IpcRendererEvent, v: NaturalView): void => cb(v)
+    ipcRenderer.on(IPC.naturalChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.naturalChanged, listener)
+  },
+  forgetPhrase: (key) => ipcRenderer.invoke(IPC.naturalForget, key),
+  forgetAllPhrases: () => ipcRenderer.invoke(IPC.naturalForgetAll),
+  clearUsage: () => ipcRenderer.invoke(IPC.naturalClearUsage),
+  openIntentsFile: () => ipcRenderer.invoke(IPC.naturalOpenIntents)
 }
 
 contextBridge.exposeInMainWorld('sureMate', api)

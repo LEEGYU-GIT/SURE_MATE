@@ -11,6 +11,7 @@ import type { Template } from '../../../shared/template/types'
 import type { PaletteItem } from '../../../shared/types'
 import builtinIntents from '../../../../resources/intents.json'
 import { parseIntentPack } from '../../../shared/natural/intent-pack'
+import type { NaturalChangeResult, NaturalView } from '../../../shared/natural/natural-ipc'
 import type { UsageRecord } from '../../../shared/natural/usage'
 import { applyWorkspaceEdit } from '../../../shared/workspace/edit'
 import { WORKSPACE_NOTES } from '../../../shared/workspace/messages'
@@ -49,6 +50,8 @@ export interface FakeFixtures {
   shown: ShownPayload | null
   /** 설정 창 워크스페이스 탭이 받는 목록. 편집·단축키·지우기는 진짜 검사(applyWorkspaceEdit)로 이 값을 바꾼다 */
   workspaces: WorkspaceListView | null
+  /** 설정 창 말하듯 입력 탭이 받는 보기. 지우기는 이 값을 바꾸고 듣는 화면에 알린다. null이면 읽지 못한 것처럼 */
+  natural: NaturalView | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -64,13 +67,15 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   glossary: [],
   searchContext: { learned: [], usage: [] },
   shown: null,
-  workspaces: null
+  workspaces: null,
+  natural: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
 export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
   const fx: FakeFixtures = { ...DEFAULT_FIXTURES, ...f }
   const ws = fakeWorkspaces(fx)
+  const natural = fakeNatural(fx)
   return {
     hide: () => {},
     runItem: async () => {},
@@ -135,7 +140,40 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     runWorkspace: async () => ({ ok: false, reason: 'native-unavailable' }),
     saveWorkspaceNew: async () => ({ ok: false, reason: 'native-unavailable', message: WORKSPACE_NOTES.nativeUnavailable }),
     removeWorkspace: async (id) => ws.remove(id),
-    saveWorkspaceAs: async () => ({ ok: false, reason: 'native-unavailable', message: '' })
+    saveWorkspaceAs: async () => ({ ok: false, reason: 'native-unavailable', message: '' }),
+    naturalView: async () => natural.view(),
+    onNaturalChanged: (cb) => natural.listen(cb),
+    forgetPhrase: async (key) => natural.change((v) => ({ phrases: v.phrases.filter((p) => p.key !== key) })),
+    forgetAllPhrases: async () => natural.change(() => ({ phrases: [] })),
+    clearUsage: async () => natural.change(() => ({ usageCount: 0 })),
+    // 미리 보기에는 파일이 없으므로 열 프로그램이 없어 폴더를 연 것처럼 답한다
+    openIntentsFile: async () => ({ ok: true, opened: false })
+  }
+}
+
+/** 미리 보기 말하듯 입력: 메모리의 보기를 바꾸고 rev를 올려 듣는 화면에 알린다(실제 main의 natural:changed처럼) */
+function fakeNatural(fx: FakeFixtures): {
+  view(): NaturalView | null
+  listen(cb: (v: NaturalView) => void): () => void
+  change(patch: (v: NaturalView) => Partial<Pick<NaturalView, 'phrases' | 'usageCount'>>): NaturalChangeResult
+} {
+  let state = fx.natural
+  const listeners = new Set<(v: NaturalView) => void>()
+  return {
+    view: () => state,
+    listen(cb) {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    },
+    change(patch) {
+      if (!state) return { ok: false }
+      const prev = state
+      const next: NaturalView = { ...prev, ...patch(prev), rev: prev.rev + 1 }
+      state = next
+      for (const cb of listeners) cb(next)
+      // 지운 수: 줄어든 문장 수 + 줄어든 사용 기록 수
+      return { ok: true, count: prev.phrases.length - next.phrases.length + (prev.usageCount - next.usageCount), view: next }
+    }
   }
 }
 

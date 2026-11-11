@@ -23,10 +23,15 @@ function parse(raw: unknown): Item | null {
   return { id: e.id, count: e.count, lastAt: e.lastAt }
 }
 
-export function createUsageStore(
-  userDir: string,
-  o: { io?: SaveIo; now?: () => Date } = {}
-): { all(): Promise<Map<string, UsageRecord>>; record(id: string): Promise<void> } {
+export interface UsageStore {
+  all(): Promise<Map<string, UsageRecord>>
+  record(id: string): Promise<void>
+  /** 모두 지우고 지운 수를 준다(설정 창 [사용 기록 지우기]. 비어 있으면 0, 파일을 쓰지 않는다) */
+  clear(): Promise<number>
+}
+
+/** 읽기·기록·지우기는 모두 같은 줄에서 부른 순서대로 처리하고, 바꿀 때마다 원자적으로 저장한다(list-store) */
+export function createUsageStore(userDir: string, o: { io?: SaveIo; now?: () => Date } = {}): UsageStore {
   const now = o.now ?? ((): Date => new Date())
   const store = createListStore<Item>({ path: join(userDir, USAGE_FILE), format: USAGE_FORMAT, field: 'items', parse, io: o.io, now })
   return {
@@ -38,6 +43,14 @@ export function createUsageStore(
       store.update((list) => {
         const prev = list.find((i) => i.id === id)
         return trimOldest([...list.filter((i) => i.id !== id), { id, count: (prev?.count ?? 0) + 1, lastAt: now().toISOString() }], USAGE_MAX, (i) => i.lastAt)
+      }),
+    async clear() {
+      let count = 0
+      await store.update((list) => {
+        count = list.length
+        return list.length > 0 ? [] : list
       })
+      return count
+    }
   }
 }

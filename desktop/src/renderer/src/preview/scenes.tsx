@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import builtinGlossary from '../../../../resources/glossary.json'
+import builtinIntents from '../../../../resources/intents.json'
 import builtinPrompts from '../../../../resources/prompts.json'
 import { edgeCardRect, flyoutCardRect, flyoutWindowRect } from '../../../main/flyout/flyout-placement'
 import { buildBarItems, type BarViewState } from '../../../shared/bar/bar-items'
@@ -18,6 +19,9 @@ import { reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
 import { petWorld, type PetWorld } from '../../../shared/pet/pet-world'
+import { parseIntentPack } from '../../../shared/natural/intent-pack'
+import type { NaturalView } from '../../../shared/natural/natural-ipc'
+import { buildNaturalView, type IntentState, type PhraseEntry } from '../../../shared/natural/natural-view'
 import type { UsageRecord } from '../../../shared/natural/usage'
 import { parseTemplatePack } from '../../../shared/template/pack'
 import type { MaskingMode, MonitorInfo, PaletteItem, Rect } from '../../../shared/types'
@@ -1083,6 +1087,82 @@ const WORKSPACE_SCENES: Scene[] = [
   workspaceScene('settings-workspace-list-narrow', '설정: 워크스페이스 목록, 가장 좁은 창 720×520', WS_LIST, { width: 720, height: 520 })
 ]
 
+// 말하듯 입력 탭(설계 §13 8단계·§14): 가상 문장('출근 세팅해줘'·'주간 보고 띄워줘' 등)과 가상 항목 이름만
+
+/** 기억한 문장이 여는 항목(실제 명령·기본 프롬프트 이름, 가상 워크스페이스) */
+const NATURAL_ITEMS: PaletteItem[] = [
+  { id: 'workspace:ws-qa', group: 'workspace', title: 'QA 모드' },
+  { id: 'workspace:ws-report', group: 'workspace', title: '보고서 모드' },
+  { id: 'cmd.workspace-save', group: 'workspace', title: '지금 배치 저장' },
+  { id: 'prompt:weekly-report', group: 'prompt', title: '주간보고 초안' },
+  { id: 'prompt:meeting-notes', group: 'prompt', title: '회의록 정리' },
+  { id: 'cmd.unmask', group: 'command', title: '가명 되돌리기' },
+  { id: 'cmd.mask-selection', group: 'command', title: '선택한 글 가명 처리' },
+  { id: 'cmd.masking-mode', group: 'command', title: '가명 처리 기본값 바꾸기' },
+  { id: 'cmd.open-dictionary', group: 'command', title: '가명 사전 열기' }
+]
+
+/** 기억한 문장 다섯(하나는 지운 워크스페이스를 가리켜 지금 없는 항목). 파일 순서는 섞어 둔다(화면은 최근 것부터) */
+const NATURAL_PHRASES: PhraseEntry[] = [
+  { key: '가명풀어줘', id: 'cmd.unmask', at: '2026-11-09T10:00:00.000Z' },
+  { key: '지난달보고서열어줘', id: 'workspace:ws-old', at: '2026-11-08T17:20:00.000Z' },
+  { key: '회의록정리부탁해', id: 'prompt:meeting-notes', at: '2026-11-10T14:05:00.000Z' },
+  { key: '주간보고띄워줘', id: 'prompt:weekly-report', at: '2026-11-11T08:30:00.000Z' },
+  { key: '출근세팅해줘', id: 'workspace:ws-qa', at: '2026-11-11T09:10:00.000Z' }
+]
+
+const NATURAL_PACK = parseIntentPack(builtinIntents).pack!
+
+function naturalView(o: { phrases?: PhraseEntry[]; usage?: number; intents?: Partial<IntentState> } = {}): NaturalView {
+  return buildNaturalView({
+    rev: 1,
+    entries: o.phrases ?? NATURAL_PHRASES,
+    phraseMax: 300,
+    usageCount: o.usage ?? 23,
+    intents: { pack: NATURAL_PACK, source: 'builtin', errors: [], ...o.intents },
+    items: NATURAL_ITEMS
+  })
+}
+
+/** 말하듯 입력 탭 장면: 880×640 설정 창(width·height로 가장 좁은 창 720×520) */
+function naturalScene(id: string, title: string, view: NaturalView, o: { prep?: ScenePrepOptions; width?: number; height?: number } = {}): Scene {
+  return {
+    id,
+    title,
+    fixtures: { settings: settingsSnapshot(), natural: view },
+    render: () => (
+      <div style={{ width: o.width ?? 880, height: o.height ?? 640, overflow: 'hidden', position: 'relative' }}>
+        <SettingsApp initialTab="natural" />
+        {o.prep ? <ScenePrep {...o.prep} /> : null}
+      </div>
+    )
+  }
+}
+
+/** 파일에서 일부 값을 읽지 못한 사용자 단어 목록(순번·까닭만) */
+const PARTIAL_ERRORS = ['군말 2번째: 중복', '어미 7번째: 문자열이 아님', '어미 12번째: 20자 초과', '규칙 meeting: 대상이 없어 제외']
+
+const NATURAL_SCENES: Scene[] = [
+  naturalScene('settings-natural', '설정: 말하듯 입력(기억한 문장 다섯, 하나는 지금 없는 항목, 사용 기록 23개, 기본 단어 목록)', naturalView()),
+  naturalScene('settings-natural-end', '설정: 말하듯 입력 아래쪽(단어 목록·의도 단어 아홉, 기본 목록)', naturalView(), { prep: { scrollEnd: true } }),
+  naturalScene('settings-natural-words', '설정: 말하듯 입력 단어 목록(기본 목록, 아직 파일 없음)', naturalView(), { prep: { scrollTo: '[data-intents-path]' } }),
+  naturalScene('settings-natural-empty', '설정: 말하듯 입력, 기억한 문장·사용 기록 없음(Shift+Enter 안내), 내 단어 목록 파일', naturalView({ phrases: [], usage: 0, intents: { source: 'user' } })),
+  naturalScene('settings-natural-armed', '설정: 기억한 문장 [모두 지우기]를 한 번 눌러 확인을 기다림', naturalView(), { prep: { pressText: '모두 지우기' } }),
+  naturalScene(
+    'settings-natural-file-broken',
+    '설정: 단어 목록 파일을 읽지 못해 기본 목록을 씀(까닭: 읽지 못함(PARSE))',
+    naturalView({ intents: { source: 'builtin', errors: ['읽지 못함(PARSE)'] } }),
+    { prep: { scrollTo: '[data-intents-path]' } }
+  ),
+  naturalScene(
+    'settings-natural-file-partial',
+    '설정: 내 단어 목록 파일에서 네 건을 빼고 씀(앞 세 건과 외 1건), [단어 목록 파일 열기]를 눌러 열 프로그램 없음',
+    naturalView({ intents: { source: 'user', errors: PARTIAL_ERRORS } }),
+    { prep: { scrollTo: '[data-intents-path]', pressText: '단어 목록 파일 열기' } }
+  ),
+  naturalScene('settings-natural-narrow', '설정: 말하듯 입력, 가장 좁은 창 720×520', naturalView(), { width: 720, height: 520 })
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -1167,6 +1247,7 @@ export const SCENES: Scene[] = [
     { scrollEnd: true, width: 720, height: 520 }
   ),
   ...WORKSPACE_SCENES,
+  ...NATURAL_SCENES,
   onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
   onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
   onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
@@ -1220,7 +1301,7 @@ function petSet(s: SettingsSnapshot): void {
  * 미리 보기 준비: 설정을 읽어 그린 뒤 이름이 click으로 시작하는 단추를 누르고(녹화 칸 보기), 내용 칸을 끝까지 내린다
  * (880×640 창에서 아래쪽 구역 보기). 캡처는 가상 시간 3초 시점이라 매번 같다
  */
-function ScenePrep({ scrollEnd, click, blur, top, hover }: ScenePrepOptions): null {
+function ScenePrep({ scrollEnd, click, blur, top, hover, scrollTo, pressText }: ScenePrepOptions): null {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = []
     timers.push(
@@ -1240,12 +1321,20 @@ function ScenePrep({ scrollEnd, click, blur, top, hover }: ScenePrepOptions): nu
             panel.scrollTop += offset - panel.clientHeight / 2 + el.clientHeight / 2
           }
         }
+        if (scrollTo) {
+          // 그 요소가 내용 칸 위쪽에 오게 내용 칸만 내린다(구역 머리글까지 보이게 조금 덜 내린다)
+          const el = document.querySelector<HTMLElement>(scrollTo)
+          const panel = document.getElementById('settings-panel')
+          if (el && panel) panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top - 96
+        }
         if (click) document.querySelector<HTMLButtonElement>(`button[aria-label^="${click}"]`)?.click()
+        // 이름표(aria-label)가 없는 단추는 보이는 글로 찾아 누른다(모두 지우기 확인 기다림 보기)
+        if (pressText) [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes(pressText))?.click()
         if (scrollEnd) timers.push(setTimeout(() => document.getElementById('settings-panel')?.scrollTo({ top: 100000 }), 100))
       }, 300)
     )
     return () => timers.forEach(clearTimeout)
-  }, [scrollEnd, click, blur, top, hover])
+  }, [scrollEnd, click, blur, top, hover, scrollTo, pressText])
   return null
 }
 
@@ -1258,6 +1347,10 @@ type ScenePrepOptions = {
   top?: boolean
   /** 이 요소(선택자)에 마우스를 올린 것처럼 알리고 가운데로 내린다(워크스페이스 탭: 그 줄을 고르면 그림이 그 창을 강조) */
   hover?: string
+  /** 이 요소(선택자)가 내용 칸 위쪽에 오게 내린다 */
+  scrollTo?: string
+  /** 보이는 글에 이 말이 든 첫 단추를 누른다 */
+  pressText?: string
 }
 
 /**

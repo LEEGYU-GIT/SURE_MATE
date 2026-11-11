@@ -42,6 +42,27 @@ it('깨진 파일은 빈 목록과 .broken 사본, 다음 record는 정상 저�
   expect((await createUsageStore(dir, { now }).all()).get('a')?.count).toBe(1)
 })
 
+it('clear는 모두 지우고 지운 수를 준다. 이미 비었으면 0이고 파일을 만들지 않는다', async () => {
+  const s = createUsageStore(dir, { now })
+  expect(await s.clear()).toBe(0)
+  expect(await readdir(dir)).toEqual([])
+  await s.record('cmd.unmask')
+  await s.record('prompt:weekly-report')
+  await s.record('cmd.unmask')
+  expect(await s.clear()).toBe(2)
+  expect((await createUsageStore(dir, { now }).all()).size).toBe(0)
+  expect(JSON.parse(await readFile(join(dir, USAGE_FILE), 'utf8'))).toEqual({ format: 'sure-mate-usage', version: 1, items: [] })
+})
+
+it('clear는 record와 겹쳐 불러도 부른 순서대로 처리한다', async () => {
+  const s = createUsageStore(dir, { now })
+  await s.record('a')
+  const [, cleared] = await Promise.all([s.record('b'), s.clear(), s.record('c')])
+  expect(cleared).toBe(2)
+  expect([...(await s.all()).keys()]).toEqual(['c'])
+  expect([...(await createUsageStore(dir, { now }).all()).keys()]).toEqual(['c'])
+})
+
 it('파일에는 id·횟수·시각만 있다(입력 문장 없음)', async () => {
   await createUsageStore(dir, { now }).record('prompt:report')
   const file = JSON.parse(await readFile(join(dir, USAGE_FILE), 'utf8'))

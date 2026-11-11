@@ -4,7 +4,8 @@ import { keepBrokenCopy, readJsonFile, type SaveIo, writeJsonAtomic } from '../f
 
 /**
  * 학습 연결·사용 기록이 함께 쓰는 작은 목록 파일. 처음 쓸 때 한 번 읽어 메모리에 두고, 바꿀 때마다 원자적으로 저장한다.
- * - 쓰기는 한 번에 하나씩 줄을 세운다(마지막 상태가 저장된다). 저장이 실패해도 줄은 이어지고, 실패한 변경은 메모리에도 반영하지 않는다.
+ * - 읽기·쓰기는 한 번에 하나씩 부른 순서대로 줄을 세운다(마지막 상태가 저장된다). 저장이 실패해도 줄은 이어지고, 실패한 변경은 메모리에도 반영하지 않는다.
+ * - update의 fn이 받은 목록을 그대로 돌려주면 바꾼 것이 없으므로 저장하지 않는다(없는 문장 지우기, 빈 목록 비우기).
  * - 깨진 파일이나 일부 항목을 읽지 못한 파일은 읽을 때 `.broken-<시각>` 사본을 남기고(사본을 못 만들어도 이어 간다) 읽은 항목만으로 시작한다.
  */
 export function createListStore<T>(o: {
@@ -50,7 +51,9 @@ export function createListStore<T>(o: {
     read: () => queued(async () => [...(await load())]),
     update: (fn) =>
       queued(async () => {
-        const next = fn([...(await load())])
+        const list = [...(await load())]
+        const next = fn(list)
+        if (next === list) return
         await mkdir(dirname(o.path), { recursive: true })
         await writeJsonAtomic(o.path, { format: o.format, version: 1, [o.field]: next }, { io: o.io })
         state = next

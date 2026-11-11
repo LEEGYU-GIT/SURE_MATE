@@ -111,11 +111,34 @@ function workspacesFake() {
   } satisfies WorkspaceIpc
 }
 
+/** 설정 창 말하듯 입력 탭이 받는 보기(가상 문장) */
+const naturalView = {
+  rev: 2,
+  phrases: [{ key: '출근세팅해줘', item: { title: 'QA 모드', group: 'workspace' } }],
+  phraseMax: 300,
+  usageCount: 4,
+  intents: { source: 'builtin', errors: [], endings: 1, particles: 1, fillers: 1, rules: [] }
+}
+const naturalChanged = { ok: true as const, count: 1, view: naturalView }
+
+/** 말하듯 입력 처리기: 검색 문맥·선택 기록은 팔레트 창, 보기·지우기·파일 열기는 설정 창 id 41 */
+function naturalFake() {
+  return {
+    searchContext: vi.fn(async () => ({ pack: null, learned: [['k', 'a']], usage: [], now: 5 })),
+    pick: vi.fn(async () => {}),
+    view: vi.fn(async () => naturalView),
+    forget: vi.fn(async () => naturalChanged),
+    forgetAll: vi.fn(async () => naturalChanged),
+    clearUsage: vi.fn(async () => naturalChanged),
+    openIntents: vi.fn(async () => ({ ok: true as const, opened: false }))
+  }
+}
+
 let overlay: ReturnType<typeof overlayFake> | null
 let pet: PetFake | null
 let palette: ReturnType<typeof paletteFake>
 let workspaces: ReturnType<typeof workspacesFake>
-let natural: { searchContext: ReturnType<typeof vi.fn>; pick: ReturnType<typeof vi.fn> }
+let natural: ReturnType<typeof naturalFake>
 let paletteId: number | null
 let imeLoggerId: number | null
 let settingsId: number | null
@@ -128,7 +151,7 @@ beforeEach(() => {
   pet = petFake()
   palette = paletteFake()
   workspaces = workspacesFake()
-  natural = { searchContext: vi.fn(async () => ({ pack: null, learned: [['k', 'a']], usage: [], now: 5 })), pick: vi.fn(async () => {}) }
+  natural = naturalFake()
   paletteId = 1
   imeLoggerId = 21
   settingsId = 41
@@ -537,5 +560,55 @@ describe('말하듯 입력 채널(팔레트 창만)', () => {
     send(IPC.palettePick, SETTINGS, pick)
     expect(natural.searchContext).not.toHaveBeenCalled()
     expect(natural.pick).not.toHaveBeenCalled()
+  })
+})
+
+describe('말하듯 입력 설정 IPC: 보기·지우기·사용 기록 지우기·단어 목록 파일 열기는 설정 창이 보낸 것만', () => {
+  const KEY = '출근세팅해줘'
+  const FAILED = { ok: false }
+
+  /** 말하듯 입력 설정 채널을 모두 한 번씩 invoke한 결과 */
+  const invokeAll = async (e: { sender: { id: number } }): Promise<unknown[]> => [
+    await invoke(IPC.naturalView, e),
+    await invoke(IPC.naturalForget, e, KEY),
+    await invoke(IPC.naturalForgetAll, e),
+    await invoke(IPC.naturalClearUsage, e),
+    await invoke(IPC.naturalOpenIntents, e)
+  ]
+  const handlers = () => [natural.view, natural.forget, natural.forgetAll, natural.clearUsage, natural.openIntents]
+
+  it('설정 창이 보낸 것은 값을 검사해 넘긴다(문장 키는 그대로)', async () => {
+    expect(await invokeAll(SETTINGS)).toEqual([naturalView, naturalChanged, naturalChanged, naturalChanged, { ok: true, opened: false }])
+    expect(natural.view).toHaveBeenCalledWith()
+    expect(natural.forget).toHaveBeenCalledWith(KEY)
+    expect(natural.forgetAll).toHaveBeenCalledWith()
+    expect(natural.clearUsage).toHaveBeenCalledWith()
+    expect(natural.openIntents).toHaveBeenCalledWith()
+    expect(await invoke(IPC.naturalForget, SETTINGS, '가'.repeat(200))).toEqual(naturalChanged)
+  })
+
+  it('팔레트·바·펼침 창·펫 창·다른 창이 보냈거나 설정 창이 없으면 처리하지 않고 빈 값을 준다', async () => {
+    const empty = [null, FAILED, FAILED, FAILED, FAILED]
+    for (const e of [PALETTE, BAR, FLYOUT, PET, IME_LOGGER, OTHER]) expect(await invokeAll(e)).toEqual(empty)
+    settingsId = null
+    expect(await invokeAll(SETTINGS)).toEqual(empty)
+    for (const fn of handlers()) expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('문장 키는 1~200자 문자열만 받는다', async () => {
+    for (const bad of ['', '가'.repeat(201), 7, null, undefined, { key: KEY }, [KEY]]) {
+      expect(await invoke(IPC.naturalForget, SETTINGS, bad)).toEqual(FAILED)
+    }
+    expect(natural.forget).not.toHaveBeenCalled()
+  })
+
+  it('처리 중 오류가 나도 던지지 않고 빈 값을 준다(채널 이름과 오류만 기록하고 문장은 남기지 않는다)', async () => {
+    for (const fn of handlers()) fn.mockRejectedValueOnce(new Error('EPERM: operation not permitted'))
+    expect(await invokeAll(SETTINGS)).toEqual([null, FAILED, FAILED, FAILED, FAILED])
+    expect(reg.logs.map((l) => l.data.channel).sort()).toEqual(
+      [IPC.naturalView, IPC.naturalForget, IPC.naturalForgetAll, IPC.naturalClearUsage, IPC.naturalOpenIntents].sort()
+    )
+    expect(reg.logs.every((l) => l.event === 'ipc.error' && Object.keys(l.data).sort().join() === 'channel,error')).toBe(true)
+    expect(JSON.stringify(reg.logs)).not.toContain(KEY)
   })
 })

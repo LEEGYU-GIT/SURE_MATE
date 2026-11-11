@@ -1,6 +1,7 @@
 import type { PaletteItem } from '../../shared/types'
 import { type IntentPack } from '../../shared/natural/intent-pack'
 import { parsePick } from '../../shared/natural/natural-ipc'
+import { NATURAL_NOTES } from '../../shared/natural/natural-view'
 import { understand } from '../../shared/natural/understand'
 import { errorText } from '../error-text'
 
@@ -17,30 +18,43 @@ export function naturalCommandItems(): PaletteItem[] {
   ]
 }
 
-export interface NaturalCommandDeps {
+/** 단어 목록 파일 열기에 쓰는 기능(팔레트 명령과 설정 창 말하듯 입력 탭이 같이 쓴다) */
+export interface IntentFileDeps {
   /** 사용자 단어 목록 파일이 없으면 기본 목록으로 만들고 경로를 돌려준다 */
   ensure(): Promise<string>
   /** 기본 프로그램으로 연다. 실패하면 까닭(빈 글이면 성공) */
   openFile(path: string): Promise<string>
   showInFolder(path: string): void
-  /** 명령을 고른 Enter·보조키를 뗄 때까지 기다린다. 시간 안에 안 떼면 false(그때는 팔레트를 숨기지 않는다) */
-  waitKeysReleased(): Promise<boolean>
-  hidePalette(restoreFocus: boolean): void
   notify(message: string): void
   /** 길이·건수만 넘긴다 */
   log(event: string, data: Record<string, unknown>): void
 }
 
+export interface NaturalCommandDeps extends IntentFileDeps {
+  /** 명령을 고른 Enter·보조키를 뗄 때까지 기다린다. 시간 안에 안 떼면 false(그때는 팔레트를 숨기지 않는다) */
+  waitKeysReleased(): Promise<boolean>
+  hidePalette(restoreFocus: boolean): void
+}
+
+/**
+ * 단어 목록 파일을 연다: 없으면 기본 목록으로 만들고(ensure) 기본 프로그램으로 연다. 열 프로그램이 없으면 폴더에서 그 파일을
+ * 골라 두고 알린다. 열었으면 true. 경로는 화면·로그에 내지 않는다(Windows 사용자 이름이 있다)
+ */
+export async function openIntentsFile(d: IntentFileDeps): Promise<boolean> {
+  const path = await d.ensure()
+  const error = await d.openFile(path)
+  if (error) {
+    d.showInFolder(path)
+    d.notify(NATURAL_NOTES.openFallback)
+  }
+  d.log('natural.openIntents', { opened: !error })
+  return !error
+}
+
 export function createNaturalCommands(d: NaturalCommandDeps): { run(id: string): Promise<boolean> } {
   const openIntents = async (): Promise<void> => {
     if (await d.waitKeysReleased()) d.hidePalette(false)
-    const path = await d.ensure()
-    const error = await d.openFile(path)
-    if (error) {
-      d.showInFolder(path)
-      d.notify('단어 목록 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
-    }
-    d.log('natural.openIntents', { opened: !error })
+    await openIntentsFile(d)
   }
   return {
     async run(id) {

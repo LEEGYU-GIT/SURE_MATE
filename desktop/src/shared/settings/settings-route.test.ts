@@ -1,12 +1,22 @@
 import { expect, it } from 'vitest'
 import { isSettingsTabId, routeOfHash, SETTINGS_TAB_IDS, settingsHash, tabFromHash, workspaceFromHash } from './settings-route'
 
-it('탭 id: 설계 §14 순서(용어 사전 다음 워크스페이스, 그다음 바), 말랑 메이트 탭이 있다, 겹치지 않는다', () => {
-  expect(SETTINGS_TAB_IDS).toEqual(['general', 'hotkeys', 'ai', 'prompts', 'masking', 'glossary', 'workspace', 'bar', 'pet'])
+it('탭 id: 설계 §14 순서(용어 사전 다음 워크스페이스, 그다음 바, 펫 다음 마지막이 말하듯 입력), 겹치지 않는다', () => {
+  expect(SETTINGS_TAB_IDS).toEqual(['general', 'hotkeys', 'ai', 'prompts', 'masking', 'glossary', 'workspace', 'bar', 'pet', 'natural'])
   expect(new Set(SETTINGS_TAB_IDS).size).toBe(SETTINGS_TAB_IDS.length)
   expect(isSettingsTabId('pet')).toBe(true)
   expect(isSettingsTabId('workspace')).toBe(true)
-  for (const bad of ['workspaces', 'Pet', '', null, 3, 'pet?x']) expect(isSettingsTabId(bad)).toBe(false)
+  expect(isSettingsTabId('natural')).toBe(true)
+  for (const bad of ['workspaces', 'Pet', '', null, 3, 'pet?x', 'Natural', 'natural-input']) expect(isSettingsTabId(bad)).toBe(false)
+})
+
+it('말하듯 입력 탭으로 열기: openSettings(\'/settings\', { tab: \'natural\' })의 주소, 워크스페이스 id는 붙지 않는다', () => {
+  expect(settingsHash('/settings', 'natural')).toBe('/settings?tab=natural')
+  expect(settingsHash('/settings', 'natural', 'ws-qa')).toBe('/settings?tab=natural')
+  expect(settingsHash('/onboarding', 'natural')).toBe('/onboarding')
+  expect(tabFromHash('#/settings?tab=natural')).toBe('natural')
+  expect(tabFromHash('#/settings?tab=natural&ws=ws-qa')).toBeNull()
+  expect(workspaceFromHash('#/settings?tab=natural')).toBeNull()
 })
 
 it('주소의 # 뒤: 탭은 설정 창에만 붙고, 첫 실행 안내에는 붙지 않는다', () => {

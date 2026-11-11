@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { PhraseEntry } from '../../shared/natural/natural-view'
 import type { SaveIo } from '../files/atomic-write'
 import { createListStore } from './list-store'
 
@@ -7,11 +8,7 @@ export const PHRASES_FILE = 'phrase-map.json'
 export const PHRASES_FORMAT = 'sure-mate-phrases'
 export const PHRASE_MAX = 300
 
-interface Entry {
-  key: string
-  id: string
-  at: string
-}
+type Entry = PhraseEntry
 
 function parse(raw: unknown): Entry | null {
   if (typeof raw !== 'object' || raw === null) return null
@@ -35,16 +32,45 @@ export function trimOldest<T>(list: T[], max: number, at: (x: T) => string): T[]
   return out
 }
 
-export function createPhraseStore(
-  userDir: string,
-  o: { io?: SaveIo; now?: () => Date } = {}
-): { all(): Promise<Map<string, string>>; learn(key: string, id: string): Promise<void> } {
+export interface PhraseStore {
+  /** 문장 키 → 항목 id(팔레트 검색 문맥) */
+  all(): Promise<Map<string, string>>
+  /** 파일 순서 그대로(설정 창 보기) */
+  entries(): Promise<PhraseEntry[]>
+  learn(key: string, id: string): Promise<void>
+  /** 그 문장을 지운다. 없으면 false(파일을 다시 쓰지 않는다) */
+  remove(key: string): Promise<boolean>
+  /** 모두 지우고 지운 수를 준다(비어 있으면 0, 파일을 쓰지 않는다) */
+  clear(): Promise<number>
+}
+
+/** 읽기·기억하기·지우기는 모두 같은 줄에서 부른 순서대로 처리하고, 바꿀 때마다 원자적으로 저장한다(list-store) */
+export function createPhraseStore(userDir: string, o: { io?: SaveIo; now?: () => Date } = {}): PhraseStore {
   const now = o.now ?? ((): Date => new Date())
   const store = createListStore<Entry>({ path: join(userDir, PHRASES_FILE), format: PHRASES_FORMAT, field: 'entries', parse, io: o.io, now })
   return {
     async all() {
       return new Map((await store.read()).map((e) => [e.key, e.id]))
     },
-    learn: (key, id) => store.update((list) => trimOldest([...list.filter((e) => e.key !== key), { key, id, at: now().toISOString() }], PHRASE_MAX, (e) => e.at))
+    entries: () => store.read(),
+    learn: (key, id) => store.update((list) => trimOldest([...list.filter((e) => e.key !== key), { key, id, at: now().toISOString() }], PHRASE_MAX, (e) => e.at)),
+    async remove(key) {
+      let removed = false
+      await store.update((list) => {
+        const next = list.filter((e) => e.key !== key)
+        if (next.length === list.length) return list
+        removed = true
+        return next
+      })
+      return removed
+    },
+    async clear() {
+      let count = 0
+      await store.update((list) => {
+        count = list.length
+        return list.length > 0 ? [] : list
+      })
+      return count
+    }
   }
 }

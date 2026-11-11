@@ -5,7 +5,7 @@ import { restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../../shared/wo
 import { type SavedLayout, type Workspace, WORKSPACE_LIMITS } from '../../../shared/workspace/types'
 import type { WorkspaceEditResult, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceView } from '../../../shared/workspace/workspace-ipc'
 import { ChevronLeftIcon, ChevronRightIcon, MonitorIcon, TriangleAlertIcon } from '../design/icons'
-import { Button, Row, Section, TextField } from './controls'
+import { Button, ConfirmButton, type Notice, NoticeLine, Row, Section, TextField } from './controls'
 import { HotkeyRecorder } from './HotkeyRecorder'
 import { monitorLabel } from './monitor-preview'
 import { MonitorPreview } from './MonitorPreview'
@@ -78,20 +78,6 @@ const COPY = {
   empty: '불러올 창이 없어요. 창 배치에서 창을 하나 이상 체크해 주세요.',
   runFailed: '불러오지 못했어요. 다시 해 주세요'
 } as const
-
-type Notice = { text: string; tone: 'ok' | 'warn' | 'error' }
-const NOTICE_TONE: Record<Notice['tone'], string> = { ok: 'text-fg-2', warn: 'text-warn', error: 'text-danger' }
-
-function NoticeLine({ notice, className = '' }: { notice: Notice; className?: string }): React.JSX.Element {
-  return (
-    <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`text-small leading-5 break-keep ${NOTICE_TONE[notice.tone]} ${className}`}>
-      {notice.text}
-    </p>
-  )
-}
-
-/** 지우기 단추가 '한 번 더 누르면 지워요'로 있는 시간 */
-const ARM_MS = 5000
 
 /** main이 열라고 한 워크스페이스는 한 번만 연다(탭을 옮겼다 돌아오면 목록부터) */
 const targetSeen = { seq: 0 }
@@ -908,45 +894,21 @@ function TitleField({
   )
 }
 
-/** 지우기: 한 번 누르면 '한 번 더 누르면 지워요'로 바뀌고, 두 번째에 지운다. 단추를 떠나거나 5초가 지나면 되돌린다 */
+/** 지우기: 한 번 누르면 '한 번 더 누르면 지워요'로 바뀌고, 두 번째에 지운다. 포커스가 단추를 떠나면 되돌린다(ConfirmButton) */
 function RemoveButton({ onRemove, describedBy }: { onRemove(): Promise<boolean>; describedBy?: string }): React.JSX.Element {
-  const [armed, setArmed] = useState(false)
   const [failed, setFailed] = useState(false)
-  const busy = useRef(false)
-  useEffect(() => {
-    if (!armed) return
-    const t = setTimeout(() => setArmed(false), ARM_MS)
-    return () => clearTimeout(t)
-  }, [armed])
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <button
-        type="button"
-        aria-describedby={describedBy}
-        onBlur={() => setArmed(false)}
-        onClick={async () => {
-          if (busy.current) return
-          if (!armed) {
-            setFailed(false)
-            setArmed(true)
-            return
-          }
-          busy.current = true
-          setArmed(false)
-          const ok = await onRemove()
-          busy.current = false
-          if (!ok) setFailed(true)
+      <ConfirmButton
+        armed={COPY.removeArmed}
+        describedBy={describedBy}
+        onArm={() => setFailed(false)}
+        onConfirm={async () => {
+          if (!(await onRemove())) setFailed(true)
         }}
-        className={`h-8 shrink-0 rounded-control border px-3 text-small whitespace-nowrap text-danger transition-colors duration-(--dur-hover) ${
-          armed ? 'border-danger bg-danger/15 font-semibold' : 'border-line hover:bg-danger/10'
-        }`}
       >
-        {armed ? COPY.removeArmed : COPY.remove}
-      </button>
-      {/* 화면 읽기 프로그램이 바뀐 단추 글을 알게 */}
-      <span role="status" className="sr-only">
-        {armed ? COPY.removeArmed : ''}
-      </span>
+        {COPY.remove}
+      </ConfirmButton>
       {failed ? <NoticeLine notice={{ tone: 'error', text: COPY.removeFailed }} /> : null}
     </div>
   )

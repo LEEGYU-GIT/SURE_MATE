@@ -63,4 +63,11 @@ describe('설정 창을 탭과 함께 열기(펫 메뉴 "펫 설정" → 말랑 
     expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'pet', 'ws-qa')).toEqual({ kind: 'show', tab: 'pet', ws: null })
     expect(planSettingsOpen(null, '/settings', 'pet', 'ws-qa')).toEqual({ kind: 'create', hash: '/settings?tab=pet' })
   })
+
+  it("말하듯 입력 탭(openSettings('/settings', { tab: 'natural' })): 만들기·경로 바꾸기·다시 읽기는 주소에, 열린 창은 탭 고르기 알림", () => {
+    expect(planSettingsOpen(null, '/settings', 'natural')).toEqual({ kind: 'create', hash: '/settings?tab=natural' })
+    expect(planSettingsOpen({ route: '/onboarding', loading: false }, '/settings', 'natural')).toEqual({ kind: 'switch-route', hash: '/settings?tab=natural' })
+    expect(planSettingsOpen({ route: '/settings', loading: true }, '/settings', 'natural')).toEqual({ kind: 'reload', hash: '/settings?tab=natural' })
+    expect(planSettingsOpen({ route: '/settings', loading: false }, '/settings', 'natural')).toEqual({ kind: 'show', tab: 'natural', ws: null })
+  })
 })

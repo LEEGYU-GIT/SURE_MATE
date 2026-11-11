@@ -254,6 +254,22 @@ export const TriangleAlertIcon = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+/** 기억한 문장 아래 줄: 이 문장이 맨 위로 올리는 항목 */
+export const CornerDownRightIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="m15 10 5 5-5 5" />
+    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+  </Svg>
+)
+
+/** 의도 규칙 이름 → 그 규칙이 올리는 항목 */
+export const ArrowRightIcon = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M5 12h14" />
+    <path d="m12 5 7 7-7 7" />
+  </Svg>
+)
+
 /** 클립보드 글로 찾기 */
 export const ClipboardPasteIcon = (p: IconProps): React.JSX.Element => (
   <Svg {...p}>

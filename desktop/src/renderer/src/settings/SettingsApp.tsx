@@ -8,6 +8,7 @@ import { GeneralTab } from './GeneralTab'
 import { GlossaryTab } from './GlossaryTab'
 import { HotkeysTab } from './HotkeysTab'
 import { MaskingTab } from './MaskingTab'
+import { NaturalTab } from './NaturalTab'
 import { PetTab } from './PetTab'
 import { PromptsTab } from './PromptsTab'
 import { navKey, SETTINGS_TABS, type SettingsTabId } from './tabs'
@@ -24,7 +25,8 @@ const VIEWS: Partial<Record<SettingsTabId, ComponentType>> = {
   glossary: GlossaryTab,
   workspace: WorkspaceTab,
   bar: BarTab,
-  pet: PetTab
+  pet: PetTab,
+  natural: NaturalTab
 }
 
 /**

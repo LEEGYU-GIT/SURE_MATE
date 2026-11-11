@@ -1,7 +1,8 @@
 import { expect, it, vi } from 'vitest'
 import builtin from '../../../resources/intents.json'
 import { parseIntentPack } from '../../shared/natural/intent-pack'
-import { createNaturalCommands, createPickHandler, naturalCommandItems } from './natural-commands'
+import { NATURAL_NOTES } from '../../shared/natural/natural-view'
+import { createNaturalCommands, createPickHandler, naturalCommandItems, openIntentsFile } from './natural-commands'
 
 function cmdDeps(openError = '') {
   const calls: string[] = []
@@ -35,6 +36,23 @@ it('열기 실패면 폴더를 열고 알린다', async () => {
   await createNaturalCommands(d).run('cmd.open-intents')
   expect(d.showInFolder).toHaveBeenCalledWith('C:/x/intents.json')
   expect(d.notify).toHaveBeenCalledWith('단어 목록 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
+  expect(d.log).toHaveBeenCalledWith('natural.openIntents', { opened: false })
+})
+
+it('설정 창의 [단어 목록 파일 열기]는 같은 흐름에서 키 확인·팔레트 숨김만 뺀다: ensure → openFile, 열었으면 true', async () => {
+  const { d, calls } = cmdDeps()
+  expect(await openIntentsFile(d)).toBe(true)
+  expect(calls).toEqual(['ensure', 'openFile'])
+  expect(d.showInFolder).not.toHaveBeenCalled()
+  expect(d.log).toHaveBeenCalledWith('natural.openIntents', { opened: true })
+})
+
+it('설정 창에서도 열 프로그램이 없으면 폴더를 열고 같은 알림을 띄우며 false(화면에 같은 문구를 쓴다)', async () => {
+  const { d } = cmdDeps('no app')
+  expect(await openIntentsFile(d)).toBe(false)
+  expect(d.showInFolder).toHaveBeenCalledWith('C:/x/intents.json')
+  expect(d.notify).toHaveBeenCalledWith(NATURAL_NOTES.openFallback)
+  expect(NATURAL_NOTES.openFallback).toBe('단어 목록 파일(.json)을 열 프로그램이 없어 폴더를 열었어요. 메모장으로 열어 고쳐 주세요.')
   expect(d.log).toHaveBeenCalledWith('natural.openIntents', { opened: false })
 })
 

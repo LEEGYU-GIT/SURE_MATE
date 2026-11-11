@@ -5,9 +5,9 @@ export type SettingsRoute = '/settings' | '/onboarding'
 
 /**
  * 설정 창 탭 id(왼쪽 목록 순서, 설계 문서 §14). 이름표는 renderer/src/settings/tabs.ts에 있고, 탭을 더할 때는 두 곳에 함께
- * 더한다(main이 그 탭으로 설정 창을 열 수 있게: openSettings('/settings', { tab: 'pet' })). 말하듯 입력은 M7이 더한다.
+ * 더한다(main이 그 탭으로 설정 창을 열 수 있게: openSettings('/settings', { tab: 'pet' }), 말하듯 입력은 { tab: 'natural' }).
  */
-export const SETTINGS_TAB_IDS = ['general', 'hotkeys', 'ai', 'prompts', 'masking', 'glossary', 'workspace', 'bar', 'pet'] as const
+export const SETTINGS_TAB_IDS = ['general', 'hotkeys', 'ai', 'prompts', 'masking', 'glossary', 'workspace', 'bar', 'pet', 'natural'] as const
 export type SettingsTabId = (typeof SETTINGS_TAB_IDS)[number]
 
 export const isSettingsTabId = (v: unknown): v is SettingsTabId => SETTINGS_TAB_IDS.includes(v as SettingsTabId)

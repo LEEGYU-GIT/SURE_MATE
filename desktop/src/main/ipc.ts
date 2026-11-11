@@ -4,7 +4,7 @@ import { parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parsePointer
 import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-action'
 import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
-import type { SearchContextPayload } from '../shared/natural/natural-ipc'
+import { parsePhraseKey, type NaturalChangeResult, type NaturalOpenResult, type NaturalView, type SearchContextPayload } from '../shared/natural/natural-ipc'
 import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePetBool, parsePetKey, parsePetMenuAction, parsePetRect } from '../shared/pet/pet-ipc'
 import type { PetKey, PetMenuAction, PetView } from '../shared/pet/pet-view'
@@ -74,6 +74,22 @@ export interface WorkspaceIpc {
   saveAs(name: string): Promise<WorkspaceSaveResult>
 }
 
+/** 말하듯 입력 IPC가 부르는 기능(설계 §13·§14, main/natural/natural-service.ts). 값은 모두 검사를 마친 것이다 */
+export interface NaturalIpc {
+  /** 팔레트: 검색 문맥 */
+  searchContext(): Promise<SearchContextPayload>
+  /** 팔레트: 선택 기록(값 검사는 pick이 한다. pick은 던지지 않는다) */
+  pick(raw: unknown): Promise<void>
+  /** 설정 창 말하듯 입력 탭: 보기 */
+  view(): Promise<NaturalView>
+  /** 설정 창: 기억한 문장 하나 지우기(1~200자 문장 키) */
+  forget(key: string): Promise<NaturalChangeResult>
+  forgetAll(): Promise<NaturalChangeResult>
+  clearUsage(): Promise<NaturalChangeResult>
+  /** 설정 창: 단어 목록 파일 열기 */
+  openIntents(): Promise<NaturalOpenResult>
+}
+
 export interface IpcDeps {
   hide: () => void
   runItem: (id: string) => Promise<void>
@@ -93,9 +109,12 @@ export interface IpcDeps {
   /** 한글 입력 기록기 창의 webContents id(기록 저장은 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
   imeLoggerContentsId: () => number | null
   workspaces: WorkspaceIpc
-  /** 말하듯 입력: 검색 문맥과 선택 기록(값 검사는 pick이 한다. pick은 던지지 않는다) */
-  natural: { searchContext(): Promise<SearchContextPayload>; pick(raw: unknown): Promise<void> }
-  /** 설정 창의 webContents id(워크스페이스 목록·보기·편집·저장·불러오기·지우기는 이 창이 보낸 것만 받는다). 열려 있지 않으면 null */
+  /** 말하듯 입력: 검색 문맥·선택 기록은 팔레트 창, 보기·지우기·단어 목록 파일 열기는 설정 창이 보낸 것만 */
+  natural: NaturalIpc
+  /**
+   * 설정 창의 webContents id(워크스페이스 목록·보기·편집·저장·불러오기·지우기, 말하듯 입력 보기·지우기·파일 열기는 이 창이 보낸 것만
+   * 받는다). 열려 있지 않으면 null
+   */
   settingsContentsId: () => number | null
 }
 
@@ -176,6 +195,27 @@ export function registerIpc(d: IpcDeps): void {
   registerOverlayIpc(d.overlay)
   registerPetIpc(d.pet)
   registerWorkspaceIpc(d)
+  registerNaturalSettingsIpc(d)
+}
+
+/**
+ * 설정 창 말하듯 입력 탭 IPC(설계 §13 8단계·§14). 기억한 문장·사용 기록은 이 PC의 내용이므로 설정 창이 보낸 것만 받고(모든 창이 같은
+ * preload를 쓴다), 문장 키는 1~200자 문자열만 넘긴다. 보낸 창이 다르거나 값이 틀리면 null·실패를 주고, 처리 중 오류는 채널 이름과
+ * 오류만 기록한다(문장 키는 로그·오류 문구에 싣지 않는다).
+ */
+function registerNaturalSettingsIpc(d: IpcDeps): void {
+  const failed: NaturalChangeResult = { ok: false }
+  const notOpened: NaturalOpenResult = { ok: false }
+  const fromSettings = (e: Sender): boolean => sentBy(e, d.settingsContentsId())
+
+  ipcMain.handle(IPC.naturalView, (e) => (fromSettings(e) ? attempt<NaturalView | null>(IPC.naturalView, null, () => d.natural.view()) : null))
+  ipcMain.handle(IPC.naturalForget, (e, raw: unknown) => {
+    const key = parsePhraseKey(raw)
+    return fromSettings(e) && key ? attempt(IPC.naturalForget, failed, () => d.natural.forget(key)) : failed
+  })
+  ipcMain.handle(IPC.naturalForgetAll, (e) => (fromSettings(e) ? attempt(IPC.naturalForgetAll, failed, () => d.natural.forgetAll()) : failed))
+  ipcMain.handle(IPC.naturalClearUsage, (e) => (fromSettings(e) ? attempt(IPC.naturalClearUsage, failed, () => d.natural.clearUsage()) : failed))
+  ipcMain.handle(IPC.naturalOpenIntents, (e) => (fromSettings(e) ? attempt(IPC.naturalOpenIntents, notOpened, () => d.natural.openIntents()) : notOpened))
 }
 
 /**
