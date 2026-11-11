@@ -8,7 +8,7 @@ import { nativeStatus } from '../native/win32'
 import { raiseTopmost } from '../native/windows'
 
 /** renderer 번들 안의 화면 경로(App.tsx가 # 경로로 고른다). ''는 팔레트 */
-export type RendererRoute = '' | '/bar' | '/flyout' | '/ime-logger'
+export type RendererRoute = '' | '/bar' | '/flyout' | '/ime-logger' | '/settings' | '/onboarding'
 
 /**
  * 바·펼침 창 공통 옵션(설계 §14-1·§9). 포커스를 받지 않고(WS_EX_NOACTIVATE) 작업 표시줄·Alt+Tab에 나오지 않는 투명 창이다.

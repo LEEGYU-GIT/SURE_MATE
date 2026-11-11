@@ -6,6 +6,8 @@
   --color-surface-bar: var(--surface-bar);
   --color-surface-flyout: var(--surface-flyout);
   --color-surface-palette: var(--surface-palette);
+  /* 불투명한 창 바탕(설정 창·온보딩) */
+  --color-surface-solid: var(--surface-palette-solid);
   --color-surface-inset: var(--surface-inset);
   --color-fg: var(--text-1);
   --color-fg-2: var(--text-2);

@@ -1,8 +1,12 @@
 import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
+import type { MaskTerm } from './masking/dictionary'
+import type { Template } from './template/types'
 import type { MaskItem } from './masking/types'
 import type { PetKey, PetMenuAction, PetView } from './pet/pet-view'
+import type { SettingsPatch } from './settings/settings-patch'
+import type { HotkeyCandidate, HotkeyCheck, HotkeySetResult, SettingsHotkeyId, SettingsSnapshot, SettingsUpdateResult } from './settings/settings-snapshot'
 import type { CaptureSkipReason, MaskingMode, PaletteItem, Rect } from './types'
 
 /** 프롬프트에 넣을 글의 출처 */
@@ -107,7 +111,41 @@ export const IPC = {
   /** 펫 창 → main(send): 오른쪽 클릭 메뉴 행을 골랐다(PetMenuAction) */
   petMenu: 'pet:menu',
   /** 펫 창 → main(send): 조종 모드 키 누름·뗌(PetKey, down) */
-  petKey: 'pet:key'
+  petKey: 'pet:key',
+  /** 설정 창 → main(invoke): 지금 설정과 화면에 필요한 상태 */
+  settingsGet: 'settings:get',
+  /** 설정 창 → main(invoke): 바꾼 필드만 저장 */
+  settingsUpdate: 'settings:update',
+  /** main → 설정 창: 설정이 바뀜(어디서든) */
+  settingsChanged: 'settings:changed',
+  settingsHotkeyCheck: 'settings:hotkey-check',
+  /** 설정 창 → main(send): 단축키 녹화 시작·끝(녹화 중에는 모든 단축키를 잠시 푼다) */
+  settingsHotkeyRecord: 'settings:hotkey-record',
+  settingsHotkeySet: 'settings:hotkey-set',
+  /** 설정 창 → main(send): settings.json·로그 폴더를 기본 프로그램으로 */
+  settingsOpenFile: 'settings:open-file',
+  settingsOpenOnboarding: 'settings:open-onboarding',
+  onboardingCandidates: 'onboarding:candidates',
+  onboardingFinish: 'onboarding:finish',
+  /** main → 온보딩: 따라 해 보기의 프롬프트가 실행됐다 */
+  onboardingProgress: 'onboarding:progress',
+  settingsDictionary: 'settings:dictionary',
+  settingsDictionarySave: 'settings:dictionary-save',
+  settingsDictionaryImport: 'settings:dictionary-import',
+  settingsDictionaryExport: 'settings:dictionary-export',
+  settingsTemplates: 'settings:templates',
+  settingsTemplateSave: 'settings:template-save',
+  settingsTemplateDelete: 'settings:template-delete',
+  settingsTemplateImport: 'settings:template-import',
+  settingsTemplateExport: 'settings:template-export',
+  settingsReferences: 'settings:references',
+  settingsReferenceGet: 'settings:reference-get',
+  settingsReferenceSave: 'settings:reference-save',
+  settingsReferenceDelete: 'settings:reference-delete',
+  settingsGlossary: 'settings:glossary',
+  settingsGlossarySave: 'settings:glossary-save',
+  settingsGlossaryDelete: 'settings:glossary-delete',
+  settingsGlossaryPack: 'settings:glossary-pack'
 } as const
 
 /**
@@ -189,4 +227,58 @@ export interface SureMateApi {
   petMenu(a: PetMenuAction): void
   /** 조종 모드 키 누름(true)·뗌(false). 조종 중이 아니면 main이 무시한다 */
   petKey(k: PetKey, down: boolean): void
+  /** 설정 창·온보딩(설계 문서 §14·§6). 설정 창이 아닌 창이 부르면 main이 거절한다 */
+  settings: SettingsApi
 }
+
+/** 설정 창·온보딩이 쓰는 main 기능 */
+export interface SettingsApi {
+  get(): Promise<SettingsSnapshot | null>
+  update(patch: SettingsPatch): Promise<SettingsUpdateResult>
+  onChanged(cb: (s: SettingsSnapshot) => void): () => void
+  hotkeyCheck(id: SettingsHotkeyId, acc: string): Promise<HotkeyCheck>
+  hotkeyRecord(on: boolean): void
+  hotkeySet(id: SettingsHotkeyId, acc: string): Promise<HotkeySetResult>
+  openFile(which: 'settings' | 'logs'): void
+  openOnboarding(): void
+  onboardingCandidates(): Promise<HotkeyCandidate[]>
+  finishOnboarding(): Promise<void>
+  /** 따라 해 보기: 회의록 정리 프롬프트가 실행됐다 */
+  onOnboardingProgress(cb: () => void): () => void
+  /** 가명 사전(설계 문서 §8): 지금 항목과 읽지 못한 까닭 */
+  dictionary(): Promise<{ terms: MaskTerm[]; errors: string[] }>
+  dictionarySave(terms: MaskTerm[]): Promise<{ ok: true; count: number } | { ok: false; errors: string[] }>
+  /** 파일을 골라 더한다(대화상자). 고르지 않았으면 canceled */
+  dictionaryImport(): Promise<FileActionResult & { added?: number; skipped?: number }>
+  /** 사내에서만 공유하라는 확인 뒤 파일로 저장(대화상자) */
+  dictionaryExport(): Promise<FileActionResult>
+  /** 프롬프트·상용구(설계 문서 §7): 전체 목록, 내 파일에 있는 id, 기본 템플릿 id, 내 파일을 읽을 때의 문제 */
+  templates(): Promise<{ templates: Template[]; mine: string[]; builtinIds: string[]; errors: string[] }>
+  templateSave(draft: TemplateDraft): Promise<{ ok: true; id: string } | { ok: false; errors: string[] }>
+  /** 내 파일에서 지운다(기본 템플릿을 고친 것이면 기본값으로 돌아감) */
+  templateDelete(id: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** 받은 템플릿 팩을 별도 파일로 더한다(대화상자) */
+  templateImport(): Promise<FileActionResult & { added?: number; replaced?: number }>
+  /** 내 템플릿을 팩 파일로(대화상자) */
+  templateExport(): Promise<FileActionResult>
+  /** 기준 예시 문서(설계 문서 §7): 템플릿이 쓰는 종류와 파일만 있는 종류 */
+  references(): Promise<ReferenceKind[]>
+  referenceGet(kind: string): Promise<string | null>
+  referenceSave(kind: string, text: string): Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
+  referenceDelete(kind: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** 용어 사전(설계 문서 §9): 전체 용어와 기본 용어 id */
+  glossary(): Promise<{ entries: GlossaryEntry[]; builtinIds: string[] }>
+  glossarySave(draft: WikiDraft, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
+  glossaryDelete(id: string): Promise<{ ok: true } | { ok: false; reason: 'builtin' | 'missing' | 'save-failed' }>
+  /** 용어 팩 가져오기·내보내기(팔레트 명령과 같은 흐름, 결과는 알림으로) */
+  glossaryPack(which: 'import' | 'export'): Promise<void>
+}
+
+/** 기준 예시 한 종류: 파일 글자 수(없으면 null)와 쓰는 템플릿 이름 */
+export type ReferenceKind = { kind: string; length: number | null; usedBy: string[] }
+
+/** 편집기가 보내는 템플릿(id가 없으면 새로 만든다) */
+export type TemplateDraft = Omit<Template, 'scope' | 'id'> & { id?: string }
+
+/** 대화상자를 거치는 파일 동작의 결과 */
+export type FileActionResult = { ok: true } | { ok: false; errors: string[] } | { canceled: true }

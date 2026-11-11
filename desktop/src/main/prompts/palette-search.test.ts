@@ -48,3 +48,7 @@ it('범위 없이 한 글자만 치면 위키 용어가 목록을 덮지 않고,
   expect(wiki.length).toBeLessThanOrEqual(50)
   expect(wiki.every((i) => i.group === 'wiki')).toBe(true)
 })
+
+it('설정·settings·ㅅㅈ을 치면 설정 열기 명령이 맨 위', () => {
+  for (const q of ['설정', 'settings', 'ㅅㅈ']) expect(top(q), q).toBe('cmd.open-settings')
+})

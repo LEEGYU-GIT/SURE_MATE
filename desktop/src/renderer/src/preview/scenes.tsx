@@ -23,6 +23,14 @@ import { Flyout } from '../flyout/Flyout'
 import { StatusBar } from '../palette/StatusBar'
 import { Pet } from '../pet/Pet'
 import { PetSprite } from '../pet/PetSprite'
+import { Onboarding } from '../onboarding/Onboarding'
+import type { OnboardingState } from '../onboarding/onboarding-state'
+import { SettingsApp } from '../settings/SettingsApp'
+import type { SettingsTabId } from '../settings/tabs'
+import { allAiTargets } from '../../../shared/ai-targets'
+import { DEFAULT_SETTINGS } from '../../../shared/settings/settings'
+import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
+import type { Template } from '../../../shared/template/types'
 import { Desktop } from './Desktop'
 import type { FakeFixtures, FakeFlyoutHost } from './fake-api'
 
@@ -757,6 +765,16 @@ const MENU_SCENES: Scene[] = [
   })
 ]
 
+/** 설정 창 프롬프트 탭 미리 보기(기본 팩 일부 + 가상 내 템플릿) */
+const PREVIEW_TEMPLATES: Template[] = [
+  { id: 'meeting-notes', name: '회의록 정리', aliases: ['회의록'], kind: 'prompt', description: '회의 메모를 결정·할 일로 정리', body: '정리해 줘\n{{selection}}', scope: 'personal' },
+  { id: 'req-to-testcase', name: '요구사항 → 테스트 케이스', aliases: [], kind: 'prompt', description: '요구사항에서 시험 항목 뽑기', body: '{{selection}}', scope: 'builtin' },
+  { id: 'polish', name: '문장 다듬기', aliases: [], kind: 'prompt', body: '{{selection}}', scope: 'builtin' },
+  { id: 'my-weekly', name: '주간 보고 다듬기', aliases: ['주간'], kind: 'prompt', description: '가상자동차 과제 주간 보고', body: '{{selection}}', scope: 'personal' },
+  { id: 'defect-report', name: '결함 리포트', aliases: ['issue'], kind: 'snippet', description: '결함 리포트 양식', body: '[결함 제목]', scope: 'builtin' },
+  { id: 'team-greeting', name: '팀 인사말', aliases: [], kind: 'snippet', body: '안녕하세요', scope: 'imported' }
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -804,5 +822,75 @@ export const SCENES: Scene[] = [
   ...CARD_SCENES,
   ...PET_SCENES,
   ...REACTION_SCENES,
-  ...MENU_SCENES
+  ...MENU_SCENES,
+  settingsScene('settings-general', '설정: 일반', 'general'),
+  settingsScene('settings-ai', '설정: AI 대상(사내 LLM 하나 더함)', 'ai'),
+  settingsScene('settings-bar', '설정: 바', 'bar'),
+  settingsScene('settings-masking', '설정: 가명 처리(가상 사전 두 개)', 'masking'),
+  settingsScene('settings-prompts', '설정: 프롬프트·상용구 목록', 'prompts'),
+  settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
+  settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
+  onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
+  onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
 ]
+
+/** 첫 실행 안내 장면: 640×560 창 하나 */
+function onboardingScene(id: string, title: string, start: Partial<OnboardingState>): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: settingsSnapshot(),
+      hotkeyCandidates: [
+        { acc: 'Alt+Space', available: true, suggested: false },
+        { acc: 'Ctrl+Alt+Space', available: false, suggested: false },
+        { acc: 'Alt+`', available: true, suggested: true }
+      ]
+    },
+    render: () => (
+      <div style={{ width: 640, height: 560, overflow: 'hidden', position: 'relative' }}>
+        <Onboarding start={start} />
+      </div>
+    )
+  }
+}
+
+/** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
+function settingsSnapshot(): SettingsSnapshot {
+  const settings = structuredClone(DEFAULT_SETTINGS)
+  settings.ai.custom = [{ id: 'custom-llm', name: '사내 LLM', url: 'https://llm.example.com' }]
+  return {
+    settings,
+    aiTargets: allAiTargets(settings.ai.custom),
+    hotkeys: { palette: { acc: 'Ctrl+Alt+Space', registered: true }, lookup: { acc: 'Ctrl+Alt+W', registered: true } },
+    displays: [
+      { id: '1', label: '내장 모니터 · 1536×864', primary: true },
+      { id: '2', label: '외부 모니터 · 2560×1440', primary: false }
+    ],
+    prompts: TEMPLATES.map((t) => ({ id: t.id, name: t.name })),
+    packaged: false
+  }
+}
+
+/** 설정 창 장면: 880×640 창 하나(제목 줄 오른쪽 140은 Windows 창 단추 자리) */
+function settingsScene(id: string, title: string, tab: SettingsTabId): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: settingsSnapshot(),
+      dictionary: [
+        { id: 'v1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
+        { id: 'v2', category: 'project', canonical: 'XY방산 시험장비', aliases: [] }
+      ],
+      templates: PREVIEW_TEMPLATES,
+      glossary: PACK.slice(0, 12)
+    },
+    render: () => (
+      <div style={{ width: 880, height: 640, overflow: 'hidden', position: 'relative' }}>
+        <SettingsApp initialTab={tab} />
+      </div>
+    )
+  }
+}

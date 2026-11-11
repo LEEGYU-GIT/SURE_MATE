@@ -24,6 +24,13 @@ it('미리 보기(dryRun)는 대응표를 늘리지 않고, 실행은 토큰을 
   expect(s.unmask('CLIENT_A가 좋다')).toEqual({ text: '가상자동차가 좋다', restored: 1, unknownTokens: [] })
 })
 
+it('설정의 빼기 표기를 결과와 머리말에 쓴다', async () => {
+  const removeLabels = { client: '협력사' }
+  const r = await svc({ removeLabels }).mask('가상자동차 회의', { mode: 'remove', disabledKeys: [], dryRun: true })
+  expect(r.text).toBe(`${maskPreamble('remove', removeLabels)}\n\n협력사A 회의`)
+  expect(r.items[0]?.replacement).toBe('협력사A')
+})
+
 it('가명 사전에 오류가 있으면 미리 보기 경고로, 비었으면 흐린 안내로 알린다(끔이면 알리지 않음)', async () => {
   const withDict = (dict: { terms: MaskTerm[]; errors: number }): ReturnType<typeof createMaskingService> =>
     createMaskingService({
