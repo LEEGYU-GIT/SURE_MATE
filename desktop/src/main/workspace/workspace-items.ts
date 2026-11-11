@@ -1,3 +1,4 @@
+import type { FlyoutContent } from '../../shared/flyout/flyout-content'
 import type { PaletteItem } from '../../shared/types'
 import type { Workspace } from '../../shared/workspace/types'
 import { parseWorkspaceId, type WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
@@ -11,6 +12,27 @@ const ITEM_PREFIX = 'workspace:'
 const time = (iso: string): number => {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? 0 : t
+}
+
+/** 바 메뉴에 보이는 워크스페이스 수(나머지는 more로 센다) */
+export const WORKSPACE_MENU_MAX = 8
+
+/** 켜진 창 수와 다른 구성 여부. 다른 구성이면 불러올 때 모을 배치(첫 배치)의 창 수 */
+function layoutInfo(ws: Workspace, fingerprint: string): { windows: number; otherConfig: boolean } {
+  const own = Object.hasOwn(ws.layouts, fingerprint) ? ws.layouts[fingerprint] : undefined
+  const layout = own ?? Object.values(ws.layouts)[0]
+  return { windows: layout ? layout.windows.filter((r) => r.enabled).length : 0, otherConfig: !own }
+}
+
+/** 바 워크스페이스 메뉴의 내용: 최근에 바꾼 순서의 앞 WORKSPACE_MENU_MAX개와 나머지 수 */
+export function workspaceMenuContent(list: readonly Workspace[], fingerprint: string, canSave: boolean): Extract<FlyoutContent, { kind: 'workspace-menu' }> {
+  const sorted = [...list].sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
+  return {
+    kind: 'workspace-menu',
+    workspaces: sorted.slice(0, WORKSPACE_MENU_MAX).map((ws) => ({ id: ws.id, name: ws.name, ...layoutInfo(ws, fingerprint) })),
+    canSave,
+    more: Math.max(0, sorted.length - WORKSPACE_MENU_MAX)
+  }
 }
 
 /**
@@ -30,13 +52,10 @@ export function workspacePaletteItems(list: readonly Workspace[], fingerprint: s
   return [
     save,
     ...sorted.map((ws): PaletteItem => {
-      const own = Object.hasOwn(ws.layouts, fingerprint) ? ws.layouts[fingerprint] : undefined
-      // 다른 구성이면 불러올 때 모을 배치(첫 배치)의 창 수
-      const layout = own ?? Object.values(ws.layouts)[0]
-      const windows = layout ? layout.windows.filter((r) => r.enabled).length : 0
+      const { windows, otherConfig } = layoutInfo(ws, fingerprint)
       const parts = [`창 ${windows}개`]
       if (ws.hotkey) parts.push(ws.hotkey)
-      if (!own) parts.push('다른 모니터 구성')
+      if (otherConfig) parts.push('다른 모니터 구성')
       return { id: `${ITEM_PREFIX}${ws.id}`, group: 'workspace', title: ws.name, subtitle: parts.join(' · '), keywords: [...ws.aliases] }
     })
   ]

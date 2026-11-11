@@ -29,10 +29,13 @@ export function parseFlyoutAction(raw: unknown): FlyoutAction | null {
     case 'snooze-bar':
     case 'open-settings':
     case 'wiki-clipboard':
+    case 'workspace-save':
+    case 'workspace-edit':
     case 'close':
       return { type: raw.type }
     case 'wiki-copy':
-    case 'wiki-open': {
+    case 'wiki-open':
+    case 'workspace-run': {
       const id = idOf(raw.id)
       return id === null ? null : { type: raw.type, id }
     }

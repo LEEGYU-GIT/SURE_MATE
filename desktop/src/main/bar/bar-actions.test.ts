@@ -135,6 +135,10 @@ function makeFlyout() {
     pinCard: vi.fn((pinned: boolean) => void calls.push(`pinCard ${pinned}`)),
     openPalette: vi.fn((p: unknown) => void calls.push(`openPalette ${JSON.stringify(p)}`)),
     lookupClipboard: vi.fn(async () => void calls.push('lookupClipboard')),
+    workspaceAction: vi.fn(async (a: { type: string }) => {
+      calls.push(`workspace ${a.type}`)
+      return true
+    }),
     notify,
     log
   }
@@ -142,6 +146,14 @@ function makeFlyout() {
 }
 
 describe('createFlyoutActions: 펼침 창 메뉴 행', () => {
+  it('워크스페이스 행: 메뉴를 닫은 뒤 동작을 넘기고, 기록에는 종류만 남긴다(이름·id 없음)', async () => {
+    const t = makeFlyout()
+    for (const a of [{ type: 'workspace-run', id: 'ws-qa' }, { type: 'workspace-save' }, { type: 'workspace-edit' }] as FlyoutAction[]) await t.actions.run(a)
+    expect(t.calls).toEqual(['close select', 'workspace workspace-run', 'close select', 'workspace workspace-save', 'close select', 'workspace workspace-edit'])
+    expect(t.log).toHaveBeenCalledWith('flyout.action', { type: 'workspace-run' })
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain('ws-qa')
+  })
+
   it('가명 처리 모드: 저장(설정·트레이·바 갱신) 뒤 메뉴를 닫는다', async () => {
     const t = makeFlyout()
     expect(await t.actions.run({ type: 'set-masking', mode: 'off' })).toBe(true)

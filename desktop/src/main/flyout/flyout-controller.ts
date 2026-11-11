@@ -15,7 +15,7 @@ export const FLYOUT_TIMING = { labelDelayMs: 400, labelChainMs: 300, readyTimeou
 export const FLYOUT_FALLBACK_SIZE: Record<FlyoutContent['kind'], { width: number; height: number }> = {
   label: { width: 120, height: 24 },
   'masking-menu': { width: 272, height: 192 },
-  'workspace-menu': { width: 272, height: 152 },
+  'workspace-menu': { width: 272, height: 204 },
   'bar-menu': { width: 272, height: 224 },
   'wiki-card': { width: 360, height: 200 }
 }

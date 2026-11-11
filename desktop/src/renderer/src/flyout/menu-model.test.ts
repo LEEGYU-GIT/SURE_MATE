@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { barShapeLabel, maskingModeLabel } from '../../../shared/labels'
-import { barMenuRows, labelParts, maskingMenuRows } from './menu-model'
+import type { FlyoutContent } from '../../../shared/flyout/flyout-content'
+import { barMenuRows, labelParts, maskingMenuRows, workspaceMenuRows } from './menu-model'
 
 describe('가명 처리 메뉴', () => {
   it('끔이면 3행이고 끔 행만 선택·주의(warn)이며, 행마다 그 모드로 바꾸는 동작', () => {
@@ -73,5 +74,52 @@ describe('이름표 나누기', () => {
     expect(labelParts('설정')).toEqual({ name: '설정', hint: null, hintIsKey: false })
     expect(labelParts('이름 · ')).toEqual({ name: '이름 · ', hint: null, hintIsKey: false })
     expect(labelParts(' · Alt+`')).toEqual({ name: ' · Alt+`', hint: null, hintIsKey: false })
+  })
+})
+
+describe('워크스페이스 메뉴', () => {
+  type WsContent = Extract<FlyoutContent, { kind: 'workspace-menu' }>
+  const content = (o: Partial<WsContent> = {}): WsContent => ({
+    kind: 'workspace-menu',
+    workspaces: [
+      { id: 'ws-a', name: 'QA 모드', windows: 3, otherConfig: false },
+      { id: 'ws-b', name: '회의', windows: 2, otherConfig: true }
+    ],
+    canSave: true,
+    more: 0,
+    ...o
+  })
+
+  it('워크스페이스 2개면 4행: 불러오기 2 + 지금 배치 저장 + 모두 보기·편집', () => {
+    const rows = workspaceMenuRows(content())
+    expect(rows).toHaveLength(4)
+    expect(rows[0]).toMatchObject({ title: 'QA 모드', detail: '창 3개', tone: 'normal', action: { type: 'workspace-run', id: 'ws-a' } })
+    expect(rows[2]).toMatchObject({ title: '지금 배치 저장', action: { type: 'workspace-save' } })
+    expect(rows[3]).toMatchObject({ title: '모두 보기·편집', action: { type: 'workspace-edit' } })
+    expect(new Set(rows.map((r) => r.key)).size).toBe(4)
+    for (const r of rows) expect(r.checked).toBe(false)
+  })
+
+  it('다른 모니터 구성이면 색(warn)과 함께 글로도 알린다', () => {
+    const rows = workspaceMenuRows(content())
+    expect(rows[1].tone).toBe('warn')
+    expect(rows[1].detail).toBe('창 2개 · 다른 모니터 구성')
+  })
+
+  it('canSave가 false면 저장 행은 disabled이고 까닭을 글로 적는다', () => {
+    const save = workspaceMenuRows(content({ canSave: false })).find((r) => r.action.type === 'workspace-save')
+    expect(save?.disabled).toBe(true)
+    expect(save?.detail).toBe('보안 프로그램이 창 제어를 막아 저장할 수 없어요')
+    expect(workspaceMenuRows(content()).find((r) => r.action.type === 'workspace-save')?.disabled).toBeUndefined()
+  })
+
+  it('편집 행 설명: more가 있으면 외 N개 더 있어요, 없으면 설정 안내', () => {
+    expect(workspaceMenuRows(content({ more: 3 })).at(-1)?.detail).toBe('외 3개 더 있어요')
+    expect(workspaceMenuRows(content({ more: 0 })).at(-1)?.detail).toBe('설정에서 이름과 단축키를 바꿔요')
+  })
+
+  it('목록이 비면 저장·편집 두 행만', () => {
+    const rows = workspaceMenuRows(content({ workspaces: [] }))
+    expect(rows.map((r) => r.action.type)).toEqual(['workspace-save', 'workspace-edit'])
   })
 })

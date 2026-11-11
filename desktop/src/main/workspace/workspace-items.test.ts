@@ -3,7 +3,7 @@ import { monitorFingerprint } from '../../shared/workspace/monitors'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { testWorkspace } from '../../shared/workspace/test-workspaces'
 import type { WorkspaceRunResult, WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
-import { createWorkspaceCommands, WORKSPACE_SAVE_ID, workspacePaletteItems } from './workspace-items'
+import { createWorkspaceCommands, WORKSPACE_MENU_MAX, WORKSPACE_SAVE_ID, workspaceMenuContent, workspacePaletteItems } from './workspace-items'
 
 const FP = monitorFingerprint([P, L])
 
@@ -119,5 +119,33 @@ describe('팔레트 명령(createWorkspaceCommands)', () => {
     const c = setup({ save: failed })
     expect(await c.commands.saveAs('QA 모드')).toBe(failed)
     expect(c.calls).toEqual(['wait', 'saveAs:QA 모드:palette'])
+  })
+})
+
+describe('workspaceMenuContent: 바 펼침 창 메뉴 내용', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => testWorkspace({ id: `ws-${i}`, name: `배치 ${i}`, updatedAt: new Date(Date.UTC(2026, 10, 1 + i)).toISOString() }))
+
+  it('10개 중 최근에 바꾼 8개만, 나머지 수는 more', () => {
+    expect(WORKSPACE_MENU_MAX).toBe(8)
+    const c = workspaceMenuContent(many(10), FP, true)
+    expect(c.kind).toBe('workspace-menu')
+    expect(c.workspaces).toHaveLength(8)
+    expect(c.workspaces.map((w) => w.id)).toEqual(['ws-9', 'ws-8', 'ws-7', 'ws-6', 'ws-5', 'ws-4', 'ws-3', 'ws-2'])
+    expect(c.more).toBe(2)
+    expect(c.canSave).toBe(true)
+  })
+
+  it('8개 이하면 more 0, 받은 목록은 고치지 않는다', () => {
+    const list = many(3)
+    const ids = list.map((w) => w.id)
+    expect(workspaceMenuContent(list, FP, false)).toMatchObject({ more: 0, canSave: false })
+    expect(list.map((w) => w.id)).toEqual(ids)
+  })
+
+  it('창 수는 켜진 창만, otherConfig는 지금 지문의 배치가 없을 때', () => {
+    const ws = testWorkspace()
+    expect(workspaceMenuContent([ws], FP, true).workspaces).toEqual([{ id: 'ws-qa', name: 'QA 모드', windows: 3, otherConfig: false }])
+    expect(workspaceMenuContent([ws], monitorFingerprint([P]), true).workspaces[0]).toMatchObject({ windows: 3, otherConfig: true })
   })
 })

@@ -49,6 +49,9 @@ export function MenuRowButton({ row, icon, onAction }: { row: MenuRow; icon?: Re
   const id = useId()
   const choice = isChoiceRow(row)
   const alert = row.checked && row.tone === 'warn'
+  // 고르는 행이 아닌 warn 행(다른 모니터 구성)은 바탕은 그대로 두고 설명 글만 주황으로 한다(글이 항상 함께 있다)
+  const warnDetail = alert || (!choice && row.tone === 'warn')
+  const off = row.disabled === true
   let lead: ReactNode = null
   if (choice) lead = row.checked ? <CheckIcon size={16} className={alert ? 'text-warn' : 'text-brand'} /> : null
   else if (icon) lead = <span className="grid place-items-center text-fg-2">{icon}</span>
@@ -61,20 +64,29 @@ export function MenuRowButton({ row, icon, onAction }: { row: MenuRow; icon?: Re
       // 이름은 제목, 설명은 한 줄 설명(화면 읽기 프로그램이 "끔, 원문 그대로 복사돼요"로 나눠 읽는다)
       aria-labelledby={`${id}-title`}
       aria-describedby={row.detail ? `${id}-detail` : undefined}
+      aria-disabled={off || undefined}
       className={`grid w-full shrink-0 grid-cols-[16px_minmax(0,1fr)] gap-x-2 rounded-control px-2 text-left transition-colors duration-(--dur-hover) active:transition-none ${
         row.detail ? 'items-start py-2' : 'h-8 content-center items-center'
-      } ${alert ? 'bg-warn/8 hover:bg-warn/12 active:bg-warn/14' : 'hover:bg-row-hover active:bg-row-selected'}`}
-      // 뗄 때 고른다(press.ts: 숨겼던 펼침 창의 첫 누름이 사라져도 눌리게)
-      {...press(() => onAction(row.action))}
+      } ${
+        alert
+          ? 'bg-warn/8 hover:bg-warn/12 active:bg-warn/14'
+          : off
+            ? 'cursor-default'
+            : 'hover:bg-row-hover active:bg-row-selected'
+      }`}
+      // 뗄 때 고른다(press.ts: 숨겼던 펼침 창의 첫 누름이 사라져도 눌리게). 쓸 수 없는 행은 실행하지 않는다
+      {...press(() => {
+        if (!off) onAction(row.action)
+      })}
     >
       <span aria-hidden="true" className="grid h-5 place-items-center">
         {lead}
       </span>
-      <span id={`${id}-title`} className={`min-w-0 text-body leading-5 break-keep text-fg ${row.checked ? 'font-semibold' : ''}`}>
+      <span id={`${id}-title`} className={`min-w-0 text-body leading-5 break-keep ${off ? 'text-fg-2' : 'text-fg'} ${row.checked ? 'font-semibold' : ''}`}>
         {row.title}
       </span>
       {row.detail ? (
-        <span id={`${id}-detail`} className={`col-start-2 text-small leading-4 text-balance break-keep ${alert ? 'text-warn' : 'text-fg-2'}`}>
+        <span id={`${id}-detail`} className={`col-start-2 text-small leading-4 text-balance break-keep ${warnDetail ? 'text-warn' : 'text-fg-2'}`}>
           {row.detail}
         </span>
       ) : null}

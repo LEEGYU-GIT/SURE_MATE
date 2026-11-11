@@ -1,5 +1,5 @@
 import type { BarShape } from '../../../shared/bar/bar-settings'
-import type { FlyoutAction } from '../../../shared/flyout/flyout-content'
+import type { FlyoutAction, FlyoutContent } from '../../../shared/flyout/flyout-content'
 import { barShapeLabel, LABEL_HINT_SEPARATOR, maskingModeLabel } from '../../../shared/labels'
 import { MASKING_MODES } from '../../../shared/masking/modes'
 import type { MaskingMode } from '../../../shared/types'
@@ -11,6 +11,8 @@ export interface MenuRow {
   detail?: string
   checked: boolean
   tone: 'normal' | 'warn'
+  /** 지금은 고를 수 없는 행(글로 까닭을 적고, 눌러도 실행하지 않는다) */
+  disabled?: boolean
   action: FlyoutAction
 }
 
@@ -76,4 +78,46 @@ export function labelParts(text: string): { name: string; hint: string | null; h
   const hint = at > 0 ? text.slice(at + LABEL_HINT_SEPARATOR.length) : ''
   if (name.trim() === '' || hint.trim() === '') return { name: text, hint: null, hintIsKey: false }
   return { name, hint, hintIsKey: KEY_HINT.test(hint) }
+}
+
+/** 워크스페이스 메뉴 문구 */
+export const WORKSPACE_MENU_TEXT = {
+  save: '지금 배치 저장',
+  saveBlocked: '보안 프로그램이 창 제어를 막아 저장할 수 없어요',
+  edit: '모두 보기·편집',
+  editHint: '설정에서 이름과 단축키를 바꿔요',
+  more: (n: number): string => `외 ${n}개 더 있어요`,
+  windows: (n: number): string => `창 ${n}개`,
+  otherConfig: '다른 모니터 구성'
+} as const
+
+/** 워크스페이스 메뉴(바의 워크스페이스 단추): 저장한 배치 불러오기 | 지금 배치 저장 | 모두 보기·편집 */
+export function workspaceMenuRows(c: Extract<FlyoutContent, { kind: 'workspace-menu' }>): MenuRow[] {
+  const T = WORKSPACE_MENU_TEXT
+  const rows: MenuRow[] = c.workspaces.map((w) => ({
+    key: `workspace:${w.id}`,
+    title: w.name,
+    // 다른 구성은 색(warn)만이 아니라 글로도 알린다(§14-4)
+    detail: w.otherConfig ? `${T.windows(w.windows)} · ${T.otherConfig}` : T.windows(w.windows),
+    checked: false,
+    tone: w.otherConfig ? 'warn' : 'normal',
+    action: { type: 'workspace-run', id: w.id }
+  }))
+  rows.push({
+    key: 'workspace-save',
+    title: T.save,
+    ...(c.canSave ? {} : { detail: T.saveBlocked, disabled: true }),
+    checked: false,
+    tone: 'normal',
+    action: { type: 'workspace-save' }
+  })
+  rows.push({
+    key: 'workspace-edit',
+    title: T.edit,
+    detail: c.more > 0 ? T.more(c.more) : T.editHint,
+    checked: false,
+    tone: 'normal',
+    action: { type: 'workspace-edit' }
+  })
+  return rows
 }

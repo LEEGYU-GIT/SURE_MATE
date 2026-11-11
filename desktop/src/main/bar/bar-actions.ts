@@ -19,7 +19,7 @@ export interface BarActionDeps {
   /** 팔레트를 열고 닫는다(단축키와 같음) */
   togglePalette(): void
   openPalette(p: ShownPayload): void
-  toggleMenu(kind: 'masking-menu' | 'workspace-menu', itemId: string): void
+  toggleMenu(kind: 'masking-menu' | 'workspace-menu', itemId: string): void | Promise<void>
   /** 고정 프롬프트를 지금 선택한 글로 실행(PromptSession.runFromBar). 실패하면 거부한다 */
   runPrompt(templateId: string): Promise<unknown>
   /** 실행 중 표시(바 항목 id, 끄면 null) */
@@ -112,6 +112,8 @@ export interface FlyoutActionDeps {
   openPalette(p: ShownPayload): void
   /** 위키 카드 [클립보드 글로 찾기]: 클립보드 글로 다시 찾아 새 카드를 띄운다 */
   lookupClipboard(): Promise<void>
+  /** 워크스페이스 메뉴 행: 불러오기·지금 배치 저장·모두 보기(메뉴를 닫은 뒤 부른다) */
+  workspaceAction(a: Extract<FlyoutAction, { type: 'workspace-run' | 'workspace-save' | 'workspace-edit' }>): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
@@ -170,6 +172,12 @@ export function createFlyoutActions(d: FlyoutActionDeps): { run(a: FlyoutAction)
       case 'wiki-clipboard':
         await d.lookupClipboard()
         return true
+      case 'workspace-run':
+      case 'workspace-save':
+      case 'workspace-edit':
+        // 닫은 뒤 실행한다: 바를 눌러도 포커스는 원래 창에 있어 저장·불러오기 대상에 Sure-Mate 창이 없다
+        d.close('select')
+        return d.workspaceAction(a)
     }
   }
 

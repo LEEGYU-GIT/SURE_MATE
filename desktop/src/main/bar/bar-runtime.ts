@@ -3,6 +3,7 @@ import type { BarItem } from '../../shared/bar/bar-items'
 import type { BarShape } from '../../shared/bar/bar-settings'
 import type { ShownPayload } from '../../shared/ipc-channels'
 import type { MaskingMode } from '../../shared/types'
+import type { FlyoutAction, MenuContent } from '../../shared/flyout/flyout-content'
 import { createFlyoutController, type FlyoutController } from '../flyout/flyout-controller'
 import type { OverlayIpc } from '../ipc'
 import { getMonitors } from '../native/coords'
@@ -37,6 +38,10 @@ export interface BarRuntimeOptions {
   copyWiki(id: string): Promise<boolean>
   /** 위키 카드 [클립보드 글로 찾기](WikiCard.lookupClipboard) */
   lookupClipboard(): Promise<void>
+  /** 워크스페이스 메뉴의 내용(파일 캐시를 읽는다) */
+  workspaceMenu(): Promise<Extract<MenuContent, { kind: 'workspace-menu' }>>
+  /** 워크스페이스 메뉴 행 동작(불러오기·저장·모두 보기). 메뉴는 이미 닫혀 있다 */
+  onWorkspaceAction(a: Extract<FlyoutAction, { type: 'workspace-run' | 'workspace-save' | 'workspace-edit' }>): Promise<boolean>
   notify(message: string): void
   log(event: string, data: Record<string, unknown>): void
 }
@@ -131,9 +136,9 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       isKnown: (id) => bar.hasItem(id),
       togglePalette: o.togglePalette,
       openPalette: o.showPalette,
-      // 워크스페이스 저장·불러오기는 M7: 그때까지 빈 목록과 쓸 수 없는 저장 단추
-      toggleMenu: (kind, itemId) =>
-        flyout.toggleMenu(kind === 'masking-menu' ? { kind, mode: o.inputs().maskingMode } : { kind, workspaces: [], canSave: false }, itemId),
+      // 워크스페이스 메뉴는 저장 파일 캐시를 읽어 만든다(비동기)
+      toggleMenu: async (kind, itemId) =>
+        flyout.toggleMenu(kind === 'masking-menu' ? { kind, mode: o.inputs().maskingMode } : await o.workspaceMenu(), itemId),
       runPrompt: o.runPrompt,
       setBusy: (id) => bar.setBusy(id),
       togglePet: o.togglePet,
@@ -152,6 +157,7 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       pinCard: (pinned) => flyout.pin(pinned),
       openPalette: o.showPalette,
       lookupClipboard: o.lookupClipboard,
+      workspaceAction: o.onWorkspaceAction,
       notify: o.notify,
       log: o.log
     })

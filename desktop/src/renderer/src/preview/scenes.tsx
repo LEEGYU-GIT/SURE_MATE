@@ -270,6 +270,28 @@ function FlyoutStage({ bar, edge, driver }: { bar: BarViewState | null; edge: Ba
   )
 }
 
+/** 워크스페이스 메뉴 장면 내용(가상 이름) */
+const WS_MENU: Extract<FlyoutContent, { kind: 'workspace-menu' }> = {
+  kind: 'workspace-menu',
+  workspaces: [
+    { id: 'ws-qa', name: 'QA 모드', windows: 3, otherConfig: false },
+    { id: 'ws-review', name: '가상자동차 요구사항 검토', windows: 4, otherConfig: false },
+    { id: 'ws-dock', name: '외부 모니터 발표', windows: 2, otherConfig: true }
+  ],
+  canSave: true,
+  more: 0
+}
+const WS_MENU_MORE: Extract<FlyoutContent, { kind: 'workspace-menu' }> = {
+  kind: 'workspace-menu',
+  workspaces: [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `ws-${i}`, name: ['QA 모드', '회의', '코드 리뷰', '시험 결과 정리', '보고서 작성', '시뮬레이터 점검'][i], windows: 2 + (i % 3), otherConfig: false })),
+    { id: 'ws-long', name: 'XY방산 HIL 벤치 시험 결과 비교와 보고서 초안 작성', windows: 5, otherConfig: false },
+    { id: 'ws-dock', name: '외부 모니터 발표', windows: 2, otherConfig: true }
+  ],
+  canSave: true,
+  more: 3
+}
+
 function flyoutScene(id: string, title: string, bar: BarViewState | null, anchor: FlyoutAnchor, content: FlyoutContent): Scene {
   const driver = createFlyoutDriver(bar, anchor, content)
   const edge: BarEdge = 'barOff' in anchor ? anchor.barOff : (bar?.edge ?? 'right')
@@ -816,7 +838,10 @@ export const SCENES: Scene[] = [
   ),
   flyoutScene('flyout-masking', '펼침 창: 가명 처리 기본값 메뉴(가명 후 되돌리기)', EDGE_RIGHT, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'restore' }),
   flyoutScene('flyout-masking-off', '펼침 창: 가명 처리 기본값 메뉴(끔 — 글과 주황으로)', EDGE_RIGHT_OFF, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'off' }),
-  flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(빈 목록, 저장은 준비 중)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: false }),
+  flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(저장한 배치 3개, 하나는 다른 모니터 구성)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU),
+  flyoutScene('flyout-workspaces-empty', '펼침 창: 워크스페이스(저장한 배치 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: true, more: 0 }),
+  flyoutScene('flyout-workspaces-blocked', '펼침 창: 워크스페이스(보안 프로그램이 막아 저장 행을 쓸 수 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { ...WS_MENU, canSave: false }),
+  flyoutScene('flyout-workspaces-more', '펼침 창: 워크스페이스(8개 + 외 3개 더, 긴 이름은 줄임)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU_MORE),
   flyoutScene('flyout-bar-menu', '펼침 창: 바 메뉴(오른쪽 클릭, 가장자리 띠)', EDGE_RIGHT, { clickY: 250 }, { kind: 'bar-menu', shape: 'edge' }),
   flyoutScene('flyout-bar-menu-left', '펼침 창: 바 메뉴, 왼쪽 떠 있는 캡슐', CAPSULE_LEFT, { clickY: 240 }, { kind: 'bar-menu', shape: 'capsule' }),
   ...CARD_SCENES,

@@ -58,7 +58,7 @@ import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
 import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute } from './windows/settings-window'
-import { createWorkspaceCommands, workspacePaletteItems } from './workspace/workspace-items'
+import { createWorkspaceCommands, workspaceMenuContent, workspacePaletteItems } from './workspace/workspace-items'
 import { createWorkspaceRuntime } from './workspace/workspace-runtime'
 
 app.setName('Sure-Mate')
@@ -91,6 +91,8 @@ const settingsCommands = createSettingsCommands({
 let packCommands: { run(id: string): Promise<boolean> } | null = null
 /** 워크스페이스 팔레트 명령(지금 배치 저장·불러오기, 설계 §11). 앱이 준비되면 만든다 */
 let workspaceCommands: ReturnType<typeof createWorkspaceCommands> | null = null
+/** 워크스페이스 서비스(바 메뉴가 쓴다). 앱이 준비되면 만든다 */
+let workspaceSvc: ReturnType<typeof createWorkspaceRuntime> | null = null
 /** 지금 용어 목록. 팔레트를 열 때(목록 요청)마다 새로 읽은 것으로 바꾼다({{terms}}는 이것을 쓴다) */
 let glossaryEntries: GlossaryEntry[] = []
 let shell: { tray: Tray; refresh: () => void } | null = null
@@ -286,6 +288,19 @@ function startBar(): void {
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
     lookupClipboard: () => (wikiCard ? wikiCard.lookupClipboard() : Promise.resolve()),
+    workspaceMenu: async () => workspaceMenuContent(workspaceSvc ? await workspaceSvc.list() : [], monitorFingerprint(getMonitors()), nativeStatus().ok),
+    // 메뉴는 이미 닫혔고 포커스는 원래 창에 있다. 알림(이름 포함)·바쁨·Win32 불가는 서비스가 처리한다
+    onWorkspaceAction: async (a) => {
+      if (a.type === 'workspace-edit') {
+        // 편집 화면은 설정 창에 둔다(Task 8이 워크스페이스 탭으로 잇는다)
+        openSettings('/settings')
+        return true
+      }
+      if (!workspaceSvc) return false
+      if (a.type === 'workspace-run') await workspaceSvc.run(a.id, 'bar')
+      else await workspaceSvc.saveNew({ source: 'bar' })
+      return true
+    },
     notify,
     log
   })
@@ -588,6 +603,7 @@ if (!app.requestSingleInstanceLock()) {
       hidePalette: (restoreFocus) => hidePalette({ restoreFocus })
     })
     workspaceCommands = workspaceCmds
+    workspaceSvc = workspaceService
     // 시작할 때 한 번 읽어 깨진 파일을 바로 알린다
     await workspaceService.list()
     createPaletteWindow({ getDisplayMode: () => settings.palette.display })

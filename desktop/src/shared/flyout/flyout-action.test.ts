@@ -19,6 +19,10 @@ it('종류마다 올바른 값은 통과한다', () => {
     { type: 'wiki-open', id: 'static-analysis' },
     { type: 'wiki-search', query: 'mc' },
     { type: 'wiki-clipboard' },
+    { type: 'workspace-run', id: 'ws-1' },
+    { type: 'workspace-run', id: 'x'.repeat(200) },
+    { type: 'workspace-save' },
+    { type: 'workspace-edit' },
     { type: 'close' }
   ]
   for (const a of ok) expect(parseFlyoutAction(a), a.type).toEqual(a)
@@ -71,4 +75,13 @@ it('parseFlyoutReady: seq는 0 이상 정수, 크기는 1~4000 유한수', () =>
   expect(parseFlyoutReady(1, Number.NaN, 10)).toBeNull()
   expect(parseFlyoutReady(1, 10, Number.POSITIVE_INFINITY)).toBeNull()
   expect(parseFlyoutReady(Number.MAX_SAFE_INTEGER + 1, 10, 10)).toBeNull()
+})
+
+it('워크스페이스 동작: run은 id 1~200자, save·edit는 추가 칸 없음', () => {
+  expect(parseFlyoutAction({ type: 'workspace-run', id: '' })).toBeNull()
+  expect(parseFlyoutAction({ type: 'workspace-run', id: 'x'.repeat(201) })).toBeNull()
+  expect(parseFlyoutAction({ type: 'workspace-run' })).toBeNull()
+  expect(parseFlyoutAction({ type: 'workspace-run', id: 'ws-1', extra: 1 })).toEqual({ type: 'workspace-run', id: 'ws-1' })
+  expect(parseFlyoutAction({ type: 'workspace-save', id: 'x' })).toEqual({ type: 'workspace-save' })
+  expect(parseFlyoutAction({ type: 'workspace-edit', id: 'x' })).toEqual({ type: 'workspace-edit' })
 })

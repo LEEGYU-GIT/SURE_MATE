@@ -190,7 +190,7 @@ function Content({ content, onAction, onResize }: { content: FlyoutContent; onAc
     case 'masking-menu':
       return <MaskingMenu mode={content.mode} onAction={onAction} />
     case 'workspace-menu':
-      return <WorkspaceMenu workspaces={content.workspaces} canSave={content.canSave} />
+      return <WorkspaceMenu content={content} onAction={onAction} />
     case 'bar-menu':
       return <BarMenu shape={content.shape} onAction={onAction} />
     case 'wiki-card':
