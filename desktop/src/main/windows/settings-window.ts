@@ -18,6 +18,12 @@ export const settingsContentsId = (): number | null => (win && !win.isDestroyed(
 /** 열린 설정 창(대화상자의 부모 창). 없으면 null */
 export const settingsWindow = (): BrowserWindow | null => (win && !win.isDestroyed() ? win : null)
 
+/** 열린 설정 창의 핸들(10진 문자열, 팔레트가 돌아갈 창으로 기억해도 되는지 본다). 없으면 null */
+export const settingsHwnd = (): string | null => (win && !win.isDestroyed() ? win.getNativeWindowHandle().readBigUInt64LE(0).toString() : null)
+
+/** 열린 설정 창의 경로(설정·첫 실행 안내). 없으면 null */
+export const settingsRoute = (): SettingsRoute | null => (win && !win.isDestroyed() ? route : null)
+
 /** 열린 설정 창에 보낸다(없으면 아무것도 하지 않음) */
 export function sendToSettings(channel: string, ...args: unknown[]): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
