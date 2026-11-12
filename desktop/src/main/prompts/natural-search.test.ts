@@ -250,6 +250,7 @@ function withFakeTerms(): NonNullable<typeof bigSet> {
   return bigSet
 }
 
+// 이름이 '속도'로 시작하는 시험은 vitest.config.ts의 speed 묶음이 다른 시험이 모두 끝난 뒤 따로 잰다(CPU를 나눠 쓰지 않게)
 it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 51개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
   const { big, bigIndex } = withFakeTerms()
   const run = (q: string): void => void searchPalette(big, q, bigIndex, ctx)
