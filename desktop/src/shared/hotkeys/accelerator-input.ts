@@ -12,6 +12,9 @@ export interface KeyInput {
 
 const MODIFIER_CODES = new Set(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'])
 
+/** 보조키(좌우 Ctrl·Alt·Shift·Win)의 e.code인지. 녹화 칸이 누름의 시작·끝을 가린다(record-watch.ts) */
+export const isModifierCode = (code: string): boolean => MODIFIER_CODES.has(code)
+
 /** e.code → Electron 조합의 주 키 이름(한/영 상태와 상관없이 같은 자리) */
 const NAMED: Record<string, string> = {
   Space: 'Space',

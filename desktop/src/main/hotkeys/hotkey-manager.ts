@@ -51,7 +51,9 @@ export class HotkeyManager {
       this.unbind(id)
       return { ok: true }
     }
-    const check = checkAccelerator(acc)
+    // 새로 고를 때만 막는 조합(기본 편집 단축키)은 여기서 막지 않는다(saved): 새 조합은 단축키 바꾸기(hotkey-change.ts의 check)가
+    // 먼저 거르고, 시작할 때·바꾸기 실패 뒤 되돌릴 때는 그 규칙 전에 저장해 둔 조합도 그대로 등록해야 한다(말없이 사라지지 않게)
+    const check = checkAccelerator(acc, { saved: true })
     if (check.level === 'block') return { ok: false, reason: 'blocked', detail: check.reason }
 
     const previous = this.entries.get(id)

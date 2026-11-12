@@ -49,6 +49,14 @@ describe('check', () => {
     expect(t.changer.check('palette', 'Alt+`')).toEqual({ level: 'ok' })
     expect(t.changer.check('palette', 'Ctrl+Shift+K')).toEqual({ level: 'ok' })
   })
+
+  it('기본 편집 단축키(Ctrl+C 등)는 새로 고를 수 없고, Ctrl·Alt + 글자 하나는 다른 앱 기능을 가로챈다고 경고한다', () => {
+    const t = make()
+    expect(t.changer.check('palette', 'Ctrl+C')).toEqual({ level: 'block', reason: '복사·붙여넣기 같은 기본 편집 단축키예요' })
+    expect(t.changer.check('workspace:ws-1', 'Ctrl+V').level).toBe('block')
+    expect(t.changer.check('palette', 'Ctrl+G')).toEqual({ level: 'warn', reason: '다른 앱의 Ctrl+G 기능(찾기·이동 등)을 가로채요' })
+    expect(t.changer.check('pet-control', 'Alt+F')).toEqual({ level: 'warn', reason: '다른 앱의 Alt+F 기능(메뉴 열기 등)을 가로채요' })
+  })
 })
 
 describe('녹화(Review Focus 1)', () => {
@@ -117,6 +125,42 @@ describe('set', () => {
     const t = make()
     await t.changer.set('palette', 'Ctrl+Alt+Space')
     expect(t.logs).toContainEqual(['hotkey.change', { id: 'palette', ok: false, reason: 'in-use' }])
+  })
+
+  it('기본 편집 단축키로는 바꾸지 않고(이전 조합 그대로), Ctrl + 글자 하나는 바꾸되 경고를 함께 돌려준다(녹화 칸 → 탭의 안내 줄)', async () => {
+    const t = make()
+    expect(await t.changer.set('palette', 'Ctrl+V')).toEqual({ ok: false, reason: '복사·붙여넣기 같은 기본 편집 단축키예요' })
+    expect(t.manager.current('palette')).toBe('Alt+`')
+    expect(t.registered.has('Ctrl+V')).toBe(false)
+    expect(t.saved).toEqual([])
+    expect(await t.changer.set('palette', 'Ctrl+G')).toEqual({ ok: true, acc: 'Ctrl+G', warning: '다른 앱의 Ctrl+G 기능(찾기·이동 등)을 가로채요' })
+    expect(t.registered.has('Ctrl+G')).toBe(true)
+    expect(t.saved).toEqual([['palette', 'Ctrl+G']])
+  })
+
+  it('규칙 전에 저장한 기본 편집 단축키(Ctrl+C)는 바꾸다 저장하지 못하면 그 조합으로 되돌려 다시 등록한다', async () => {
+    const registered = new Map<string, () => void>()
+    const backend: ShortcutBackend = {
+      register: (acc, cb) => (registered.has(acc) ? false : (registered.set(acc, cb), true)),
+      unregister: (acc) => void registered.delete(acc)
+    }
+    const manager = new HotkeyManager(backend, () => Date.now())
+    let pressed = 0
+    // 시작할 때 workspaces.json의 조합을 묶는다
+    expect(manager.bind('workspace:ws-1', 'Ctrl+C', () => void pressed++).ok).toBe(true)
+    const changer = createHotkeyChanger({
+      manager,
+      probe: () => true,
+      save: async () => {},
+      timers: globalTimers(),
+      log: () => {},
+      workspaces: { prepare: async () => true, save: async () => false, name: () => null }
+    })
+    expect((await changer.set('workspace:ws-1', 'Ctrl+Alt+1')).ok).toBe(false)
+    expect(manager.current('workspace:ws-1')).toBe('Ctrl+C')
+    expect([...registered.keys()]).toEqual(['Ctrl+C'])
+    registered.get('Ctrl+C')?.()
+    expect(pressed).toBe(1)
   })
 })
 

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { acceleratorFromKey, sameAccelerator } from './accelerator-input'
+import { acceleratorFromKey, isModifierCode, sameAccelerator } from './accelerator-input'
 
 const k = (code: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean; isComposing: boolean }> = {}) => ({
   code,
@@ -23,6 +23,11 @@ it('보조키 + 주 키를 Electron 조합 글로(Ctrl+Alt+Shift 순서)', () =>
 it('보조키만 누른 동안·한글 조합 중에는 기다린다', () => {
   for (const code of ['ControlLeft', 'AltLeft', 'ShiftRight', 'AltRight']) expect(acceleratorFromKey(k(code, { ctrlKey: true }))).toEqual({ pending: true })
   expect(acceleratorFromKey(k('KeyA', { ctrlKey: true, isComposing: true }))).toEqual({ pending: true })
+})
+
+it('보조키 코드(좌우 Ctrl·Alt·Shift·Win)', () => {
+  for (const code of ['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight']) expect(isModifierCode(code), code).toBe(true)
+  for (const code of ['KeyK', 'Digit1', 'Space', 'Escape', 'CapsLock', 'Lang1']) expect(isModifierCode(code), code).toBe(false)
 })
 
 it('Esc(보조키 없이)는 그만두기, Win 키 조합·보조키 없는 키·모르는 키는 안 됨', () => {

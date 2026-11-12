@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useReducer } from 'r
 import type { SettingsPatch } from '../../../shared/settings/settings-patch'
 import type { SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
 import { initialSettingsState, settingsReducer, type SettingsViewState } from './settings-state'
+import type { SettingsTabId } from './tabs'
 
 export interface SettingsCtx {
   snapshot: SettingsSnapshot
@@ -15,6 +16,8 @@ export interface SettingsCtx {
   track<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T>
   /** main이 열라고 한 워크스페이스(설정 창 주소·탭 고르기 알림). seq는 같은 id를 다시 열라고 할 때도 바뀐다 */
   workspaceTarget: { id: string; seq: number } | null
+  /** 다른 탭으로 간다(단축키 탭 → 워크스페이스 탭). 누른 단추가 사라지므로 포커스는 탭 목록의 그 탭으로 옮긴다 */
+  showTab(id: SettingsTabId): void
 }
 
 export const SettingsContext = createContext<SettingsCtx | null>(null)
