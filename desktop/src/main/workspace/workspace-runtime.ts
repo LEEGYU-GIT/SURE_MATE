@@ -18,7 +18,7 @@ import {
 } from '../native/windows'
 import { notify } from '../notify'
 import { createRestoreRunner, type OwnWindowState, unfocusableOwnWindow } from './restore-runner'
-import { createWorkspaceService, type WorkspaceService } from './workspace-service'
+import { createWorkspaceService, type WorkspaceService, type WorkspaceSource } from './workspace-service'
 import { createWorkspaceCache } from './workspace-store'
 
 /** 다른 모니터 구성에서 저장한 배치를 주 모니터로 모을지 묻는다(부모 창 없이, 용어 팩 가져오기 확인과 같은 방식) */
@@ -37,7 +37,7 @@ async function confirmGather(o: { savedMonitors: number; currentMonitors: number
 }
 
 /**
- * Sure-Mate 자신의 창들(포커스를 돌려줄 수 있는지 판단용, unfocusableOwnWindow). 읽지 못하면 빈 목록(다른 앱 창처럼 돌려준다)
+ * Sure-Mate 자신의 창들(끝의 포커스 판단용: unfocusableOwnWindow, 실행기 own 포트). 읽지 못하면 빈 목록(다른 앱 창으로 본다)
  */
 function ownWindows(): OwnWindowState[] {
   try {
@@ -58,6 +58,8 @@ export function createWorkspaceRuntime(o: {
   reportErrors(errors: string[]): void
   /** 그 워크스페이스 단축키로 지금 등록된 조합(설정 창의 '쓰는 중'·'등록 못 함'). 단축키 관리자가 생기기 전에는 undefined */
   hotkeyBound?(workspaceId: string): string | undefined
+  /** 불러오기가 성공해 끝날 때마다 부른다(서비스의 restored로 그대로 넘긴다) */
+  restored?(id: string, source: WorkspaceSource): void
 }): WorkspaceService {
   const native = (): boolean => nativeStatus().ok
   const runner = createRestoreRunner({
@@ -77,6 +79,8 @@ export function createWorkspaceRuntime(o: {
     // 끝에 시작 때 앞 창을 올리고 포커스를 줄 수 있는지: 아직 있고 보이며, 숨은 창·포커스를 받지 않는 Sure-Mate 창(바·펼침 창,
     // 조종이 끝난 펫)이 아니다(Win32를 못 쓰면 false)
     focusable: (hwnd) => isWindowVisible(hwnd) && !unfocusableOwnWindow(hwnd, ownWindows()),
+    // 시작 때 앞 창이 Sure-Mate 자신의 창(설정·첫 실행 안내 창 등)인지. 그 창이 포커스를 받을 수 있을 때만(focusable) 그 창에 포커스를 남긴다
+    own: (hwnd) => ownWindows().some((w) => w.hwnd === hwnd),
     setForeground,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: Date.now
@@ -94,6 +98,7 @@ export function createWorkspaceRuntime(o: {
     newId: randomUUID,
     now: () => new Date(),
     log,
-    hotkeyBound: o.hotkeyBound
+    hotkeyBound: o.hotkeyBound,
+    restored: o.restored
   })
 }

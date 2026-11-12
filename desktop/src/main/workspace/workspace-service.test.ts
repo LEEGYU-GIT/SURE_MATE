@@ -9,7 +9,7 @@ import type { RestoreReport } from '../../shared/workspace/restore-result'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { TEST_WINDOWS, testWindow, testWorkspace, toDipPL } from '../../shared/workspace/test-workspaces'
 import type { Workspace } from '../../shared/workspace/types'
-import { createWorkspaceService, type WorkspaceServiceDeps } from './workspace-service'
+import { createWorkspaceService, type WorkspaceServiceDeps, type WorkspaceSource } from './workspace-service'
 
 const FP = monitorFingerprint([P, L])
 const NOW = '2026-11-11T09:00:00.000Z'
@@ -34,7 +34,8 @@ const reportOf = (plan: ReadyPlan): RestoreReport => ({
   gathered: plan.gathered,
   ms: 42,
   maxDiff: 3,
-  restoredFocus: true
+  restoredFocus: true,
+  focusTarget: 'workspace'
 })
 
 interface World {
@@ -56,6 +57,9 @@ interface World {
   logs: [string, Record<string, unknown>][]
   /** 지금 등록된 워크스페이스 단축키(워크스페이스 id → 조합) */
   bound: Map<string, string>
+  /** restored를 부른 차례. after는 그때 마지막 로그 줄의 이름 */
+  restored: { id: string; source: WorkspaceSource; after: string | undefined }[]
+  restoredThrows: boolean
 }
 
 const worlds: World[] = []
@@ -77,7 +81,9 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     confirms: [],
     notes: [],
     logs: [],
-    bound: new Map()
+    bound: new Map(),
+    restored: [],
+    restoredThrows: false
   }
   worlds.push(w)
   let n = 0
@@ -114,7 +120,11 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     newId: () => `id-${++n}`,
     now: () => new Date(NOW),
     log: (event, data) => void w.logs.push([event, data]),
-    hotkeyBound: (id) => w.bound.get(id)
+    hotkeyBound: (id) => w.bound.get(id),
+    restored: (id, source) => {
+      w.restored.push({ id, source, after: w.logs.at(-1)?.[0] })
+      if (w.restoredThrows) throw new Error('listener failed')
+    }
   }
   return { w, service: createWorkspaceService(deps) }
 }
@@ -237,6 +247,22 @@ describe('다른 이름으로 저장(saveAs)·다시 저장(recapture)', () => {
     expect(w.notes).toEqual(Array(2).fill(saveSummary({ name: 'QA 모드', windows: 3, skipped: NONE })))
   })
 
+  it('saveAs: quiet면 새로 저장·다시 저장·실패 모두 알리지 않는다(saveNew·recapture와 같다)', async () => {
+    const { w, service } = world({ list: [testWorkspace({ id: 'ws-meet', name: '회의 모드', aliases: [] })] })
+    expect(await service.saveAs('QA 모드', 'onboarding', { quiet: true })).toMatchObject({ ok: true, name: 'QA 모드', windows: 3 })
+    expect(await service.saveAs('회의모드', 'onboarding', { quiet: true })).toMatchObject({ ok: true, id: 'ws-meet', name: '회의 모드' })
+    w.windows = []
+    expect(await service.saveAs('QA 모드', 'onboarding', { quiet: true })).toEqual({ ok: false, reason: 'no-windows', message: WORKSPACE_NOTES.noWindows })
+    expect(w.notes).toEqual([])
+    expect(w.list.map((x) => x.name)).toEqual(['회의 모드', 'QA 모드'])
+    expect(w.logs).toContainEqual(['workspace.save', expect.objectContaining({ op: 'new', source: 'onboarding', ok: true })])
+    expect(w.logs).toContainEqual(['workspace.save', expect.objectContaining({ op: 'recapture', source: 'onboarding', ok: true, id: 'ws-meet' })])
+    // quiet가 아니면 전처럼 알린다
+    w.windows = TEST_WINDOWS
+    expect((await service.saveAs('QA 모드', 'palette', { quiet: false })).ok).toBe(true)
+    expect(w.notes).toEqual([saveSummary({ name: 'QA 모드', windows: 3, skipped: NONE })])
+  })
+
   it('recapture: 이름·별칭·단축키는 그대로이고 배치는 지금 지문 하나(새 규칙은 모두 켜짐)', async () => {
     const old = testWorkspace({ hotkey: 'Ctrl+Alt+1' })
     const layout = old.layouts[FP]
@@ -276,7 +302,7 @@ describe('불러오기(run)', () => {
     expect(w.confirms).toEqual([])
     expect(w.logs).toContainEqual([
       'workspace.restore',
-      expect.objectContaining({ source: 'palette', total: 3, placed: 3, missing: 0, elevated: 0, hung: 0, blocked: 0, failed: 0, off: 0, timeout: 0, gathered: false, maxDiff: 3, ms: 42, restoredFocus: true })
+      expect.objectContaining({ source: 'palette', total: 3, placed: 3, missing: 0, elevated: 0, hung: 0, blocked: 0, failed: 0, off: 0, timeout: 0, gathered: false, maxDiff: 3, ms: 42, restoredFocus: true, focusTarget: 'workspace' })
     ])
   })
 
@@ -344,6 +370,48 @@ describe('불러오기(run)', () => {
     open()
     expect((await saving).ok).toBe(true)
     expect(w.plans).toEqual([])
+  })
+})
+
+describe('불러오기를 마쳤다고 알리기(restored)', () => {
+  it('불러오기가 성공하면 결과 로그(workspace.restore) 뒤에 그 id·부른 곳으로 한 번 부른다', async () => {
+    const { w, service } = world({ list: [testWorkspace()] })
+    expect((await service.run('ws-qa', 'onboarding')).ok).toBe(true)
+    expect(w.restored).toEqual([{ id: 'ws-qa', source: 'onboarding', after: 'workspace.restore' }])
+    expect(w.logs).toContainEqual(['workspace.restore', expect.objectContaining({ source: 'onboarding', ok: true, id: 'ws-qa' })])
+    expect((await service.run('ws-qa', 'hotkey')).ok).toBe(true)
+    expect(w.restored.map((r) => r.source)).toEqual(['onboarding', 'hotkey'])
+  })
+
+  it('불러오지 않았으면(없는 id·켜진 창 없음·다른 구성에서 취소·Win32 없음·busy) 부르지 않는다', async () => {
+    const off = testWorkspace({ id: 'ws-off' })
+    off.layouts[FP] = { ...off.layouts[FP], windows: off.layouts[FP].windows.map((x) => ({ ...x, enabled: false })) }
+    const { w, service } = world({ list: [testWorkspace(), off] })
+    expect(await service.run('nope', 'hotkey')).toEqual({ ok: false, reason: 'missing' })
+    expect(await service.run('ws-off', 'hotkey')).toEqual({ ok: false, reason: 'empty' })
+    w.monitors = [P]
+    expect(await service.run('ws-qa', 'hotkey')).toEqual({ ok: false, reason: 'cancelled' })
+    w.monitors = [P, L]
+    w.native = false
+    expect(await service.run('ws-qa', 'hotkey')).toEqual({ ok: false, reason: 'native-unavailable' })
+    w.native = true
+    let release!: () => void
+    w.hold = new Promise((resolve) => (release = resolve))
+    const first = service.run('ws-qa', 'palette')
+    expect(await service.run('ws-qa', 'hotkey')).toEqual({ ok: false, reason: 'busy' })
+    expect(w.restored).toEqual([])
+    release()
+    expect((await first).ok).toBe(true)
+    expect(w.restored).toEqual([{ id: 'ws-qa', source: 'palette', after: 'workspace.restore' }])
+  })
+
+  it('restored가 던져도 불러오기 결과는 그대로이고 workspace.listenerError로 남긴다(다음 불러오기도 된다)', async () => {
+    const { w, service } = world({ list: [testWorkspace()] })
+    w.restoredThrows = true
+    expect(await service.run('ws-qa', 'editor')).toEqual({ ok: true, report: reportOf(w.plans[0]) })
+    expect(w.logs).toContainEqual(['workspace.listenerError', { error: 'listener failed' }])
+    expect((await service.run('ws-qa', 'editor')).ok).toBe(true)
+    expect(w.restored).toHaveLength(2)
   })
 })
 

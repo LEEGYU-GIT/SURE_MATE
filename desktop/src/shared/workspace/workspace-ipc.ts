@@ -34,8 +34,8 @@ export type WorkspaceEditResult = { ok: true; workspace: Workspace } | { ok: fal
 /** 불러오기 결과. cancelled는 다른 모니터 구성 질문에서 취소, empty는 불러올(켜진) 창 규칙이 없음 */
 export type WorkspaceRunResult = { ok: true; report: RestoreReport } | { ok: false; reason: WorkspaceFailReason | 'cancelled' | 'empty' }
 
-/** 저장·불러오기를 부른 곳(로그용). editor는 설정 창의 워크스페이스 탭 */
-export type WorkspaceSource = 'palette' | 'bar' | 'hotkey' | 'editor'
+/** 저장·불러오기를 부른 곳(로그용). editor는 설정 창의 워크스페이스 탭, onboarding은 첫 실행 안내 */
+export type WorkspaceSource = 'palette' | 'bar' | 'hotkey' | 'editor' | 'onboarding'
 
 // renderer가 보낸 값 검사(renderer는 믿지 않는다). 내용 검사는 applyWorkspaceEdit가 하고, 여기서는 모양만 본다.
 

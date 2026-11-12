@@ -34,8 +34,11 @@ export interface WorkspaceService {
   listView(): Promise<WorkspaceListView>
   saveNew(o: { source: WorkspaceSource; name?: string; quiet?: boolean }): Promise<WorkspaceSaveResult>
   recapture(id: string, o: { source: WorkspaceSource; quiet?: boolean }): Promise<WorkspaceSaveResult>
-  /** 이름이 기존 워크스페이스의 이름·별칭과 compactOf로 같으면 그것을 다시 저장, 아니면 그 이름으로 새로 저장 */
-  saveAs(name: string, source: WorkspaceSource): Promise<WorkspaceSaveResult>
+  /**
+   * 이름이 기존 워크스페이스의 이름·별칭과 compactOf로 같으면 그것을 다시 저장, 아니면 그 이름으로 새로 저장.
+   * quiet면 결과·실패를 알리지 않는다(saveNew·recapture와 같다)
+   */
+  saveAs(name: string, source: WorkspaceSource, o?: { quiet?: boolean }): Promise<WorkspaceSaveResult>
   run(id: string, source: WorkspaceSource): Promise<WorkspaceRunResult>
   edit(id: string, edit: WorkspaceEdit): Promise<WorkspaceEditResult>
   remove(id: string): Promise<boolean>
@@ -67,6 +70,8 @@ export interface WorkspaceServiceDeps {
    * 단축키 관리자는 서비스보다 늦게 만들어지므로 부를 때마다 묻는다. 없으면 모두 등록 안 됨으로 본다
    */
   hotkeyBound?(workspaceId: string): string | undefined
+  /** 불러오기가 성공해 끝날 때마다 결과 로그 뒤에 한 번 부른다. 듣는 곳의 오류는 불러오기 결과를 바꾸지 않는다 */
+  restored?(id: string, source: WorkspaceSource): void
 }
 
 /** 실패 까닭마다 알림·화면 문구 */
@@ -267,8 +272,15 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
         gathered: report.gathered,
         maxDiff: report.maxDiff,
         ms: report.ms,
-        restoredFocus: report.restoredFocus
+        restoredFocus: report.restoredFocus,
+        focusTarget: report.focusTarget ?? null
       })
+      // 듣는 곳의 오류는 불러오기 결과를 바꾸지 않는다(commit과 같다)
+      try {
+        d.restored?.(id, source)
+      } catch (e) {
+        d.log('workspace.listenerError', { error: errorText(e) })
+      }
       return { ok: true, report }
     } finally {
       busy = null
@@ -312,9 +324,9 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
 
     saveNew: (o) => save({ kind: 'new', name: o.name }, o.source, o.quiet === true),
     recapture: (id, o) => save({ kind: 'recapture', id }, o.source, o.quiet === true),
-    saveAs: (name, source) => {
+    saveAs: (name, source, o) => {
       const wanted = name.trim()
-      return save(wanted ? { kind: 'as', name: wanted } : { kind: 'new' }, source, false)
+      return save(wanted ? { kind: 'as', name: wanted } : { kind: 'new' }, source, o?.quiet === true)
     },
     run,
 
