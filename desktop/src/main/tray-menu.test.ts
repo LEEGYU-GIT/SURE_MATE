@@ -18,7 +18,7 @@ const options = (over: Partial<TrayMenuOptions> = {}): TrayMenuOptions => ({
 it('트레이 메뉴의 "설정"은 "팔레트 열기" 바로 다음이고 누르면 설정 창을 연다', () => {
   const o = options()
   const items = trayMenuTemplate(o, { suspended: false, onToggleSuspend: vi.fn() })
-  expect(items.map((i) => i.label ?? i.type)).toEqual(['팔레트 열기', '설정', '가명 처리: 가명 후 되돌리기', 'separator', 'Sure-Mate 바', '말랑 메이트 보이기', 'separator', '단축키 일시 중지', 'separator', '종료'])
+  expect(items.map((i) => i.label ?? i.type)).toEqual(['팔레트 열기', '설정', '가명 처리: 바꾸고 되돌리기', 'separator', 'Sure-Mate 바', '말랑 메이트 보이기', 'separator', '단축키 일시 중지', 'separator', '종료'])
   ;(items[1].click as () => void)()
   expect(o.onOpenSettings).toHaveBeenCalledOnce()
   expect(o.onOpenPalette).not.toHaveBeenCalled()

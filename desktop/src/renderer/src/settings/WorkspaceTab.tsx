@@ -273,7 +273,7 @@ function WorkspaceRow({ view, onOpen, ref }: { view: WorkspaceView; onOpen(): vo
       </span>
       {ws.hotkey ? (
         <span className="flex shrink-0 items-center gap-3">
-          {view.hotkeyRegistered ? null : <span className="text-small whitespace-nowrap text-warn">{COPY.notRegistered}</span>}
+          {view.hotkeyRegistered ? null : <span className="text-small whitespace-nowrap text-danger">{COPY.notRegistered}</span>}
           <kbd className="rounded-control border border-line bg-surface-inset px-2 py-0.5 font-ui text-small whitespace-nowrap text-fg">{ws.hotkey}</kbd>
         </span>
       ) : null}
@@ -686,7 +686,7 @@ function HotkeyRow({ workspace, registered, onChanged }: { workspace: Workspace;
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <kbd className={`rounded-control border border-line bg-surface-inset px-2 py-1 font-ui text-small whitespace-nowrap ${acc ? 'text-fg' : 'text-fg-3'}`}>{acc ?? COPY.none}</kbd>
-          {acc ? <span className={`text-small whitespace-nowrap ${registered ? 'text-fg-2' : 'text-warn'}`}>{registered ? COPY.inUse : COPY.notRegistered}</span> : null}
+          {acc ? <span className={`text-small whitespace-nowrap ${registered ? 'text-fg-2' : 'text-danger'}`}>{registered ? COPY.inUse : COPY.notRegistered}</span> : null}
           {recording ? null : (
             <div className="flex gap-2">
               <Button
@@ -720,7 +720,7 @@ function HotkeyRow({ workspace, registered, onChanged }: { workspace: Workspace;
         />
       ) : null}
       {notice ? <NoticeLine notice={notice} /> : null}
-      {acc && !registered && !recording ? <p className="text-small leading-5 break-keep text-warn">{COPY.hotkeyTaken}</p> : null}
+      {acc && !registered && !recording ? <p className="text-small leading-5 break-keep text-danger">{COPY.hotkeyTaken}</p> : null}
     </div>
   )
 }

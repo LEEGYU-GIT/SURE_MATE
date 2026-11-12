@@ -30,6 +30,20 @@ it('막힌 조합은 등록을 시도하지 않는다', () => {
   expect(b.registered.size).toBe(0)
 })
 
+it('새로 고를 때만 막는 조합(기본 편집 단축키)도 이미 저장한 조합이면 등록한다(시작할 때 말없이 사라지지 않게)', () => {
+  const b = new FakeBackend()
+  const m = new HotkeyManager(b)
+  let n = 0
+  // 워크스페이스 단축키(workspaces.json)·조종 단축키(settings.json)를 시작할 때 묶는 길
+  expect(m.bind('workspace:ws-1', 'Ctrl+C', () => n++)).toEqual({ ok: true })
+  expect(m.bind('pet-control', 'Ctrl+V', () => {})).toEqual({ ok: true })
+  // 팔레트는 저장한 조합을 먼저 시도한다(대체 조합으로 바꿔 저장하지 않는다)
+  expect(m.bindFirst('palette', ['Ctrl+Z', 'Alt+`'], () => {})).toEqual({ ok: true, acc: 'Ctrl+Z' })
+  expect([...b.registered.keys()].sort()).toEqual(['Ctrl+C', 'Ctrl+V', 'Ctrl+Z'])
+  b.fire('Ctrl+C')
+  expect(n).toBe(1)
+})
+
 it('rebind 실패하면 이전 조합으로 되돌린다', () => {
   const b = new FakeBackend()
   const m = new HotkeyManager(b)

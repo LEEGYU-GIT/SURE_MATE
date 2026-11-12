@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
 import type { FlyoutMessage } from '../shared/flyout/flyout-content'
-import { IPC, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
+import { IPC, type OnboardingProgress, type SettingsApi, type ShownPayload, type SureMateApi } from '../shared/ipc-channels'
 import type { NaturalView } from '../shared/natural/natural-ipc'
 import type { PetView } from '../shared/pet/pet-view'
 import type { SettingsTabId } from '../shared/settings/settings-route'
@@ -34,11 +34,13 @@ const settings: SettingsApi = {
   openOnboarding: () => ipcRenderer.send(IPC.settingsOpenOnboarding),
   onboardingCandidates: () => ipcRenderer.invoke(IPC.onboardingCandidates),
   finishOnboarding: () => ipcRenderer.invoke(IPC.onboardingFinish),
+  // 받은 진행은 화면(onboarding-state)이 다시 확인한다
   onOnboardingProgress: (cb) => {
-    const listener = (): void => cb()
+    const listener = (_e: IpcRendererEvent, p: OnboardingProgress): void => cb(p)
     ipcRenderer.on(IPC.onboardingProgress, listener)
     return () => ipcRenderer.removeListener(IPC.onboardingProgress, listener)
   },
+  onboardingSaveWorkspace: (name) => ipcRenderer.invoke(IPC.onboardingSaveWorkspace, name),
   dictionary: () => ipcRenderer.invoke(IPC.settingsDictionary),
   dictionarySave: (terms) => ipcRenderer.invoke(IPC.settingsDictionarySave, terms),
   dictionaryImport: () => ipcRenderer.invoke(IPC.settingsDictionaryImport),

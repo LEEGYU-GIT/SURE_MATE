@@ -23,14 +23,24 @@ export const MENU_TITLES = {
   workspace: '워크스페이스'
 } as const
 
-/** 모드를 고르면 생기는 일(한 줄). 끔은 주의 문구라 색만으로 알리지 않는다(§14-4) */
+/**
+ * 모드를 고르면 생기는 일(바 메뉴의 한 줄, 18자 안팎: 넘으면 행이 두 줄이 된다). 끔은 주의 문구라 색만으로 알리지 않는다(§14-4).
+ * 'AI 답' 같은 말 없이 무엇이 무엇으로 바뀌는지만 쓴다(2026-11-12 사용자 의견). 긴 설명은 MASKING_EXPLAIN
+ */
 export const MASKING_DETAILS: Record<MaskingMode, string> = {
-  off: '원문 그대로 복사돼요',
-  restore: '답은 원래 이름으로 되돌릴 수 있어요',
-  remove: "답에도 '고객사A' 같은 표시가 남아요"
+  off: '원문 그대로 AI에 가요',
+  restore: 'CLIENT_A로 바꿔 보내고 되돌려요',
+  remove: '고객사A로 바꾼 채로 보내요'
 }
 
-/** 가명 처리 기본값 메뉴: 끔·가명 후 되돌리기·결과에서 빼기(확인 화면·Alt+M과 같은 순서) */
+/** 첫 실행 안내·설정 창의 긴 설명(예시와 함께 보인다). 예시 이름은 MASKING_EXAMPLE_TEXT와 같다 */
+export const MASKING_EXPLAIN: Record<MaskingMode, string> = {
+  off: '고객사·사람 이름·IP·경로가 원문 그대로 AI에 가요.',
+  restore: "보내기 전에 가상자동차를 CLIENT_A처럼 다른 이름으로 바꿔요. AI가 쓴 글을 복사해 팔레트에서 '가명 되돌리기'를 하면 CLIENT_A가 다시 가상자동차로 돌아와요.",
+  remove: '가상자동차를 고객사A처럼 바꿔 보내고 되돌리지 않아요. AI가 쓴 글에도 고객사A로 남아요.'
+}
+
+/** 가명 처리 기본값 메뉴: 끔·바꾸고 되돌리기·바꾸기만(확인 화면·Alt+M과 같은 순서) */
 export function maskingMenuRows(mode: MaskingMode): MenuRow[] {
   return MASKING_MODES.map((m) => ({
     key: `masking:${m}`,

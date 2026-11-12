@@ -24,7 +24,8 @@ it('record 두 번이면 count 2, lastAt은 마지막 시각', async () => {
   expect(u.lastAt).toBe(new Date(Date.UTC(2026, 10, 11) + (tick - 1) * 1000).toISOString())
 })
 
-it('201개째에서 가장 오래된 것을 뺀다', async () => {
+// 원자적 저장을 201번 이어서 한다. Windows에서는 백신 검사로 전체 시험을 함께 돌리면 기본 제한 5초를 넘는다(2026-11-12 회사 PC)
+it('201개째에서 가장 오래된 것을 뺀다', { timeout: 30_000 }, async () => {
   const s = createUsageStore(dir, { now })
   for (let i = 0; i <= USAGE_MAX; i++) await s.record(`id${i}`)
   const all = await s.all()

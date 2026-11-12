@@ -25,10 +25,12 @@ describe('paletteReturnTarget: 팔레트를 닫을 때 돌아갈 창(Sure-Mate �
   const PALETTE = '500'
   const PET = '600'
   const SETTINGS = '700'
-  const own = new Set([PALETTE, PET, SETTINGS])
+  const BAR = '800'
+  const own = new Set([PALETTE, PET, SETTINGS, BAR])
   const isOwn = (h: string): boolean => own.has(h)
+  const isReturnable = (h: string): boolean => h === SETTINGS
   const pick = (foreground: string | null, o: { current?: string | null; returnTo?: string | null } = {}): string | null =>
-    paletteReturnTarget({ foreground, palette: PALETTE, current: o.current ?? '111', returnTo: o.returnTo ?? null, isOwn })
+    paletteReturnTarget({ foreground, palette: PALETTE, current: o.current ?? '111', returnTo: o.returnTo ?? null, isOwn, isReturnable })
 
   it('사용자 창이 앞에 있으면 그 창', () => {
     expect(pick('4242')).toBe('4242')
@@ -50,8 +52,17 @@ describe('paletteReturnTarget: 팔레트를 닫을 때 돌아갈 창(Sure-Mate �
     expect(pick(PET)).toBeNull()
   })
 
-  it('설정 창 등 다른 Sure-Mate 창은 기억하지 않는다(옛 창으로도 돌아가지 않는다)', () => {
-    expect(pick(SETTINGS)).toBeNull()
-    expect(pick(SETTINGS, { current: '4242' })).toBeNull()
+  it('바·펼침 창 같은 다른 Sure-Mate 창은 기억하지 않는다(옛 창으로도 돌아가지 않는다)', () => {
+    expect(pick(BAR)).toBeNull()
+    expect(pick(BAR, { current: '4242' })).toBeNull()
+  })
+
+  it('설정 창(첫 실행 안내 포함)은 돌아갈 창으로 기억한다: 따라 해 보기의 메모를 그 창에서 가져온다(2026-11-12)', () => {
+    expect(pick(SETTINGS)).toBe(SETTINGS)
+    expect(pick(SETTINGS, { current: '4242', returnTo: '1001' })).toBe(SETTINGS)
+  })
+
+  it('isReturnable이 없으면 예전처럼 모든 Sure-Mate 창을 기억하지 않는다', () => {
+    expect(paletteReturnTarget({ foreground: SETTINGS, palette: PALETTE, current: '111', returnTo: null, isOwn })).toBeNull()
   })
 })

@@ -6,6 +6,7 @@ import { needsResize, palettePosition, paletteReturnTarget, shouldHideOnBlur } f
 import { log } from '../log'
 import { getForegroundWindow, isOwnWindow, setForeground } from '../native/windows'
 import { loadRoute } from './overlay-window'
+import { settingsHwnd } from './settings-window'
 
 export type DisplayMode = 'cursor' | 'primary' | 'active'
 
@@ -79,17 +80,20 @@ const ownWindow = (hwnd: string): boolean => {
 }
 
 /**
- * 팔레트를 연다. 닫은 뒤 돌아갈 창으로 지금 앞 창을 기억하되 Sure-Mate 창(펫·바·펼침 창·설정 창)은 기억하지 않는다.
+ * 팔레트를 연다. 닫은 뒤 돌아갈 창으로 지금 앞 창을 기억하되 Sure-Mate 창(펫·바·펼침 창)은 기억하지 않는다. 설정 창(첫 실행
+ * 안내 포함)은 보통 창이라 기억한다: Esc 뒤 그 창으로 돌아가고, 프롬프트가 그 창에서 고른 글을 가져온다(2026-11-12).
  * returnTo: 말랑 메이트 조종을 끝내며 돌려받은 창. 포커스 복귀가 아직 끝나지 않아 펫 창이 앞에 있을 때 대신 쓴다(M6 최종 검토 I1)
  */
 export function showPalette(payload: ShownPayload = { mode: 'search' }, o: { returnTo?: string | null } = {}): void {
   if (!win) return
+  const settings = settingsHwnd()
   previousHwnd = paletteReturnTarget({
     foreground: getForegroundWindow(),
     palette: ownHwnd,
     current: previousHwnd,
     returnTo: o.returnTo ?? null,
-    isOwn: ownWindow
+    isOwn: ownWindow,
+    isReturnable: (hwnd) => hwnd === settings
   })
 
   const display = targetDisplay()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react'
 import { isImeComposing } from '../../../shared/ime'
 import { isSettingsTabId } from '../../../shared/settings/settings-route'
 import { parseWorkspaceId } from '../../../shared/workspace/workspace-ipc'
@@ -51,6 +51,12 @@ export function SettingsApp({
   const index = SETTINGS_TABS.findIndex((t) => t.id === tab)
   const View = VIEWS[tab]
   const current = SETTINGS_TABS[index]
+
+  // 탭 안에서 다른 탭으로 간다(단축키 탭의 '워크스페이스 탭 열기'). 누른 단추가 사라지므로 탭 목록의 그 탭으로 포커스를 옮긴다
+  const showTab = useCallback((next: SettingsTabId) => {
+    setTab(next)
+    tabRefs.current[SETTINGS_TABS.findIndex((t) => t.id === next)]?.focus()
+  }, [])
 
   // 열려 있는 설정 창에서 main이 탭을 고르라고 알린다(펫 메뉴 "펫 설정" → 말랑 메이트, 팔레트 Ctrl+Enter → 그 워크스페이스).
   // 창을 다시 읽지 않아 쓰던 값이 남는다. 워크스페이스를 열면 포커스는 그 탭이 이름 칸으로 옮긴다
@@ -118,7 +124,7 @@ export function SettingsApp({
           {!state.snapshot ? (
             <p className="text-small text-fg-2">설정을 읽는 중이에요…</p>
           ) : View ? (
-            <SettingsContext.Provider value={{ snapshot: state.snapshot, save, revision: state.revision, track, workspaceTarget }}>
+            <SettingsContext.Provider value={{ snapshot: state.snapshot, save, revision: state.revision, track, workspaceTarget, showTab }}>
               <div className="flex max-w-[680px] flex-col gap-7">
                 <View />
               </div>

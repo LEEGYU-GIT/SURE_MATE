@@ -1,6 +1,6 @@
 import { rectDiff } from '../../shared/geometry'
 import type { Rect } from '../../shared/types'
-import type { OutcomeResult, RestoreReport, WindowOutcome } from '../../shared/workspace/restore-result'
+import type { FocusTarget, OutcomeResult, RestoreReport, WindowOutcome } from '../../shared/workspace/restore-result'
 import type { ReadyPlan, RestoreStep } from '../../shared/workspace/restore-plan'
 
 export interface RestorePorts {
@@ -13,12 +13,14 @@ export interface RestorePorts {
   foreground(): string | null
   /** 그 창이 아직 있고 보이며 포커스를 받을 수 있는지(숨은 창·포커스를 받지 않는 Sure-Mate 창은 false) */
   focusable(hwnd: string): boolean
+  /** 그 창이 Sure-Mate 자신의 창(BrowserWindow)인지. 포커스를 받을 수 있는지는 focusable이 따로 본다 */
+  own(hwnd: string): boolean
   setForeground(hwnd: string): boolean
   sleep(ms: number): Promise<void>
   now(): number
 }
 
-export type { OutcomeResult, RestoreReport, WindowOutcome }
+export type { FocusTarget, OutcomeResult, RestoreReport, WindowOutcome }
 
 export const RESTORE_TIMING = {
   settleMs: 120,
@@ -36,15 +38,45 @@ const UNMOVED_PX = 2
 type State = NonNullable<ReturnType<RestorePorts['state']>>
 
 /**
- * 끝에 시작 때 앞 창을 어떻게 돌려줄지(설계 §11 포커스 복귀, 2026-11-11 판정). 복원한 창들이 그 창을 가리면 포커스가 보이지 않는
- * 창에 남아 키 입력이 가려진 창으로 간다(설정 창에서 불러오면 Enter·Space가 가려진 '불러오기'를 다시 누른다). 그래서 그 창이 아직 있고
- * 보이며 포커스를 받을 수 있으면 맨 위로 올리고(그 창 하나만 저장한 z-순서에서 벗어난다), 앞 창이 아니면 포커스도 준다.
- * none: 시작 때 앞 창이 없었거나 돌려줄 수 없는 창(사라짐·숨음·포커스를 받지 않는 Sure-Mate 창), raise: 아직 앞 창이라 맨 위로 올리기만,
- * focus: 맨 위로 올린 뒤 SetForegroundWindow(끝의 앞 창을 읽지 못한 null도 앞 창이 아닌 것으로 본다)
+ * 끝에 포커스를 줄 창(chooseFocus). target null이면 아무 창도 올리지 않는다.
+ * raise: 이미 앞 창이라 맨 위로 올리기만, focus: 맨 위로 올린 뒤 SetForegroundWindow
  */
-export function focusReturn(o: { remembered: string | null; focusable: boolean; foreground: string | null }): 'none' | 'raise' | 'focus' {
-  if (o.remembered === null || !o.focusable) return 'none'
-  return o.foreground === o.remembered ? 'raise' : 'focus'
+export type FocusChoice = { target: null } | { target: FocusTarget; hwnd: string; action: 'raise' | 'focus' }
+
+/**
+ * 불러오기 끝에 어느 창을 맨 위로 올리고 포커스를 줄지(설계 §11 포커스 복귀, 2026-11-12 판정). 복원한 창들이 앞 창을 가리면 포커스가
+ * 보이지 않는 창에 남아 키 입력이 가려진 창으로 간다(설정 창에서 불러오면 Enter·Space가 가려진 '불러오기'를 다시 누른다).
+ * 1. 시작 때 앞 창이 이번에 올린 워크스페이스 창이거나, 포커스를 받을 수 있는 Sure-Mate 자신의 창(설정·첫 실행 안내 창)이면 그 창(start)을
+ *    맨 위로 올리고(그 창 하나만 저장한 z-순서에서 벗어난다) 앞 창이 아니면 포커스도 준다.
+ * 2. 그 밖(워크스페이스 밖의 다른 앱 창, 시작 때 앞 창이 없거나 사라졌거나 포커스를 받을 수 없음)이면 맨 위 복원 창(workspace)을 올리고
+ *    포커스를 준다. 아래에서 위로 올리므로 마지막에 올린 창이 맨 위이고, 시작 때 앞 창은 워크스페이스 창들 뒤에 남는다(저장한 화면 그대로).
+ * 3. 올린 창이 없으면(모두 못 찾음·실패·옮겨지지 않음) 시작 때 앞 창을 1처럼 돌려주고, 돌려줄 수 없으면 아무 창도 올리지 않는다.
+ * focusable: 시작 때 앞 창이 아직 있고 보이며 포커스를 받을 수 있는지, own: 그 창이 Sure-Mate 자신의 창인지(focusable일 때만 따진다),
+ * raised: 이번에 올린 워크스페이스 창(placed·off, 올린 차례), foreground: 끝의 앞 창(읽지 못한 null도 앞 창이 아닌 것으로 본다)
+ */
+export function chooseFocus(o: {
+  remembered: string | null
+  focusable: boolean
+  own: boolean
+  raised: readonly string[]
+  foreground: string | null
+}): FocusChoice {
+  const start = o.remembered !== null && o.focusable ? o.remembered : null
+  const top = o.raised.at(-1)
+  if (start !== null && (o.own || o.raised.includes(start) || top === undefined)) {
+    return { target: 'start', hwnd: start, action: o.foreground === start ? 'raise' : 'focus' }
+  }
+  if (top !== undefined) return { target: 'workspace', hwnd: top, action: 'focus' }
+  return { target: null }
+}
+
+/** 포트를 부르고, 던지면 fallback(끝의 포커스는 읽지 못한 값을 돌려줄 수 없는 창·자신의 창이 아님·앞 창이 아님으로 본다) */
+function attempt<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn()
+  } catch {
+    return fallback
+  }
 }
 
 /** Sure-Mate 자신의 창 하나(HWND는 10진 문자열) */
@@ -138,6 +170,8 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
     const remembered = p.foreground()
     const outcomes: WindowOutcome[] = plan.skipped.map((k) => ({ ruleId: k.ruleId, app: k.app, result: k.reason }))
     const seen = { max: 0 }
+    /** 이번에 맨 위로 올린 워크스페이스 창(placed·off). steps가 아래에서 위 순서(planRestore)라 마지막이 맨 위 */
+    const raised: string[] = []
 
     for (const step of plan.steps) {
       let r: { result: OutcomeResult; diff?: number }
@@ -153,6 +187,7 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
       if (r.result === 'placed' || r.result === 'off') {
         try {
           p.raise(step.hwnd)
+          raised.push(step.hwnd)
         } catch {
           r = { ...r, result: 'failed' }
         }
@@ -167,35 +202,24 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
       })
     }
 
-    // 시작 때 앞 창을 맨 위로 올리고(포커스를 바꾸지 않는 비동기 HWND_TOP), 앞 창이 아니면(최소화 해제·최대화가 다른 창을
-    // 활성화했다) 포커스를 준다. restoredFocus는 끝에 그 창이 맨 앞이고 포커스가 있는지다
-    let restoredFocus = false
+    // 끝의 포커스(chooseFocus): 시작 때 앞 창이 이번에 올린 워크스페이스 창·Sure-Mate 자신의 창이면 그 창, 아니면 맨 위 복원 창
+    let focusable = false
+    let own = false
     if (remembered !== null) {
-      let focusable = false
-      let now: string | null = null
-      try {
-        focusable = p.focusable(remembered)
-        now = p.foreground()
-      } catch {
-        // 돌려줄 수 있는지 읽지 못했으면 돌려주지 않고, 앞 창을 읽지 못했으면(null) 앞 창이 아닌 것으로 본다
-      }
-      const focus = focusReturn({ remembered, focusable, foreground: now })
-      if (focus !== 'none') {
-        let raised = true
-        try {
-          p.raise(remembered)
-        } catch {
-          raised = false
-        }
-        if (focus === 'raise') restoredFocus = raised
-        else {
-          try {
-            restoredFocus = p.setForeground(remembered)
-          } catch {
-            restoredFocus = false
-          }
-        }
-      }
+      focusable = attempt(() => p.focusable(remembered), false)
+      own = focusable && attempt(() => p.own(remembered), false)
+    }
+    const choice = chooseFocus({ remembered, focusable, own, raised, foreground: attempt(() => p.foreground(), null) })
+    // 고른 창을 맨 위로 올리고(포커스를 바꾸지 않는 비동기 HWND_TOP), focus면 포커스도 준다(시작 때 앞 창이 최소화 해제·최대화로
+    // 앞 창이 아니게 됐거나, 맨 위 복원 창일 때). restoredFocus는 끝에 그 창이 맨 앞이고 포커스가 있는지다
+    let restoredFocus = false
+    if (choice.target !== null) {
+      const { hwnd } = choice
+      const up = attempt(() => {
+        p.raise(hwnd)
+        return true
+      }, false)
+      restoredFocus = choice.action === 'raise' ? up : attempt(() => p.setForeground(hwnd), false)
     }
     return {
       total: plan.total,
@@ -204,7 +228,8 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
       gathered: plan.gathered,
       ms: p.now() - start,
       maxDiff: seen.max,
-      restoredFocus
+      restoredFocus,
+      focusTarget: choice.target
     }
   }
 

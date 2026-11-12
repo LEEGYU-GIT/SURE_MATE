@@ -44,7 +44,7 @@ it('가명 처리 명령 4개를 명령 구역 맨 앞에 넣고, 모드 명령�
   const items = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [], barShape: 'edge', petVisible: true })
   expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, ...PACK_IDS, ...BAR_IDS, ...PET_IDS, ...SETTINGS_IDS, 'dev.listWindows'])
   expect(items.every((i) => i.group === 'command')).toBe(true)
-  expect(items.find((i) => i.id === 'cmd.masking-mode')?.subtitle).toBe('지금: 가명 후 되돌리기 · 누르면 결과에서 빼기')
+  expect(items.find((i) => i.id === 'cmd.masking-mode')?.subtitle).toBe('지금: 바꾸고 되돌리기 · 누르면 바꾸기만')
   // 영문으로 쳐도 찾는다(스모크 시험은 영문만 칠 수 있다)
   expect(items.find((i) => i.id === 'cmd.unmask')?.keywords).toContain('unmask')
 })

@@ -9,7 +9,7 @@ import builtinPrompts from '../../resources/prompts.json'
 import { allAiTargets, pickAiTarget } from '../shared/ai-targets'
 import { withPosition, type BarShape } from '../shared/bar/bar-settings'
 import type { WikiCardView } from '../shared/flyout/flyout-content'
-import { IPC, type ShownPayload } from '../shared/ipc-channels'
+import { IPC, type OnboardingProgress, type ShownPayload } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
@@ -69,7 +69,7 @@ import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
 import { createPaletteWindow, hidePalette, hidePaletteAndRefocus, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
-import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
+import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsRoute, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
 import { createWorkspaceHotkeys } from './workspace/workspace-hotkeys'
 import { createWorkspaceCommands, workspaceMenuContent, workspacePaletteItems } from './workspace/workspace-items'
 import { createWorkspaceRuntime } from './workspace/workspace-runtime'
@@ -778,6 +778,13 @@ if (!app.requestSingleInstanceLock()) {
       hotkeyBound: (id) => {
         const hid = workspaceHotkeyId(id)
         return hotkeys?.isRegistered(hid) ? hotkeys.current(hid) : undefined
+      },
+      // 첫 실행 안내의 워크스페이스 따라 해 보기: 어디서 불러왔든(팔레트·단축키·바·안내 창) 안내 창에 알린다. 안내 창이 열려 있으면
+      // 포커스는 그대로 두고 맨 위로만 올려 '해냈어요'가 보이게 한다(다른 앱에서 불러오면 안내 창이 불러온 창들 뒤로 간다)
+      restored: (id) => {
+        const progress: OnboardingProgress = { kind: 'workspace', id }
+        sendToSettings(IPC.onboardingProgress, progress)
+        if (settingsRoute() === '/onboarding') settingsWindow()?.moveTop()
       }
     })
     const workspaceCmds = createWorkspaceCommands({
@@ -862,7 +869,7 @@ if (!app.requestSingleInstanceLock()) {
         // 복사만이면 팔레트가 남아 있으니 숨기고 원래 창으로 돌아간다(AI를 열었으면 이미 숨김)
         if (result.ok) hidePalette({ restoreFocus: true })
         // 첫 실행 안내의 따라 해 보기(회의록 정리)를 마쳤다고 안내 창에 알린다
-        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE) sendToSettings(IPC.onboardingProgress)
+        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE) sendToSettings(IPC.onboardingProgress, { kind: 'prompt' } satisfies OnboardingProgress)
         return result
       },
       cancelPrompt: () => session.cancel(),
@@ -919,6 +926,8 @@ if (!app.requestSingleInstanceLock()) {
         log('onboarding.finish', {})
         closeSettingsWindow()
       },
+      // 안내 창에서 결과를 바로 보이므로 Windows 알림은 띄우지 않는다
+      saveOnboardingWorkspace: (name) => workspaceService.saveAs(name, 'onboarding', { quiet: true }),
       dictionary: {
         get: () => loadMaskDictionary(userData),
         save: async (terms) => {

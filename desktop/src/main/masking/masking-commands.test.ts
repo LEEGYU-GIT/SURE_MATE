@@ -150,7 +150,7 @@ it('가명 처리 기본값 바꾸기: 끔 → 되돌리기 → 빼기 순서로
   await commands.run('cmd.masking-mode')
   await commands.run('cmd.masking-mode')
   expect(f.calls.modes).toEqual(['remove', 'off'])
-  expect(f.calls.notes[0]).toContain('결과에서 빼기')
+  expect(f.calls.notes[0]).toContain('바꾸기만')
   expect(f.calls.notes[1]).toContain('원문 그대로')
 })
 

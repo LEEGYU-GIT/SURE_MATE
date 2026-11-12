@@ -11,6 +11,33 @@ const WARN = new Map<string, string>([
   ['ctrl+shift+space', 'IDE 자동완성과 겹칠 수 있음']
 ])
 
+/**
+ * 복사·붙여넣기·잘라내기·실행 취소·다시 실행·모두 선택·저장(Ctrl + 이 글자 하나). 전역 단축키로 잡으면 모든 앱에서 이 편집이 사라져
+ * 새로 고를 때는 막는다. 이 규칙 전에 저장해 둔 조합은 시작할 때 그대로 등록한다(checkAccelerator의 saved)
+ */
+const EDIT_KEYS = new Set(['c', 'v', 'x', 'z', 'y', 'a', 's'])
+const EDIT_REASON = '복사·붙여넣기 같은 기본 편집 단축키예요'
+
+/** Ctrl + 글자·숫자 하나를 앱들이 흔히 쓰는 기능(가로챈다는 안내에 함께 적는다). 앱마다 달라 여기 없는 글자는 조합만 적는다 */
+const CTRL_USES: Record<string, string> = {
+  f: '찾기',
+  g: '찾기·이동',
+  h: '바꾸기',
+  n: '새로 만들기',
+  o: '열기',
+  p: '인쇄',
+  r: '새로 고침',
+  t: '새 탭',
+  w: '닫기',
+  b: '굵게',
+  i: '기울임',
+  u: '밑줄',
+  ...Object.fromEntries('123456789'.split('').map((d) => [d, '탭 이동']))
+}
+
+/** 다른 앱의 그 조합 기능을 가로챈다는 경고(조합은 Ctrl+G 꼴로) */
+const steals = (combo: string, use?: string): string => `다른 앱의 ${combo} 기능${use ? `(${use} 등)` : ''}을 가로채요`
+
 /** 글자·숫자·F키 밖의 주 키 → Windows 가상 키 코드 */
 const NAMED_KEYS: Record<string, number> = {
   space: 0x20,
@@ -55,8 +82,12 @@ export function acceleratorKeyCode(accelerator: string): number | null {
   return NAMED_KEYS[key] ?? null
 }
 
-/** 전역 단축키로 써도 되는 조합인지 판단한다. */
-export function checkAccelerator(accelerator: string): AcceleratorCheck {
+/**
+ * 전역 단축키로 써도 되는 조합인지 판단한다. 새로 고를 때(설정 창 녹화·온보딩, hotkey-change.ts의 check)는 그대로 쓴다.
+ * saved는 이미 저장해 둔 조합을 등록할 때(HotkeyManager.bind: 시작, 바꾸기 실패 뒤 되돌리기): 새로 고를 때만 막는 조합(기본 편집
+ * 단축키)을 경고로 낮춰 이 규칙 전에 저장한 단축키가 말없이 사라지지 않게 한다. 원래 막던 조합(Win 키·F12 등)은 그대로 막는다
+ */
+export function checkAccelerator(accelerator: string, o: { saved?: boolean } = {}): AcceleratorCheck {
   const tokens = accelerator
     .split('+')
     .map((t) => t.trim().toLowerCase())
@@ -70,7 +101,16 @@ export function checkAccelerator(accelerator: string): AcceleratorCheck {
   if (!hasCtrl && !hasAlt) return { level: 'block', reason: 'Ctrl 또는 Alt가 들어가야 함' }
 
   const key = tokens[tokens.length - 1]
-  const canonical = [hasCtrl && 'ctrl', hasAlt && 'alt', tokens.includes('shift') && 'shift', key].filter(Boolean).join('+')
+  const hasShift = tokens.includes('shift')
+  // Ctrl만 + 글자·숫자 하나: 앱 안 단축키 자리(편집 단축키는 막고, 나머지는 가로챈다고 경고)
+  if (hasCtrl && !hasAlt && !hasShift && /^[a-z0-9]$/.test(key)) {
+    if (EDIT_KEYS.has(key)) return { level: o.saved ? 'warn' : 'block', reason: EDIT_REASON }
+    return { level: 'warn', reason: steals(`Ctrl+${key.toUpperCase()}`, CTRL_USES[key]) }
+  }
+  // Alt만 + 글자 하나: 메뉴를 여는 키(파일(F) 등)
+  if (hasAlt && !hasCtrl && !hasShift && /^[a-z]$/.test(key)) return { level: 'warn', reason: steals(`Alt+${key.toUpperCase()}`, '메뉴 열기') }
+
+  const canonical = [hasCtrl && 'ctrl', hasAlt && 'alt', hasShift && 'shift', key].filter(Boolean).join('+')
   const warn = WARN.get(canonical)
   return warn ? { level: 'warn', reason: warn } : { level: 'ok' }
 }

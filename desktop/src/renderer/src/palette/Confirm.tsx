@@ -18,8 +18,8 @@ const count = (n: number): string => `${n.toLocaleString('ko-KR')}자`
 
 const MODE_TITLES: Record<MaskingMode, string> = {
   off: '원문 그대로 복사해요',
-  restore: "이름·IP·경로를 CLIENT_A 같은 가명으로 바꿔 보내요. AI 답은 '가명 되돌리기'로 원래 이름으로 바꿀 수 있어요",
-  remove: "'고객사A', '[IP 주소]'처럼 바꿔 보내고 되돌리지 않아요"
+  restore: "이름·IP·경로를 CLIENT_A처럼 다른 이름으로 바꿔 보내요. AI가 쓴 글을 복사해 '가명 되돌리기'를 하면 원래 이름으로 돌아와요",
+  remove: "'고객사A', '[IP 주소]'처럼 바꾼 채로 보내고 되돌리지 않아요"
 }
 
 function Chip(props: {

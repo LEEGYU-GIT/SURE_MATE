@@ -186,7 +186,7 @@ function ControlHotkeyRow(): React.JSX.Element {
             {h.acc ?? '없음'}
           </kbd>
           {h.acc ? (
-            <span className={`text-small whitespace-nowrap ${h.registered ? 'text-fg-2' : 'text-warn'}`}>{h.registered ? '쓰는 중' : '등록 못 함'}</span>
+            <span className={`text-small whitespace-nowrap ${h.registered ? 'text-fg-2' : 'text-danger'}`}>{h.registered ? '쓰는 중' : '등록 못 함'}</span>
           ) : null}
           {recording ? null : (
             <div className="flex gap-2">
@@ -228,7 +228,7 @@ function ControlHotkeyRow(): React.JSX.Element {
         </p>
       ) : null}
       {h.acc && !h.registered && !recording ? (
-        <p className="text-small break-keep text-warn">다른 앱이 이 조합을 쓰고 있어 등록하지 못했어요. 다른 조합으로 바꿔 주세요.</p>
+        <p className="text-small break-keep text-danger">다른 앱이 이 조합을 쓰고 있어 등록하지 못했어요. 다른 조합으로 바꿔 주세요.</p>
       ) : null}
     </div>
   )

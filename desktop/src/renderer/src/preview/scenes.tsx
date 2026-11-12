@@ -815,11 +815,11 @@ const LONG_PROMPT: PaletteItem = {
   subtitle: '요구사항 ID·설계·시험 항목을 한 표로 묶고 빠진 연결을 찾아요',
   keywords: ['추적표', '요구사항 추적']
 }
-/** main의 명령 항목과 같은 제목·부제(가명 처리 모드는 가명 후 되돌리기, 바는 가장자리 띠) */
+/** main의 명령 항목과 같은 제목·부제(가명 처리 모드는 바꾸고 되돌리기, 바는 가장자리 띠) */
 const PALETTE_COMMANDS: PaletteItem[] = [
-  { id: 'cmd.unmask', group: 'command', title: '가명 되돌리기', subtitle: 'AI 답을 복사한 뒤 실행하면 가명을 원래 이름으로 바꿔 클립보드에 넣어요', keywords: ['unmask', 'restore', '복원', '되돌리기', '원래 이름', '가명'] },
+  { id: 'cmd.unmask', group: 'command', title: '가명 되돌리기', subtitle: 'AI가 쓴 글을 복사한 뒤 실행하면 CLIENT_A 같은 가명을 원래 이름으로 바꿔 클립보드에 넣어요', keywords: ['unmask', 'restore', '복원', '되돌리기', '원래 이름', '가명'] },
   { id: 'cmd.mask-selection', group: 'command', title: '선택한 글 가명 처리', subtitle: '템플릿 없이 고객사·IP·경로만 가려 클립보드에 넣어요', keywords: ['mask', 'masking', '가리기', '익명', '가명'] },
-  { id: 'cmd.masking-mode', group: 'command', title: '가명 처리 기본값 바꾸기', subtitle: '지금: 가명 후 되돌리기 · 누르면 결과에서 빼기', keywords: ['masking', 'mode', '모드', '끄기', '켜기', '가명'] },
+  { id: 'cmd.masking-mode', group: 'command', title: '가명 처리 기본값 바꾸기', subtitle: '지금: 바꾸고 되돌리기 · 누르면 바꾸기만', keywords: ['masking', 'mode', '모드', '끄기', '켜기', '가명'] },
   { id: 'cmd.open-dictionary', group: 'command', title: '가명 사전 열기', subtitle: '가릴 고객사·프로젝트 이름을 적는 파일(이 PC에만 저장)', keywords: ['dictionary', 'masking', '사전', '고객사', '가명'] },
   { id: 'cmd.open-intents', group: 'command', title: '말하듯 입력 단어 목록 열기', subtitle: '‘해줘’ 같은 어미와 의도 단어를 고치는 파일(이 PC에만 저장)', keywords: ['intents', 'natural', '단어', '말하듯', '어미', '조사'] },
   { id: 'cmd.glossary-export', group: 'command', title: '용어 팩 내보내기', subtitle: '내가 추가·고친 용어를 파일로 저장해 팀과 나눠요', keywords: ['export', '내보내기', '용어 팩'] },
@@ -1260,9 +1260,13 @@ export const SCENES: Scene[] = [
   ),
   ...WORKSPACE_SCENES,
   ...NATURAL_SCENES,
-  onboardingScene('onboarding-1', '첫 실행 안내 1: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', {}),
-  onboardingScene('onboarding-2', '첫 실행 안내 2: 주로 쓰는 AI·가명 처리·자동 실행', { step: 2, hotkey: 'Alt+`' }),
-  onboardingScene('onboarding-3', '첫 실행 안내 3: 따라 해 보기', { step: 3, hotkey: 'Alt+`' })
+  onboardingScene('onboarding-1', '첫 실행 안내 1: 창 배치 따라 해 보기(저장 전)', { hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-1-saved', '첫 실행 안내 1: 창 배치 저장 뒤(팔레트로 불러오기 안내)', { hotkey: 'Alt+`', workspace: { id: 'ws-try', name: '업무 배치', windows: 5 } }),
+  onboardingScene('onboarding-1-done', '첫 실행 안내 1: 불러오기를 마침(해냈어요)', { hotkey: 'Alt+`', workspace: { id: 'ws-try', name: '업무 배치', windows: 5 }, restored: true }),
+  onboardingScene('onboarding-2', '첫 실행 안내 2: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', { step: 2 }),
+  onboardingScene('onboarding-3', '첫 실행 안내 3: AI·가명 처리(쉬운 말과 예시)·자동 실행', { step: 3, hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-4', '첫 실행 안내 4: 프롬프트 따라 해 보기', { step: 4, hotkey: 'Alt+`' }),
+  onboardingScene('onboarding-5', '첫 실행 안내 5: 말랑 메이트 소개', { step: 5, hotkey: 'Alt+`' })
 ]
 
 /** 첫 실행 안내 장면: 640×560 창 하나 */
