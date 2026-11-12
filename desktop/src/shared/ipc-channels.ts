@@ -16,6 +16,9 @@ import type { WorkspaceEditResult, WorkspaceListView, WorkspaceRunResult, Worksp
 /** 프롬프트에 넣을 글의 출처 */
 export type PromptSource = 'selection' | 'clipboard' | 'input'
 
+/** 첫 실행 안내의 따라 해 보기 진행(main → 온보딩): 회의록 정리 프롬프트를 실행했다, 이 워크스페이스를 불러왔다 */
+export type OnboardingProgress = { kind: 'prompt' } | { kind: 'workspace'; id: string }
+
 /** 확인 화면에 보낼 값. 선택한 글은 길이만 보내고 내용은 main에 둔다. */
 export interface PromptDraft {
   templateId: string
@@ -139,8 +142,10 @@ export const IPC = {
   settingsOpenOnboarding: 'settings:open-onboarding',
   onboardingCandidates: 'onboarding:candidates',
   onboardingFinish: 'onboarding:finish',
-  /** main → 온보딩: 따라 해 보기의 프롬프트가 실행됐다 */
+  /** main → 온보딩: 따라 해 보기가 진행됐다(OnboardingProgress: 회의록 프롬프트 실행, 워크스페이스 불러오기) */
   onboardingProgress: 'onboarding:progress',
+  /** 온보딩 → main: 워크스페이스 따라 해 보기의 '지금 배치 저장'(이름이 같으면 그 워크스페이스를 다시 저장, 알림 없이) */
+  onboardingSaveWorkspace: 'onboarding:save-workspace',
   settingsDictionary: 'settings:dictionary',
   settingsDictionarySave: 'settings:dictionary-save',
   settingsDictionaryImport: 'settings:dictionary-import',
@@ -323,8 +328,10 @@ export interface SettingsApi {
   openOnboarding(): void
   onboardingCandidates(): Promise<HotkeyCandidate[]>
   finishOnboarding(): Promise<void>
-  /** 따라 해 보기: 회의록 정리 프롬프트가 실행됐다 */
-  onOnboardingProgress(cb: () => void): () => void
+  /** 따라 해 보기가 진행됐다(회의록 정리 프롬프트 실행, 워크스페이스 불러오기). 돌려받은 함수로 그만 듣는다 */
+  onOnboardingProgress(cb: (p: OnboardingProgress) => void): () => void
+  /** 워크스페이스 따라 해 보기: 지금 배치를 이 이름으로 저장한다(같은 이름이 있으면 그것을 다시 저장, 알림 없이) */
+  onboardingSaveWorkspace(name: string): Promise<WorkspaceSaveResult>
   /** 가명 사전(설계 문서 §8): 지금 항목과 읽지 못한 까닭 */
   dictionary(): Promise<{ terms: MaskTerm[]; errors: string[] }>
   dictionarySave(terms: MaskTerm[]): Promise<{ ok: true; count: number } | { ok: false; errors: string[] }>

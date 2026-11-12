@@ -257,6 +257,7 @@ function fakeSettingsApi(fx: FakeFixtures, ws: ReturnType<typeof fakeWorkspaces>
     onboardingCandidates: async () => fx.hotkeyCandidates,
     finishOnboarding: async () => {},
     onOnboardingProgress: () => () => {},
+    onboardingSaveWorkspace: async (name) => ({ ok: true, id: 'ws-try', name, windows: 5, skipped: { minimized: 1, excluded: 0, offscreen: 0, overLimit: 0 } }),
     dictionary: async () => ({ terms: fx.dictionary, errors: [] }),
     dictionarySave: async (terms) => ({ ok: true, count: terms.length }),
     dictionaryImport: async () => ({ canceled: true }),

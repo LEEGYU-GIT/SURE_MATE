@@ -41,6 +41,7 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
     openFile: vi.fn(),
     openOnboarding: vi.fn(),
     finishOnboarding: vi.fn(async () => {}),
+    saveOnboardingWorkspace: vi.fn(async (name: string) => ({ ok: true as const, id: 'ws-1', name, windows: 3, skipped: { minimized: 0, overLimit: 0 } })),
     templates: {
       list: vi.fn(async () => ({ templates: [] })),
       save: vi.fn(async () => ({ ok: true, id: 'my-1' })),
@@ -139,6 +140,14 @@ it('파일 열기는 settings·logs만, 온보딩 열기·끝내기·후보', as
   await handle(IPC.onboardingFinish, SETTINGS)
   expect(d.finishOnboarding).toHaveBeenCalled()
   expect(await handle(IPC.onboardingCandidates, SETTINGS)).toEqual([])
+})
+
+it('온보딩의 워크스페이스 저장은 설정 창만, 이름은 앞뒤 공백을 떼고 1~40자 글자만', async () => {
+  expect(await handle(IPC.onboardingSaveWorkspace, SETTINGS, '  내 업무 배치 ')).toMatchObject({ ok: true, name: '내 업무 배치' })
+  expect(d.saveOnboardingWorkspace).toHaveBeenCalledWith('내 업무 배치')
+  for (const bad of ['', '   ', 'a'.repeat(41), 42, null]) expect(await handle(IPC.onboardingSaveWorkspace, SETTINGS, bad)).toMatchObject({ ok: false, reason: 'invalid' })
+  expect(await handle(IPC.onboardingSaveWorkspace, PALETTE, '배치')).toMatchObject({ ok: false, reason: 'invalid' })
+  expect(d.saveOnboardingWorkspace).toHaveBeenCalledTimes(1)
 })
 
 it('가명 사전 채널도 설정 창만(다른 창이면 저장·가져오기·내보내기를 부르지 않음)', async () => {

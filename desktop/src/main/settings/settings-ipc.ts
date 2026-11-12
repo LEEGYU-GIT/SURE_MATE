@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc-channels'
 import type { AppHotkeyId, SettingsHotkeyId } from '../../shared/settings/settings-snapshot'
+import { WORKSPACE_LIMITS } from '../../shared/workspace/types'
 import { parseWorkspaceId } from '../../shared/workspace/workspace-ipc'
 import type { HotkeyChanger } from '../hotkeys/hotkey-change'
 import { WORKSPACE_HOTKEY_PREFIX } from '../hotkeys/hotkey-manager'
@@ -15,6 +16,8 @@ export interface SettingsIpcDeps {
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
   finishOnboarding(): Promise<void>
+  /** 첫 실행 안내의 워크스페이스 따라 해 보기: 지금 배치를 이 이름으로 저장(같은 이름이면 다시 저장, 알림 없이) */
+  saveOnboardingWorkspace(name: string): Promise<unknown>
   templates: {
     list(): Promise<unknown>
     save(draft: unknown): Promise<unknown>
@@ -83,6 +86,11 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(IPC.onboardingCandidates, (e) => (fromSettings(e) ? d.hotkeys.candidates() : []))
   ipcMain.handle(IPC.onboardingFinish, async (e) => {
     if (fromSettings(e)) await d.finishOnboarding()
+  })
+  ipcMain.handle(IPC.onboardingSaveWorkspace, (e, raw: unknown) => {
+    const name = typeof raw === 'string' ? raw.trim() : ''
+    const ok = fromSettings(e) && name.length > 0 && name.length <= WORKSPACE_LIMITS.name
+    return ok ? d.saveOnboardingWorkspace(name) : { ok: false, reason: 'invalid', message: BAD }
   })
   const refused = { ok: false, errors: ['설정 창에서만 할 수 있어요'] }
   ipcMain.handle(IPC.settingsDictionary, (e) => (fromSettings(e) ? d.dictionary.get() : { terms: [], errors: [] }))
