@@ -1,19 +1,23 @@
 import type { PetPose } from '../../../shared/pet/pet-view'
 
 /**
- * 말랑 메이트 그림(확정 시안 docs/design/mallang-mate.html의 SVG를 그대로 옮김, 설계 문서 §14-2).
+ * 말랑 메이트 그림(확정 시안 docs/design/mallang-mate.html의 SVG를 그대로 옮김, 설계 문서 §14-2. 오르기 몸만 좌우로 뒤집었다).
  * 64×64 격자 하나, 바닥선 y=58. 몸은 자세마다 다른 경로이고, 얼굴(눈·입·눈썹·볼·선글라스)과
  * 소품(편지·느낌표·z·조종 표시)은 그 위에 얹는 레이어다. 색은 그리는 쪽(character.tsx·PetSprite.tsx)이 토큰으로 정한다.
  */
 
-/** 몸 경로. 서기·걷기·공중은 같은 몸이고, 오르기는 벽이 오른쪽(외곽선 포함 x 44가 바 면 = CLIMB_OFFSET) */
+/**
+ * 몸 경로. 서기·걷기·공중은 같은 몸이다. 오르기는 벽이 오른쪽이고 납작한 면이 바 면에 붙는다(외곽선 포함 x 44 = CLIMB_OFFSET).
+ * 시안의 오르기 몸은 납작한 면이 왼쪽이라 오른쪽 바에 둥근 면이 붙어 보였으므로 x → 54.5 − x로 뒤집었다(2026-11-12)
+ */
 const STAND = 'M8 52 C8 30 18 16 32 16 C46 16 56 30 56 52 C56 57 50 58 32 58 C14 58 8 57 8 52 Z'
 
 export const MALLANG_BODY: Record<PetPose, string> = {
   stand: STAND,
   walk: STAND,
   air: STAND,
-  climb: 'M18 8 C30 8 40 14 42 32 C44 50 34 58 22 58 C14 58 12 52 12 32 C12 14 12 8 18 8 Z',
+  climb:
+    'M36.5 8 C24.5 8 14.5 14 12.5 32 C10.5 50 20.5 58 32.5 58 C40.5 58 42.5 52 42.5 32 C42.5 14 42.5 8 36.5 8 Z',
   sit: 'M6 54 C6 38 18 30 32 30 C46 30 58 38 58 54 C58 58 50 59 32 59 C14 59 6 58 6 54 Z',
   sleep: 'M6 54 C6 40 18 33 32 33 C46 33 58 40 58 54 C58 58 50 59 32 59 C14 59 6 58 6 54 Z',
   held: 'M32 4 C38 4 42 12 44 26 C47 44 44 60 32 60 C20 60 17 44 20 26 C22 12 26 4 32 4 Z'
@@ -42,7 +46,8 @@ export const FACE_CENTER = { x: 32, y: 38 } as const
 /**
  * 자세별 얼굴 자리(얼굴 가운데 (32,38) 기준). 시안의 칸에 맞춘 값:
  * 걷기는 가는 쪽으로 3칸(통통 걷기 칸), 앉기·졸기는 퍼진 몸에 맞춰 6·8칸 아래,
- * 오르기는 벽에서 먼 위쪽(눈이 위를 봄), 들림은 좁은 몸에 맞춰 줄이고 넓은 쪽으로 2칸 위
+ * 오르기는 몸 위쪽(눈이 위를 봄)이고 몸과 함께 뒤집은 자리(시안 가운데 x 25 → 29.5, 그 높이의 몸 너비 가운데),
+ * 들림은 좁은 몸에 맞춰 줄이고 넓은 쪽으로 2칸 위
  * (놀란 입이 시안의 들림 칸 자리 y 45에 오고, 기본으로 쓰는 선글라스가 몸 안에 들어간다).
  */
 export const MALLANG_FACE: Record<PetPose, FacePlace> = {
@@ -51,7 +56,7 @@ export const MALLANG_FACE: Record<PetPose, FacePlace> = {
   air: { dx: 0, dy: 0, scale: 1 },
   sit: { dx: 0, dy: 6, scale: 1 },
   sleep: { dx: 0, dy: 8, scale: 1 },
-  climb: { dx: -7, dy: -18, scale: 0.85 },
+  climb: { dx: -2.5, dy: -18, scale: 0.85 },
   held: { dx: 0, dy: -2, scale: 0.85 }
 }
 
@@ -89,8 +94,8 @@ export interface PropPlace {
 
 /**
  * 반응 소품(편지·느낌표)의 자세별 자리: 서 있는 몸 기준(시안 자리) 이동(격자).
- * 앉기·졸기는 퍼진 머리에 맞춰 내리고(그대로 두면 머리 위 12~16칸에 뜬다), 오르기는 벽(바 면) 반대쪽 머리 위,
- * 들림은 늘어난 몸 옆으로. 몸 외곽선과 닿지 않으면서 머리에서 10칸 안에 둔다(mallang-shapes.test).
+ * 앉기·졸기는 퍼진 머리에 맞춰 내리고(그대로 두면 머리 위 12~16칸에 뜬다), 오르기는 벽(바 면) 반대쪽 둥근 어깨 위
+ * (뒤집기 전 모서리에서와 같은 5칸 거리), 들림은 늘어난 몸 옆으로. 몸 외곽선과 닿지 않으면서 머리에서 10칸 안에 둔다(mallang-shapes.test).
  * z는 제자리에 두고, 조종 표시는 MALLANG_CONTROL을 따른다.
  */
 export const MALLANG_PROPS: Record<PetPose, PropPlace> = {
@@ -99,7 +104,7 @@ export const MALLANG_PROPS: Record<PetPose, PropPlace> = {
   air: { dx: 0, dy: 0 },
   sit: { dx: 0, dy: 12 },
   sleep: { dx: 0, dy: 15 },
-  climb: { dx: -48, dy: -9 },
+  climb: { dx: -43, dy: -4 },
   held: { dx: 5, dy: 0 }
 }
 
@@ -130,7 +135,7 @@ export const MALLANG_CONTROL: Record<PetPose, PropPlace> = {
   air: { dx: 0, dy: 0 },
   sit: { dx: 0, dy: 14 },
   sleep: { dx: 0, dy: 17 },
-  climb: { dx: -7, dy: -8 },
+  climb: { dx: -2.5, dy: -8 },
   held: { dx: 0, dy: -12 }
 }
 

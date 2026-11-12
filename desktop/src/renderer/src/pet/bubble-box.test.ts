@@ -11,6 +11,7 @@ import {
   splitLead,
   tailOffset
 } from './bubble-box'
+import { MALLANG_FACE } from './mallang-shapes'
 
 const SLOT = { x: 0, y: 0, width: 200, height: 96 }
 const MEASURED = { width: 120, height: 40 }
@@ -151,14 +152,14 @@ describe('faceTarget: 꼬리가 가리킬 얼굴 가운데(창 좌표)', () => {
     ).toEqual({ x: 160, y: 217.5 })
   })
 
-  it('자세별 얼굴 자리와 좌우 뒤집기를 따른다', () => {
-    const climb = { dx: -7, dy: -18, scale: 0.85 }
+  it('자세별 얼굴 자리와 좌우 뒤집기를 따른다(오르기: 납작한 면이 바에 붙은 몸의 얼굴 가운데)', () => {
+    const climb = MALLANG_FACE.climb
     expect(faceTarget({ box: { x: 0, y: 0 }, size: 64, place: climb, mirror: false })).toEqual({
-      x: 25,
+      x: 29.5,
       y: 20
     })
     expect(faceTarget({ box: { x: 0, y: 0 }, size: 64, place: climb, mirror: true })).toEqual({
-      x: 39,
+      x: 34.5,
       y: 20
     })
   })

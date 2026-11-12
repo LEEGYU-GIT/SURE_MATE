@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { boundsOf, hitShape } from '../../../shared/pet/pet-frame'
 import type { PetPose } from '../../../shared/pet/pet-view'
 import { CLIMB_OFFSET, PET_BASELINE } from '../../../shared/pet/pet-world'
 import { CONTROL_BAND, FACE_CENTER, FACE_SHAPES, MALLANG_BODY, MALLANG_FACE, MALLANG_HIGHLIGHT, MALLANG_PROPS, mallangControlPlace, mallangPropPlace, PROP_SHAPES, STROKE } from './mallang-shapes'
 
 const POSES: PetPose[] = ['stand', 'walk', 'climb', 'sit', 'sleep', 'held', 'air']
+/** 시안(docs/design/mallang-mate.html)의 오르기 몸. 납작한 면이 왼쪽이라 오른쪽 바에 둥근 면이 붙어 보였다 */
+const MOCK_CLIMB =
+  'M18 8 C30 8 40 14 42 32 C44 50 34 58 22 58 C14 58 12 52 12 32 C12 14 12 8 18 8 Z'
+/** 오른쪽 바 면(격자 x): 발 가운데 32 + CLIMB_OFFSET. 왼쪽 바는 뒤집어 그려 32 − CLIMB_OFFSET */
+const BAR_FACE = 32 + CLIMB_OFFSET * 64
 const numbers = (d: string): number[] => (d.match(/-?\d*\.?\d+/g) ?? []).map(Number)
 
 /** 몸 경로(M·C·Z 절대 좌표)를 따라 점을 찍는다: 외곽 범위를 확인하는 데 쓴다 */
@@ -37,12 +43,20 @@ function outlinePoints(d: string): { x: number; y: number }[] {
 }
 
 describe('말랑 메이트 그림(시안 원본, 64 격자)', () => {
-  it('몸 경로는 시안 문자열 그대로(서기·걷기·공중은 같은 몸)', () => {
+  it('몸 경로는 시안 문자열 그대로(서기·걷기·공중은 같은 몸), 오르기만 좌우로 뒤집었다', () => {
     const stand = 'M8 52 C8 30 18 16 32 16 C46 16 56 30 56 52 C56 57 50 58 32 58 C14 58 8 57 8 52 Z'
     expect(MALLANG_BODY.stand).toBe(stand)
     expect(MALLANG_BODY.walk).toBe(stand)
     expect(MALLANG_BODY.air).toBe(stand)
-    expect(MALLANG_BODY.climb).toBe('M18 8 C30 8 40 14 42 32 C44 50 34 58 22 58 C14 58 12 52 12 32 C12 14 12 8 18 8 Z')
+    expect(MALLANG_BODY.climb).toBe('M36.5 8 C24.5 8 14.5 14 12.5 32 C10.5 50 20.5 58 32.5 58 C40.5 58 42.5 52 42.5 32 C42.5 14 42.5 8 36.5 8 Z')
+    // 시안 몸을 x → 54.5 − x로 뒤집은 모양 그대로(다시 그리지 않음): 같은 차례의 점이 서로 맞선다
+    const flipped = outlinePoints(MALLANG_BODY.climb)
+    const mock = outlinePoints(MOCK_CLIMB)
+    expect(flipped).toHaveLength(mock.length)
+    flipped.forEach((p, i) => {
+      expect(p.x, String(i)).toBeCloseTo(54.5 - mock[i].x, 9)
+      expect(p.y, String(i)).toBeCloseTo(mock[i].y, 9)
+    })
     expect(MALLANG_BODY.sit).toBe('M6 54 C6 38 18 30 32 30 C46 30 58 38 58 54 C58 58 50 59 32 59 C14 59 6 58 6 54 Z')
     expect(MALLANG_BODY.sleep).toBe('M6 54 C6 40 18 33 32 33 C46 33 58 40 58 54 C58 58 50 59 32 59 C14 59 6 58 6 54 Z')
     expect(MALLANG_BODY.held).toBe('M32 4 C38 4 42 12 44 26 C47 44 44 60 32 60 C20 60 17 44 20 26 C22 12 26 4 32 4 Z')
@@ -68,6 +82,80 @@ describe('말랑 메이트 그림(시안 원본, 64 격자)', () => {
     expect(Math.min(...held.map((p) => p.y))).toBeCloseTo(4, 5)
   })
 
+  it('(2026-11-12) 오르는 몸은 납작한 면이 바 면에 붙고 둥근 면은 바 반대쪽으로 부푼다(왼쪽 바는 x 32 기준으로 뒤집어 그린다)', () => {
+    const body = outlinePoints(MALLANG_BODY.climb)
+    const xs = body.map((p) => p.x)
+    const wall = Math.max(...xs)
+    const out = Math.min(...xs)
+    const edgeAt = (y: number, pick: (...v: number[]) => number): number =>
+      pick(...body.filter((p) => Math.abs(p.y - y) < 0.6).map((p) => p.x))
+    // 벽 쪽(오른쪽) 면: 외곽선 바깥 끝이 바 면 x 44이고, 몸 높이(8~58)의 대부분인 15~45에서 0.5칸 안으로 곧다
+    expect(wall + STROKE.outline / 2).toBeCloseTo(BAR_FACE, 9)
+    for (let y = 15; y <= 45; y += 2) expect(wall - edgeAt(y, Math.max), `y ${y}`).toBeLessThan(0.5)
+    // 바깥쪽(왼쪽) 면은 둥글다: 가운데 높이(y 32)에서 가장 바깥이고, 머리 쪽(y 16)은 5칸 넘게 안으로 들어간다
+    expect(edgeAt(32, Math.min) - out).toBeLessThan(0.5)
+    expect(edgeAt(16, Math.min) - out).toBeGreaterThan(5)
+    // 왼쪽 바: 뒤집으면(x → 64 − x) 납작한 면의 외곽선 바깥 끝이 그 바 면 x 20
+    expect(64 - (wall + STROKE.outline / 2)).toBeCloseTo(32 - CLIMB_OFFSET * 64, 9)
+  })
+
+  it('(2026-11-12) 오르는 얼굴은 몸과 함께 옮겼다: 선글라스·동그란 눈·반달 눈의 양 끝이 그 높이의 몸 안쪽 외곽선 안', () => {
+    // 몸과 얼굴은 같은 그룹으로 뒤집히므로(PetSprite MIRROR) 그대로 그린 쪽만 보면 된다
+    const f = MALLANG_FACE.climb
+    const X = (x: number): number => FACE_CENTER.x + (x - FACE_CENTER.x) * f.scale + f.dx
+    const Y = (y: number): number => FACE_CENTER.y + (y - FACE_CENTER.y) * f.scale + f.dy
+    const body = outlinePoints(MALLANG_BODY.climb)
+    const inner = (y: number): [number, number] => {
+      const xs = body.filter((p) => Math.abs(p.y - y) < 0.6).map((p) => p.x)
+      return [Math.min(...xs) + STROKE.outline / 2, Math.max(...xs) - STROKE.outline / 2]
+    }
+    const { sunglasses: s, eyes } = FACE_SHAPES
+    const ring = eyes.ring
+    const ringPad = ring.rx + STROKE.ring / 2
+    const arcXs = numbers(eyes.arc).filter((_, i) => i % 2 === 0)
+    // [이름, 왼쪽 끝, 오른쪽 끝, 그 높이](서 있는 얼굴 좌표, 선 굵기 절반 포함). 렌즈는 양 끝이 반원이라 가운데 높이가 가장 넓다
+    const spans: [string, number, number, number][] = [
+      ['선글라스', s.lenses[0][0], s.lenses[1][0] + s.width, s.lenses[0][1] + s.height / 2],
+      ['동그란 눈', ring.points[0][0] - ringPad, ring.points[1][0] + ringPad, ring.points[0][1]],
+      ['반달 눈', Math.min(...arcXs) - STROKE.face / 2, Math.max(...arcXs) + STROKE.face / 2, 38]
+    ]
+    for (const [name, l, r, y] of spans) {
+      const [lo, hi] = inner(Y(y))
+      expect(X(l), `${name} 왼쪽`).toBeGreaterThan(lo)
+      expect(X(r), `${name} 오른쪽`).toBeLessThan(hi)
+    }
+  })
+
+  it('(2026-11-12) 판정 사각형은 그림과 맞는다: 자세마다 몸 외곽선(굵기 포함) 범위와 1칸 안, 오르기는 바 쪽 끝이 바 면(바를 누른 클릭을 가로채지 않게)', () => {
+    const unit = { x: 0, y: 0, width: 64, height: 64 }
+    const half = STROKE.outline / 2
+    const EDGES = ['왼쪽', '오른쪽', '위', '아래']
+    for (const pose of POSES) {
+      for (const mirror of [false, true]) {
+        const pts = outlinePoints(MALLANG_BODY[pose])
+        const xs = pts.map((p) => (mirror ? 64 - p.x : p.x))
+        const ys = pts.map((p) => p.y)
+        // 네 변(왼쪽·오른쪽·위·아래): 외곽선(굵기 포함)을 감싼 범위와 판정 사각형을 감싼 범위
+        const drawn = [
+          Math.min(...xs) - half,
+          Math.max(...xs) + half,
+          Math.min(...ys) - half,
+          Math.max(...ys) + half
+        ]
+        const r = boundsOf(hitShape(pose, unit, mirror))!
+        const hit = [r.x, r.x + r.width, r.y, r.y + r.height]
+        const label = `${pose}${mirror ? '(뒤집힘)' : ''}`
+        for (let i = 0; i < 4; i++) {
+          expect(Math.abs(hit[i] - drawn[i]), `${label} ${EDGES[i]}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+    const right = boundsOf(hitShape('climb', unit, false))!
+    const left = boundsOf(hitShape('climb', unit, true))!
+    expect(right.x + right.width).toBe(BAR_FACE)
+    expect(left.x).toBe(64 - BAR_FACE)
+  })
+
   it('하이라이트는 서기·걷기·공중에만: (21,27) 6×3.4, −28°, 흰색 55%', () => {
     expect(MALLANG_HIGHLIGHT).toMatchObject({ cx: 21, cy: 27, rx: 6, ry: 3.4, angle: -28, opacity: 0.55 })
     expect([...MALLANG_HIGHLIGHT.poses].sort()).toEqual(['air', 'stand', 'walk'])
@@ -75,7 +163,9 @@ describe('말랑 메이트 그림(시안 원본, 64 격자)', () => {
 
   it('자세별 얼굴 자리(서 있는 얼굴 가운데 (32,38) 기준 이동·배율)', () => {
     expect(MALLANG_FACE.sit).toEqual({ dx: 0, dy: 6, scale: 1 })
-    expect(MALLANG_FACE.climb).toEqual({ dx: -7, dy: -18, scale: 0.85 })
+    // 오르기: 시안 자리(가운데 x 25)를 몸과 함께 x → 54.5 − x로 뒤집은 x 29.5
+    expect(MALLANG_FACE.climb).toEqual({ dx: -2.5, dy: -18, scale: 0.85 })
+    expect(FACE_CENTER.x + MALLANG_FACE.climb.dx).toBe(54.5 - 25)
     expect(MALLANG_FACE.stand).toEqual({ dx: 0, dy: 0, scale: 1 })
     expect(MALLANG_FACE.air).toEqual({ dx: 0, dy: 0, scale: 1 })
     // 시안의 통통 걷기 칸: 얼굴이 가는 쪽으로 3칸(왼쪽으로 가면 뒤집혀 왼쪽을 본다)
@@ -214,13 +304,16 @@ describe('(Task 6 이월) 반응 소품(편지·느낌표)은 자세마다 머�
     expect(mallangControlPlace('climb', true).dx).toBe(-MALLANG_FACE.climb.dx)
   })
 
-  it('오르기: 소품은 바 면 반대쪽(오른쪽 벽이면 x 44 왼쪽, 뒤집혀 왼쪽 벽이면 x 20 오른쪽)', () => {
+  it('오르기: 소품은 바 면 반대쪽(오른쪽 벽이면 몸 가운데보다 왼쪽, 뒤집혀 왼쪽 벽이면 몸 가운데보다 오른쪽. 외곽선 포함)', () => {
+    const xs = outlinePoints(MALLANG_BODY.climb).map((p) => p.x)
+    const mid = (Math.min(...xs) + Math.max(...xs)) / 2
+    const half = STROKE.prop / 2
     const right = mallangPropPlace('climb', false)
-    expect(env.x + env.width + right.dx).toBeLessThan(44)
-    expect(alert.cx + alert.r + right.dx).toBeLessThan(44)
+    expect(env.x + env.width + right.dx + half).toBeLessThan(mid)
+    expect(alert.cx + alert.r + right.dx + half).toBeLessThan(mid)
     const left = mallangPropPlace('climb', true)
-    expect(env.x + left.dx).toBeGreaterThan(20)
-    expect(alert.cx - alert.r + left.dx).toBeGreaterThan(20)
+    expect(env.x + left.dx - half).toBeGreaterThan(64 - mid)
+    expect(alert.cx - alert.r + left.dx - half).toBeGreaterThan(64 - mid)
     // 뒤집힌 자리는 소품 묶음(가운데 x 50)을 x 32 기준으로 옮긴 것이다(글자 모양은 뒤집지 않음)
     expect(env.x + env.width / 2 + left.dx).toBe(64 - (env.x + env.width / 2 + right.dx))
   })
