@@ -15,10 +15,14 @@ export const CAPTURE_NOTES: Record<CaptureSkipReason | 'nothing-selected', strin
   'nothing-selected': '선택한 글이 없어요'
 }
 
+/**
+ * 가명 처리 모드 이름(트레이·바 메뉴·확인 화면·설정이 같이 쓴다). 무엇을 하는지 쉬운 말로(2026-11-12 사용자 의견:
+ * '가명 후 되돌리기'·'결과에서 빼기'는 무슨 뜻인지 몰랐다)
+ */
 const MASKING_LABELS: Record<MaskingMode, string> = {
   off: '끔',
-  restore: '가명 후 되돌리기',
-  remove: '결과에서 빼기'
+  restore: '바꾸고 되돌리기',
+  remove: '바꾸기만'
 }
 
 export const maskingModeLabel = (mode: MaskingMode): string => MASKING_LABELS[mode]

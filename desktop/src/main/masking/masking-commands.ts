@@ -12,7 +12,7 @@ export function maskingCommandItems(mode: MaskingMode): PaletteItem[] {
       id: 'cmd.unmask',
       group: 'command',
       title: '가명 되돌리기',
-      subtitle: 'AI 답을 복사한 뒤 실행하면 가명을 원래 이름으로 바꿔 클립보드에 넣어요',
+      subtitle: 'AI가 쓴 글을 복사한 뒤 실행하면 CLIENT_A 같은 가명을 원래 이름으로 바꿔 클립보드에 넣어요',
       keywords: ['unmask', 'restore', '복원', '되돌리기', '원래 이름', '가명']
     },
     {

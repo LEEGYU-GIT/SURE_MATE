@@ -4,10 +4,11 @@ import { defaultRemoveLabel } from '../../../shared/masking/mask'
 import { ENTITY_CATEGORIES, PATTERN_CATEGORIES, type MaskCategory } from '../../../shared/masking/types'
 import { SETTINGS_LIMITS, SETTING_MASKING_MODES } from '../../../shared/settings/settings'
 import type { MaskingMode } from '../../../shared/types'
-import { MASKING_DETAILS } from '../flyout/menu-model'
+import { MASKING_EXPLAIN } from '../flyout/menu-model'
 import { Button, RadioList, Row, Section, Slider, TextField, Toggle } from './controls'
 import { DictionaryEditor } from './DictionaryEditor'
 import { parseDomainsInput } from './domains'
+import { MaskingExample } from './MaskingExample'
 import { useSettingsCtx } from './use-settings'
 
 const CATEGORY_HINTS: Record<MaskCategory, string> = {
@@ -62,14 +63,21 @@ export function MaskingTab(): React.JSX.Element {
   return (
     <>
       <Section title="기본 모드">
-        <Row label="프롬프트를 만들 때" description="프롬프트마다·실행마다 바꿀 수 있어요. 팔레트에서 Alt+M으로도 바뀌어요" stack>
+        <Row
+          label="프롬프트를 만들 때"
+          description="가명 처리는 고객사·IP·경로 같은 정보를 AI에 보내기 전에 다른 이름으로 바꾸는 기능이에요. 프롬프트마다·실행마다 바꿀 수 있고, 팔레트에서 Alt+M으로도 바뀌어요"
+          stack
+        >
           {(ids) => (
-            <RadioList<MaskingMode>
-              {...ids}
-              value={m.mode}
-              options={SETTING_MASKING_MODES.map((mode) => ({ value: mode, label: maskingModeLabel(mode), description: MASKING_DETAILS[mode] }))}
-              onChange={(mode) => void save({ masking: { mode } })}
-            />
+            <div className="flex flex-col gap-3">
+              <RadioList<MaskingMode>
+                {...ids}
+                value={m.mode}
+                options={SETTING_MASKING_MODES.map((mode) => ({ value: mode, label: maskingModeLabel(mode), description: MASKING_EXPLAIN[mode] }))}
+                onChange={(mode) => void save({ masking: { mode } })}
+              />
+              <MaskingExample mode={m.mode} />
+            </div>
           )}
         </Row>
       </Section>
@@ -127,7 +135,7 @@ export function MaskingTab(): React.JSX.Element {
         </Row>
       </Section>
 
-      <Section title="빼기 모드 표기">
+      <Section title="‘바꾸기만’에서 쓰는 이름">
         {[...ENTITY_CATEGORIES, ...PATTERN_CATEGORIES].map((c) => (
           <Row key={c} label={MASK_CATEGORY_LABELS[c]} description={ENTITY_CATEGORIES.includes(c as never) ? '뒤에 A, B…가 붙어요' : undefined}>
             {(ids) => (
