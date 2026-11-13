@@ -97,12 +97,21 @@ try {
       PressEnter
       $save = WaitLog $mark 'workspace.save' { $_.source -eq 'palette' } 6000
       if ($save -and $save.ok -eq $true) {
-        $doc = ReadJson (Join-Path $appDir 'workspaces.json')
-        $mine = if ($doc) { @($doc.workspaces | Where-Object { $_.id -eq $save.id }) } else { @() }
+        # 앱이 파일을 바꾸는 순간 읽으면(원자적 저장의 이름 바꾸기와 겹침) 읽기가 실패할 수 있어 2초 동안 다시 읽는다(t21의 WaitWs와 같다)
+        $mine = @(); $readOk = $false; $until = (Get-Date).AddMilliseconds(2000)
+        do {
+          $doc = ReadJson (Join-Path $appDir 'workspaces.json')
+          $readOk = ($null -ne $doc)
+          # @()로 감싸 늘 배열로 받는다(if 식은 배열을 풀어, 하나뿐이면 객체 하나가 되고 PowerShell 5.1의 PSCustomObject에는 .Count가 없다)
+          $mine = @(if ($doc) { $doc.workspaces | Where-Object { $_.id -eq $save.id } })
+          if ($mine.Count -eq 1 -and $mine[0].name -eq $wsName) { break }
+          Pump 150
+        } while ((Get-Date) -lt $until)
         $named = ($mine.Count -eq 1 -and $mine[0].name -eq $wsName)
         $r.workspace_saved = $named
         if ($named) { $wsId = [string]$save.id }
-        $r.info_save = 'op={0} windows={1} minimized={2} excluded={3} offscreen={4} monitors={5} file_has_id_and_name={6}' -f $save.op, $save.windows, $save.minimized, $save.excluded, $save.offscreen, $save.monitors, $named
+        $fileName = if ($mine.Count -eq 1) { "'" + [string]$mine[0].name + "'" } else { "(id found $($mine.Count) times, file read=$readOk)" }
+        $r.info_save = 'op={0} windows={1} minimized={2} excluded={3} offscreen={4} monitors={5} file_has_id_and_name={6} file_name={7}' -f $save.op, $save.windows, $save.minimized, $save.excluded, $save.offscreen, $save.monitors, $named, $fileName
       } else {
         $r.workspace_saved = $false
         $r.info_save = if ($save) { 'ok={0} reason={1}' -f $save.ok, $save.reason } else { 'no workspace.save log within 6 s' }
@@ -180,7 +189,7 @@ try {
       $run = WaitLog $mark 'palette.run' { $true } 3000
       Pump 300
       $map = ReadJson (Join-Path $appDir 'phrase-map.json')
-      $entries = if ($map) { @($map.entries) } else { @() }
+      $entries = @(if ($map) { $map.entries })
       $toWs = @($entries | Where-Object { $_.id -eq "workspace:$wsId" })
       $learned = ($null -ne $learn -and $null -ne $run -and $run.id -eq "workspace:$wsId" -and $toWs.Count -eq 1)
       $r.remember_learned = $learned

@@ -38,6 +38,9 @@ function WriteSettings {
   $masking = if ($s.masking) { $s.masking } else { New-Object psobject }
   $masking | Add-Member -Force -NotePropertyName mode -NotePropertyValue 'restore'
   $s | Add-Member -Force -NotePropertyName masking -NotePropertyValue $masking
+  # 팔레트는 기본으로 마우스가 있는 모니터에 뜬다. 모니터가 둘이면 앞 시험이 커서를 다른 모니터에 두고 끝나 팔레트가 그쪽에 뜨므로
+  # 주 모니터에 고정한다(2026-11-13 배율이 다른 모니터 두 대에서 첫 팔레트가 보조 모니터에 떠 단계가 건너뛰어졌다)
+  $s | Add-Member -Force -NotePropertyName palette -NotePropertyValue ([pscustomobject]@{ display = 'primary' })
   # 첫 실행 안내 창이 시험 창의 포커스를 가져가지 않게
   $s | Add-Member -Force -NotePropertyName onboardingDone -NotePropertyValue $true
   New-Item -ItemType Directory -Force $dir | Out-Null
@@ -66,5 +69,5 @@ try {
       try { if ($clipState -eq 'text') { [System.Windows.Forms.Clipboard]::SetText($clipText) } else { [System.Windows.Forms.Clipboard]::Clear() }; $clipDone = $true } catch { Start-Sleep -Milliseconds 200 }
     }
   }
-  "--- clipboard: " + $(if ($clipDone) { "restored (was $clipState)" } else { "NOT restored (was $clipState: only plain text can be restored)" })
+  "--- clipboard: " + $(if ($clipDone) { "restored (was $clipState)" } else { "NOT restored (was ${clipState}: only plain text can be restored)" })
 }

@@ -40,6 +40,15 @@ public static class W {
 "@
 # 좌표는 물리 픽셀로 다룬다(앱 로그의 DIP × 배율). 창·캡처·커서가 같은 좌표계를 쓰도록 DPI 인식으로 둔다
 [void][W]::SetProcessDPIAware()
+# run-smoke.ps1은 시험 스크립트를 숨김(-WindowStyle Hidden)으로 실행한다. 그러면 이 프로세스에서 처음 띄우는 창은 무엇을 넘기든 숨김으로 뜬다
+# (ShowWindow 문서: 첫 호출은 넘긴 값 대신 STARTUPINFO의 값을 쓴다). 처음 띄운 시험 창이 IsWindowVisible false로 남아 클릭을 받지 못하고
+# 앱이 창 목록에서 뺀다(2026-11-13: t21의 시험 창 A가 워크스페이스에 저장되지 않았고 t20의 단추가 눌리지 않았다). 보이지 않는 창 하나로
+# 그 첫 호출을 미리 써 버린다. 숨김으로 실행하지 않았어도 투명하고 화면 밖이라 보이지 않는다(t9는 시험 창에 ShowWindow를 따로 부른다).
+# 시험 창과 같은 보통 창이어야 한다: 작업 표시줄에 없는 창(ShowInTaskbar false)·테두리 없는 창은 첫 호출을 쓰지 않는다(Windows 11에서 확인)
+$firstShowSink = New-Object System.Windows.Forms.Form
+$firstShowSink.Opacity = 0; $firstShowSink.StartPosition = 'Manual'
+$firstShowSink.Location = [System.Drawing.Point]::new(-32000, -32000); $firstShowSink.Size = [System.Drawing.Size]::new(120, 40)
+$firstShowSink.Show(); $firstShowSink.Close(); $firstShowSink.Dispose()
 $VK = @{ 'ctrl' = 0x11; 'alt' = 0x12; 'shift' = 0x10; 'space' = 0x20; ' ' = 0x20; '`' = 0xC0; 'f9' = 0x78; 'esc' = 0x1B; 'f4' = 0x73; 'enter' = 0x0D; 'backspace' = 0x08; 'tab' = 0x09; '/' = 0xBF; '.' = 0xBE; '-' = 0xBD; ',' = 0xBC }
 function Key([byte]$vk, [switch]$Up) { $scan = [byte][W]::MapVirtualKey($vk, 0); [W]::keybd_event($vk, $scan, $(if ($Up) { 2 } else { 0 }), [UIntPtr]::Zero) }
 function Tap([byte]$vk) { Key $vk; Key $vk -Up }
