@@ -23,6 +23,15 @@ export function confirmBounds(workArea: Rect, saved: Size | null): Rect {
   return { x: workArea.x + Math.round((workArea.width - width) / 2), y: workArea.y + top, width, height }
 }
 
+/**
+ * 창 크기가 바뀐 뒤(resized) 저장할 확인 화면 크기. 확인 화면이 보이는 동안 사용자가 끌어서 바꾼 크기만 저장한다:
+ * 앱이 setBounds로 정한 크기에도 resized가 올 수 있으므로 마지막으로 정한 크기와 2 DIP 넘게 다를 때만(배율 반올림 오차)
+ */
+export function resizedConfirmSize(o: { mode: 'search' | 'confirm'; visible: boolean; actual: Size; lastSet: Size }): Size | null {
+  if (o.mode !== 'confirm' || !o.visible || !needsResize(o.actual, o.lastSet, 2)) return null
+  return { width: Math.round(o.actual.width), height: Math.round(o.actual.height) }
+}
+
 /** 설정 파일의 확인 화면 크기. 숫자가 아니거나 너비 320~8000·높이 240~8000 밖이면 null(기본 크기로 연다) */
 export function parseConfirmSize(raw: unknown): Size | null {
   if (typeof raw !== 'object' || raw === null) return null

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { confirmBounds, needsResize, palettePosition, paletteReturnTarget, parseConfirmSize, shouldHideOnBlur } from './palette-rules'
+import { confirmBounds, needsResize, palettePosition, paletteReturnTarget, parseConfirmSize, resizedConfirmSize, shouldHideOnBlur } from './palette-rules'
 
 describe('confirmBounds: 확인 화면 창 자리(기본 1040×760, 지난 크기 기억, 작업 영역 여백 16, 최소 720×460)', () => {
   const FHD = { x: 0, y: 0, width: 1920, height: 1040 }
@@ -34,6 +34,23 @@ describe('confirmBounds: 확인 화면 창 자리(기본 1040×760, 지난 크�
 
   it('왼쪽 보조 모니터(음수 좌표)에서도 그 작업 영역 안에 둔다', () => {
     expect(confirmBounds({ x: -1920, y: 0, width: 1920, height: 1040 }, null)).toEqual({ x: -1480, y: 229, width: 1040, height: 760 })
+  })
+})
+
+describe('resizedConfirmSize: 끌어서 바꾼 확인 화면 크기만 저장한다', () => {
+  const lastSet = { width: 1040, height: 760 }
+
+  it('확인 화면이 보이는 동안 끌어서 바꾼 크기는 저장한다', () => {
+    expect(resizedConfirmSize({ mode: 'confirm', visible: true, actual: { width: 1180, height: 802 }, lastSet })).toEqual({ width: 1180, height: 802 })
+  })
+
+  it('앱이 정한 크기와 같으면(setBounds 뒤에 오는 resized, 배율 반올림 ±2) 저장하지 않는다', () => {
+    expect(resizedConfirmSize({ mode: 'confirm', visible: true, actual: { width: 1041, height: 759 }, lastSet })).toBeNull()
+  })
+
+  it('검색 목록이거나 숨긴 창이면 저장하지 않는다', () => {
+    expect(resizedConfirmSize({ mode: 'search', visible: true, actual: { width: 1180, height: 802 }, lastSet })).toBeNull()
+    expect(resizedConfirmSize({ mode: 'confirm', visible: false, actual: { width: 1180, height: 802 }, lastSet })).toBeNull()
   })
 })
 

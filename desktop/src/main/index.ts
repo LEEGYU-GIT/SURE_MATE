@@ -71,7 +71,7 @@ import { realTimers } from './timers'
 import { createTray } from './tray'
 import { lockNavigation } from './windows/navigation-guard'
 import { imeLoggerContentsId, openImeLoggerWindow } from './windows/ime-logger-window'
-import { createPaletteWindow, hidePalette, hidePaletteAndRefocus, isPaletteVisible, paletteContentsId, showPalette } from './windows/palette-window'
+import { createPaletteWindow, hidePalette, hidePaletteAndRefocus, isPaletteVisible, paletteBackToList, paletteContentsId, showPalette } from './windows/palette-window'
 import { closeSettingsWindow, openSettingsWindow, sendToSettings, settingsContentsId, settingsRoute, settingsWindow, type SettingsRoute, type SettingsTabId } from './windows/settings-window'
 import { createWorkspaceHotkeys } from './workspace/workspace-hotkeys'
 import { createWorkspaceCommands, workspaceMenuContent, workspacePaletteItems } from './workspace/workspace-items'
@@ -870,7 +870,16 @@ if (!app.requestSingleInstanceLock()) {
     workspaceSvc = workspaceService
     // 시작할 때 한 번 읽어 깨진 파일을 바로 알린다
     await workspaceService.list()
-    createPaletteWindow({ getDisplayMode: () => settings.palette.display })
+    createPaletteWindow({
+      getDisplayMode: () => settings.palette.display,
+      // 확인 화면을 끌어서 바꾼 크기: 다음에도 그 크기로 연다(2026-11-13)
+      getConfirmSize: () => settings.palette.confirmSize ?? null,
+      saveConfirmSize: (size) => {
+        void changeSettings((cur) => ({ ...cur, palette: { ...cur.palette, confirmSize: size } })).catch((e) =>
+          log('palette.confirmSizeSaveError', { error: errorText(e) })
+        )
+      }
+    })
     // 뒤 단계가 실패해도 팔레트가 Esc·항목 실행·상태 표시에 반응하도록 IPC를 먼저 연다
     registerIpc({
       hide: () => hidePalette({ restoreFocus: true }),
@@ -893,7 +902,11 @@ if (!app.requestSingleInstanceLock()) {
           sendToSettings(IPC.onboardingProgress, { kind: 'prompt' } satisfies OnboardingProgress)
         return result
       },
-      cancelPrompt: () => session.cancel(),
+      // 확인 화면의 'Esc 목록으로': 세션을 버리고 창을 검색 목록 크기로 되돌린다
+      cancelPrompt: () => {
+        session.cancel()
+        paletteBackToList()
+      },
       // 확인 화면의 가명 처리 첫 안내를 다 봤다: 설정에 남겨 다시 보이지 않게 한다(이미 봤으면 쓰지 않는다)
       maskingTipSeen: (reason) => {
         if (settings.tips.maskingExampleSeen) return

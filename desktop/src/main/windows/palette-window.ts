@@ -2,7 +2,17 @@ import { join } from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { BrowserWindow, screen, type Display } from 'electron'
 import { IPC, type ShownPayload } from '../../shared/ipc-channels'
-import { needsResize, palettePosition, paletteReturnTarget, shouldHideOnBlur } from '../../shared/palette-rules'
+import type { Rect } from '../../shared/types'
+import {
+  CONFIRM_MIN,
+  confirmBounds,
+  needsResize,
+  palettePosition,
+  paletteReturnTarget,
+  resizedConfirmSize,
+  shouldHideOnBlur,
+  type Size
+} from '../../shared/palette-rules'
 import { log } from '../log'
 import { getForegroundWindow, isOwnWindow, setForeground } from '../native/windows'
 import { loadRoute } from './overlay-window'
@@ -10,6 +20,7 @@ import { settingsHwnd } from './settings-window'
 
 export type DisplayMode = 'cursor' | 'primary' | 'active'
 
+/** 검색 목록·용어·개발 출력 화면의 고정 크기. 확인 화면만 크게 열고 끌어서 크기를 바꾼다(2026-11-13) */
 const SIZE = { width: 720, height: 460 }
 
 let win: BrowserWindow | null = null
@@ -17,9 +28,21 @@ let ownHwnd: string | null = null
 let previousHwnd: string | null = null
 let shownAt = 0
 let getDisplayMode: () => DisplayMode = () => 'cursor'
+let getConfirmSize: () => Size | null = () => null
+let saveConfirmSize: (size: Size) => void = () => {}
+/** 지금 화면 종류와 앱이 마지막으로 정한 창 크기(끌어서 바꾼 크기와 구분한다) */
+let layout: 'search' | 'confirm' = 'search'
+let lastSize: Size = SIZE
 
-export function createPaletteWindow(opts: { getDisplayMode: () => DisplayMode }): BrowserWindow {
+export function createPaletteWindow(opts: {
+  getDisplayMode: () => DisplayMode
+  /** 확인 화면을 끌어서 바꾼 크기(설정 palette.confirmSize). 없으면 null */
+  getConfirmSize: () => Size | null
+  saveConfirmSize: (size: Size) => void
+}): BrowserWindow {
   getDisplayMode = opts.getDisplayMode
+  getConfirmSize = opts.getConfirmSize
+  saveConfirmSize = opts.saveConfirmSize
   win = new BrowserWindow({
     ...SIZE,
     show: false,
@@ -61,7 +84,29 @@ export function createPaletteWindow(opts: { getDisplayMode: () => DisplayMode })
     log('palette.blur', { sinceShownMs: Date.now() - shownAt })
     if (shouldHideOnBlur(shownAt, Date.now(), win.webContents.isDevToolsOpened())) hidePalette({ restoreFocus: false })
   })
+  // 확인 화면에서 끌어서 바꾼 크기를 기억해 다음에도 그 크기로 연다(앱이 정한 크기는 저장하지 않는다)
+  win.on('resized', () => {
+    if (!win) return
+    const size = resizedConfirmSize({ mode: layout, visible: win.isVisible(), actual: win.getBounds(), lastSet: lastSize })
+    if (!size) return
+    lastSize = size
+    log('palette.confirmResize', size)
+    saveConfirmSize(size)
+  })
   return win
+}
+
+/** 화면 종류에 맞춰 창 크기·자리를 정한다: 확인 화면은 크게(끌어서 조절), 나머지는 720×460 고정 */
+function applyLayout(next: 'search' | 'confirm', display: Display): Rect {
+  const bounds = next === 'confirm' ? confirmBounds(display.workArea, getConfirmSize()) : palettePosition(display.workArea, SIZE)
+  layout = next
+  lastSize = { width: bounds.width, height: bounds.height }
+  if (!win) return bounds
+  win.setResizable(next === 'confirm')
+  const min = next === 'confirm' ? CONFIRM_MIN : SIZE
+  win.setMinimumSize(Math.min(min.width, bounds.width), Math.min(min.height, bounds.height))
+  win.setBounds(bounds)
+  return bounds
 }
 
 function targetDisplay(): Display {
@@ -97,15 +142,22 @@ export function showPalette(payload: ShownPayload = { mode: 'search' }, o: { ret
   })
 
   const display = targetDisplay()
-  const bounds = palettePosition(display.workArea, SIZE)
-  win.setBounds(bounds)
+  const bounds = applyLayout(payload.mode === 'confirm' ? 'confirm' : 'search', display)
   win.show()
   win.focus()
   // 배율이 다른 모니터로 옮기면 크기가 커지는 버그(electron#27651) 대응
-  if (needsResize(win.getBounds(), SIZE, 2)) win.setBounds(bounds)
+  if (needsResize(win.getBounds(), bounds, 2)) win.setBounds(bounds)
   shownAt = Date.now()
   win.webContents.send(IPC.paletteShown, payload)
   log('palette.show', { mode: payload.mode, display: display.id, scale: display.scaleFactor, bounds: win.getBounds() })
+}
+
+/** 확인 화면의 'Esc 목록으로': 지금 창이 있는 모니터에서 검색 목록 크기(720×460)로 돌아가고 크기 조절을 끈다 */
+export function paletteBackToList(): void {
+  if (!win || !win.isVisible() || layout !== 'confirm') return
+  const bounds = applyLayout('search', screen.getDisplayMatching(win.getBounds()))
+  if (needsResize(win.getBounds(), bounds, 2)) win.setBounds(bounds)
+  log('palette.backToList', { bounds })
 }
 
 export function hidePalette(opts: { restoreFocus: boolean }): void {
