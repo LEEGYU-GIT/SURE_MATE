@@ -1386,6 +1386,34 @@ const TRY_SCENES: Scene[] = [
   )
 ]
 
+/**
+ * 확인 화면 배치 점검용 미리 보기(2026-11-13 최종 검토): 앞에 지시문을 lead줄 두고 넣은 글을 형광펜으로, 바뀐 이름을 가명으로 표시한다.
+ * names개만큼 서로 다른 바뀐 이름(가상 이름)을 만든다(넓은 창에서 바뀌는 이름 칩이 많을 때, 좁은 창에서 미리 보기가 길 때)
+ */
+function layoutPreview(o: { lead: number; names: number }): PromptPreview {
+  const head = Array.from({ length: o.lead }, (_, i) => `${i + 1}. 회의록 형식을 지키고 입력에 없는 내용은 만들지 마세요(지시문 ${i + 1}번째 줄).`).join('\n') + '\n\n입력:\n'
+  const names = Array.from({ length: o.names }, (_, i) => ({ original: `가상고객${i + 1}`, replacement: `CLIENT_${String.fromCharCode(65 + i)}` }))
+  const body = names.map((n, i) => `- ${n.replacement} 브레이크 시험 결과 공유 ${i + 1}건`).join('\n')
+  const text = head + body
+  const ranges = names.map((n): [number, number] => {
+    const at = text.indexOf(n.replacement)
+    return [at, at + n.replacement.length]
+  })
+  return {
+    text,
+    truncated: false,
+    inputLength: body.length,
+    warnings: [],
+    notes: [],
+    highlights: [[head.length, text.length]],
+    masking: {
+      mode: 'restore',
+      items: names.map((n, i) => ({ key: `client:${i}`, category: 'client', original: n.original, replacement: n.replacement, count: 1, enabled: true }))
+    },
+    maskRanges: ranges
+  }
+}
+
 /** 따라 해 보기 메모를 회의록 정리 템플릿에 넣고 IP·경로를 바꾼 미리 보기(처음 설치: 가명 사전이 비어 회사 이름은 그대로) */
 function tryPreview(): PromptPreview {
   const head = '다음 회의 메모를 정리해 주세요.\n\n'
@@ -1434,7 +1462,7 @@ function tryPreview(): PromptPreview {
 function confirmScene(
   id: string,
   title: string,
-  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[]; wide?: boolean; input?: boolean }
+  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[]; wide?: boolean; input?: boolean; preview?: PromptPreview }
 ): Scene {
   return {
     id,
@@ -1446,7 +1474,7 @@ function confirmScene(
         aiTargetName: 'Claude'
       },
       items: PALETTE_ITEMS,
-      preview: tryPreview(),
+      preview: o.preview ?? tryPreview(),
       shown: {
         mode: 'confirm',
         draft: {
@@ -1515,7 +1543,16 @@ const CONFIRM_SCENES: Scene[] = [
   confirmScene('confirm-wide', '확인 화면 넓은 창 1040×760: 왼쪽 설정 칸, 오른쪽 미리 보기(선택한 글)', { maskingTip: false, wide: true }),
   confirmScene('confirm-wide-input', '확인 화면 넓은 창 1040×760: 직접 입력(위 약 1/3)과 미리 보기', { maskingTip: false, wide: true, input: true }),
   confirmScene('confirm-wide-tip', '확인 화면 넓은 창 1040×760: 가명 처리 첫 안내가 오른쪽 칸을 덮음', { maskingTip: true, wide: true }),
-  confirmScene('confirm-narrow-input', '확인 화면 좁은 창 720×460: 직접 입력과 미리 보기(미리 보기 최소 높이)', { maskingTip: false, input: true })
+  confirmScene('confirm-narrow-input', '확인 화면 좁은 창 720×460: 직접 입력과 미리 보기(미리 보기 최소 높이)', { maskingTip: false, input: true }),
+  confirmScene('confirm-wide-many', '확인 화면 넓은 창: 바뀌는 이름 8개(이름 목록만 스크롤하고 AI 줄은 그 아래, 992×504로도 찍는다)', {
+    maskingTip: false,
+    wide: true,
+    preview: layoutPreview({ lead: 4, names: 8 })
+  }),
+  confirmScene('confirm-narrow-long', '확인 화면 좁은 창 720×460: 지시문 26줄 뒤의 넣은 글(미리 보기가 제 안에서 스크롤해 넣은 글을 보인다)', {
+    maskingTip: false,
+    preview: layoutPreview({ lead: 26, names: 2 })
+  })
 ]
 
 export const SCENES: Scene[] = [

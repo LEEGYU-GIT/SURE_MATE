@@ -59,7 +59,7 @@ function Chip(props: {
 }
 
 /** 찾은 대상 하나. 끈 항목은 이번 실행에서 가리지 않는다(취소선) */
-function ItemChip(props: { item: MaskItem; focused: boolean; onClick: () => void }): React.JSX.Element {
+function ItemChip(props: { item: MaskItem; index: number; focused: boolean; onClick: () => void }): React.JSX.Element {
   const { item } = props
   const off = !item.enabled
   return (
@@ -67,6 +67,7 @@ function ItemChip(props: { item: MaskItem; focused: boolean; onClick: () => void
       type="button"
       tabIndex={-1}
       onClick={props.onClick}
+      data-item-index={props.index}
       title={off ? '이번에는 가리지 않아요. 누르면 다시 가려요' : '누르면 이번에는 가리지 않아요'}
       className={`flex h-7 max-w-full shrink-0 items-center gap-1 rounded-control border px-2 text-caption transition-colors duration-[120ms] hover:bg-row-hover ${
         off ? 'border-line text-fg-3' : 'border-brand/40 text-fg-2'
@@ -167,6 +168,12 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
     else if (state.focus === 'tip') tipButtonRef.current?.focus()
     else rootRef.current?.focus()
   }, [state.focus])
+
+  // 바뀌는 이름 칩을 ←→로 고르면 그 칩이 목록 스크롤 상자 안에 보이게 한다
+  useEffect(() => {
+    if (state.focus !== 'items') return
+    rootRef.current?.querySelector(`[data-item-index="${state.itemIndex}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [state.focus, state.itemIndex])
 
   /** 첫 안내를 닫는다([알겠어요]·Enter·Space). 보이고 있을 때만 main에 알린다 */
   const dismissTip = (): void => {
@@ -324,7 +331,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
         {/* 첫 안내가 보이는 동안 안내가 덮는 자리(좁은 창: 아래 전부, 넓은 창: 오른쪽 칸)와 왼쪽의 바뀌는 이름·AI는 화면 읽기 프로그램·마우스에서도 뺀다(inert) */}
         <div
           inert={tipVisible}
-          className={`col-start-1 row-start-2 flex flex-col gap-3 min-[880px]:min-h-0 min-[880px]:gap-5 min-[880px]:overflow-y-auto min-[880px]:-mx-1.5 min-[880px]:-my-1.5 min-[880px]:py-1.5 min-[880px]:pr-6.5 min-[880px]:pl-1.5 ${tipVisible ? 'opacity-40' : ''}`}
+          className={`col-start-1 row-start-2 flex flex-col gap-3 min-[880px]:min-h-0 min-[880px]:gap-5 min-[880px]:pr-5 ${tipVisible ? 'opacity-40' : ''}`}
         >
           {state.masking === 'off' ? (
             <div className="flex shrink-0 items-center gap-2 rounded-control border border-warn/40 bg-warn/10 px-3 py-1.5 text-small text-warn">
@@ -333,15 +340,16 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
             </div>
           ) : (
             items.length > 0 && (
-              <div className="flex min-h-0 items-start gap-2 min-[880px]:flex-col min-[880px]:items-stretch min-[880px]:gap-2">
+              <div className="flex min-h-0 items-start gap-2 min-[880px]:flex-initial min-[880px]:flex-col min-[880px]:items-stretch min-[880px]:gap-2">
                 <span className="w-14 shrink-0 min-[880px]:hidden" />
                 <span className="hidden text-caption text-fg-3 min-[880px]:block">바뀌는 이름 · 누르면 이번만 그대로 보내요</span>
                 {/* 초점 테두리(2px)가 스크롤 상자에 잘리지 않게 안쪽 여백을 두고 바깥으로 되돌린다 */}
-                <div className="-m-0.5 flex max-h-16 min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto p-0.5 min-[880px]:max-h-none min-[880px]:flex-none min-[880px]:flex-col min-[880px]:flex-nowrap min-[880px]:items-start">
+                <div className="-m-0.5 flex max-h-16 min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto p-0.5 min-[880px]:max-h-none min-[880px]:min-h-0 min-[880px]:flex-initial min-[880px]:flex-col min-[880px]:flex-nowrap min-[880px]:items-start">
                   {items.map((item, i) => (
                     <ItemChip
                       key={item.key}
                       item={item}
+                      index={i}
                       focused={state.focus === 'items' && state.itemIndex === i}
                       onClick={() => {
                         dispatch({ type: 'toggle-item', key: item.key })
@@ -354,7 +362,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
             )
           )}
 
-          <div className="flex items-center gap-2 min-[880px]:flex-col min-[880px]:items-stretch">
+          <div className="flex shrink-0 items-center gap-2 min-[880px]:flex-col min-[880px]:items-stretch">
             <span className="w-14 shrink-0 text-caption text-fg-3 min-[880px]:w-auto">AI</span>
             <div className="flex min-w-0 flex-1 items-center gap-2 min-[880px]:flex-wrap">
               {draft.targets.map((t) => (
@@ -376,7 +384,7 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
 
         <div
           inert={tipVisible}
-          className={`col-start-1 row-start-3 flex flex-col gap-3 min-[880px]:min-h-0 min-[880px]:col-start-2 min-[880px]:row-span-2 min-[880px]:row-start-1 min-[880px]:border-l min-[880px]:border-line min-[880px]:pl-5 ${tipVisible ? 'opacity-40' : ''}`}
+          className={`col-start-1 row-start-3 flex min-h-0 flex-col gap-3 min-[880px]:col-start-2 min-[880px]:row-span-2 min-[880px]:row-start-1 min-[880px]:border-l min-[880px]:border-line min-[880px]:pl-5 ${tipVisible ? 'opacity-40' : ''}`}
         >
           {state.source === 'input' && (
             <div className="flex shrink-0 flex-col gap-1.5 min-[880px]:min-h-36 min-[880px]:basis-[36%]">
