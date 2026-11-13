@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Sure-Mate 홍보 영상</title>
+<meta name="viewport" content="width=1920">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Jua&display=block">
+<link rel="stylesheet" href="./scene.css">
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+
+  <!-- 위쪽 띠: 시각, 자막, 누른 키 -->
+  <header id="band">
+    <div id="clock-chip"><span id="clock-day">월</span><span id="clock-time">09:00</span></div>
+    <div id="captions"><p class="cap"></p><p class="cap"></p></div>
+    <div id="keys"></div>
+  </header>
+
+  <!-- 모니터: 1600×900 바탕화면 -->
+  <div id="monitor">
+    <div id="screen">
+      <div id="cam">
+        <div id="desk">
+          <div id="wallpaper"></div>
+          <div id="windows"></div>
+          <div id="taskbar"></div>
+          <div id="suremate">
+            <img id="bar" alt="">
+            <div id="pal"><div class="acrylic"></div><img alt=""></div>
+            <img id="card" alt="">
+            <img id="bubble" alt="">
+            <img id="pet" alt="">
+          </div>
+          <div id="marks"></div>
+          <div id="cursor"></div>
+        </div>
+      </div>
+      <div id="dim"></div>
+    </div>
+  </div>
+
+  <!-- 사무실 그림(영상용 평면 일러스트, 실제 인물 아님): 모니터와 같은 자리에 덮는다 -->
+  <div id="office"><svg id="office-svg" viewBox="0 0 1620 920" width="1620" height="920"></svg><div id="office-dim"></div></div>
+
+  <!-- 처음과 끝 카드 -->
+  <section id="intro" class="brand">
+    <span class="sticker">2026 슬기로운 AI 생활 출품작</span>
+    <img class="mate" alt="">
+    <h1>Sure-Mate</h1>
+    <p class="sub">단축키 하나로 부르는 작은 업무 비서</p>
+  </section>
+  <section id="outro" class="brand">
+    <img class="mate" alt="">
+    <h2>단축키 한 번이면<br>일이 제자리로.</h2>
+    <div class="outro-keys"></div>
+    <p class="file"><b>첨부 파일</b><span>Sure-Mate-Setup-0.1.0.exe</span></p>
+    <p class="fine">관리자 권한 없이 1분이면 설치돼요 · 앱은 인터넷에 접속하지 않아요</p>
+  </section>
+</div>
+<script type="module" src="./scene.js"></script>
+</body>
+</html>
