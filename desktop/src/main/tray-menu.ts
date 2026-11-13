@@ -8,6 +8,8 @@ export interface TrayMenuOptions {
   onOpenPalette: () => void
   /** 설정 창을 연다 */
   onOpenSettings: () => void
+  /** 30초 따라 해 보기 화면을 연다(설정 창과 같은 창) */
+  onOpenTry: () => void
   barShape: () => BarShape
   /** 트레이 메뉴에서 고른 바 모양(저장하고 잠시 숨김을 푼다는 약속은 부르는 쪽이 지킨다) */
   onBarShape: (shape: BarShape) => void
@@ -28,6 +30,7 @@ export function trayMenuTemplate(o: TrayMenuOptions, s: { suspended: boolean; on
   return [
     { label: '팔레트 열기', click: o.onOpenPalette },
     { label: '설정', click: o.onOpenSettings },
+    { label: '따라 해 보기', click: o.onOpenTry },
     { label: `가명 처리: ${maskingModeLabel(o.maskingMode())}`, enabled: false },
     { type: 'separator' },
     {

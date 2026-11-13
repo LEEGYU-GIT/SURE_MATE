@@ -209,3 +209,33 @@ describe('applySettingsPatch', () => {
     expect(next.masking.removeLabels).toEqual({ ip: '[주소]' })
   })
 })
+
+describe('처음 한 번 보이는 안내(tips, 2026-11-12): 확인 화면의 가명 처리 예시를 봤는지', () => {
+  it('기본값은 아직 안 봄(false)', () => {
+    expect(DEFAULT_SETTINGS.tips).toEqual({ maskingExampleSeen: false })
+  })
+
+  it('켬·끔 값만 받고, 보낸 필드만 바꾼다(다른 설정은 그대로)', () => {
+    expect(patchOf({ tips: { maskingExampleSeen: true } })).toEqual({
+      tips: { maskingExampleSeen: true }
+    })
+    const s = cur()
+    s.masking.mode = 'remove'
+    const next = applySettingsPatch(s, patchOf({ tips: { maskingExampleSeen: true } }, s))
+    expect(next.tips).toEqual({ maskingExampleSeen: true })
+    expect(next.masking.mode).toBe('remove')
+    expect(s.tips.maskingExampleSeen).toBe(false)
+    // 빈 tips는 아무것도 바꾸지 않는다
+    expect(applySettingsPatch(next, patchOf({ tips: {} }, next)).tips).toEqual({
+      maskingExampleSeen: true
+    })
+  })
+
+  it('틀린 값·모르는 안내 이름·형식이 틀린 tips는 거절한다', () => {
+    expect(errorsOf({ tips: { maskingExampleSeen: 'yes' } })).not.toEqual([])
+    expect(errorsOf({ tips: { maskingExampleSeen: 1 } })).not.toEqual([])
+    expect(errorsOf({ tips: { otherTip: true } }).join()).toContain('tips.otherTip')
+    for (const bad of [true, 'seen', null, []])
+      expect(errorsOf({ tips: bad }), String(bad)).not.toEqual([])
+  })
+})

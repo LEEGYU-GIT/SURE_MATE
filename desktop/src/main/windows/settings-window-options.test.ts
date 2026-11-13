@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { keepWindowTitle, planSettingsOpen, settingsWindowOptions } from './settings-window-options'
+import {
+  guideWindowSize,
+  keepWindowTitle,
+  planSettingsOpen,
+  settingsWindowOptions
+} from './settings-window-options'
 
 it('설정 창: 일반 창(포커스·작업 표시줄), 어두운 제목 줄, 처음엔 숨김, 크기 880×640(최소 720×520)', () => {
   const o = settingsWindowOptions('preload.js', '/settings')
@@ -21,9 +26,76 @@ it('설정 창: 일반 창(포커스·작업 표시줄), 어두운 제목 줄, �
   expect(o.webPreferences).toMatchObject({ preload: 'preload.js', contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false })
 })
 
-it('온보딩: 같은 창 모양에 크기만 640×560 고정', () => {
+it('온보딩: 같은 창 모양에 크기만 720×520 고정(1280×720 125%의 작업 영역 약 1024×536에 들어간다)', () => {
   const o = settingsWindowOptions('preload.js', '/onboarding')
-  expect(o).toMatchObject({ width: 640, height: 560, resizable: false, maximizable: false, title: 'Sure-Mate 시작하기' })
+  expect(o).toMatchObject({
+    width: 720,
+    height: 520,
+    resizable: false,
+    maximizable: false,
+    title: 'Sure-Mate 시작하기'
+  })
+  expect(
+    settingsWindowOptions('preload.js', '/onboarding', { width: 1024, height: 536 })
+  ).toMatchObject({ width: 720, height: 520 })
+  // 설정 창은 작업 영역과 상관없이 그대로(크기를 바꿀 수 있다)
+  expect(
+    settingsWindowOptions('preload.js', '/settings', { width: 800, height: 400 })
+  ).toMatchObject({ width: 880, height: 640, minWidth: 720, minHeight: 520 })
+})
+
+it('30초 따라 해 보기: 첫 실행 안내와 같은 작은 고정 크기, 제목 "Sure-Mate 따라 해 보기"', () => {
+  expect(settingsWindowOptions('preload.js', '/try')).toMatchObject({
+    width: 720,
+    height: 520,
+    resizable: false,
+    maximizable: false,
+    title: 'Sure-Mate 따라 해 보기'
+  })
+  expect(settingsWindowOptions('preload.js', '/try', { width: 853, height: 448 })).toMatchObject({
+    width: 720,
+    height: 432
+  })
+  // 같은 창 하나를 쓴다: 첫 실행 안내·설정에서 오면 경로를 바꾸고(탭은 붙지 않는다), 이미 열려 있으면 앞으로만
+  expect(planSettingsOpen(null, '/try')).toEqual({ kind: 'create', hash: '/try' })
+  expect(planSettingsOpen({ route: '/onboarding', loading: false }, '/try')).toEqual({
+    kind: 'switch-route',
+    hash: '/try'
+  })
+  expect(planSettingsOpen({ route: '/settings', loading: false }, '/try', 'pet')).toEqual({
+    kind: 'switch-route',
+    hash: '/try'
+  })
+  expect(planSettingsOpen({ route: '/try', loading: false }, '/try')).toEqual({
+    kind: 'show',
+    tab: null,
+    ws: null
+  })
+  expect(planSettingsOpen({ route: '/try', loading: false }, '/settings', 'masking')).toEqual({
+    kind: 'switch-route',
+    hash: '/settings?tab=masking'
+  })
+})
+
+describe('guideWindowSize: 작업 영역이 더 작으면 여백을 남기고 줄인다(내용은 안에서 스크롤, 아래 단추 줄은 늘 보인다)', () => {
+  it('작업 영역을 모르면 720×520, 넉넉하면 그대로', () => {
+    expect(guideWindowSize()).toEqual({ width: 720, height: 520 })
+    expect(guideWindowSize({ width: 1920, height: 1040 })).toEqual({ width: 720, height: 520 })
+    expect(guideWindowSize({ width: 1024, height: 536 })).toEqual({ width: 720, height: 520 })
+  })
+
+  it('1280×720 150%(작업 영역 약 853×448)에서는 높이를 작업 영역 − 16으로 줄인다', () => {
+    expect(guideWindowSize({ width: 853, height: 448 })).toEqual({ width: 720, height: 432 })
+  })
+
+  it('좁은 작업 영역은 좌우 16씩 남기고, 아주 작아도 560×400 아래로는 줄이지 않는다', () => {
+    expect(guideWindowSize({ width: 700, height: 500 })).toEqual({ width: 668, height: 484 })
+    expect(guideWindowSize({ width: 400, height: 300 })).toEqual({ width: 560, height: 400 })
+  })
+
+  it('소수 DIP 작업 영역은 내림한다(창이 작업 영역을 넘지 않게)', () => {
+    expect(guideWindowSize({ width: 853.33, height: 448.8 })).toEqual({ width: 720, height: 432 })
+  })
 })
 
 it('(13b) 화면의 <title>(Sure-Mate)이 창 제목(Sure-Mate 설정·시작하기)을 바꾸지 않게 page-title-updated를 막는다', () => {

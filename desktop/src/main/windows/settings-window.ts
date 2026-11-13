@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import { IPC } from '../../shared/ipc-channels'
 import type { SettingsTabId } from '../../shared/settings/settings-route'
 import { log } from '../log'
@@ -24,6 +24,18 @@ export const settingsHwnd = (): string | null => (win && !win.isDestroyed() ? wi
 /** 열린 설정 창의 경로(설정·첫 실행 안내). 없으면 null */
 export const settingsRoute = (): SettingsRoute | null => (win && !win.isDestroyed() ? route : null)
 
+/**
+ * 창을 띄울 모니터의 작업 영역(DIP): 열린 창이면 그 창이 있는 모니터, 새 창이면 주 모니터(위치를 주지 않은 창은 주 모니터 가운데에 뜬다).
+ * 첫 실행 안내·따라 해 보기 창이 작은 화면에서 작업 표시줄 밑으로 내려가지 않게 크기를 줄일 때 쓴다. 읽지 못하면 undefined(기본 크기)
+ */
+function workAreaFor(w: BrowserWindow | null): { width: number; height: number } | undefined {
+  try {
+    return (w ? screen.getDisplayMatching(w.getBounds()) : screen.getPrimaryDisplay()).workArea
+  } catch {
+    return undefined
+  }
+}
+
 /** 열린 설정 창에 보낸다(없으면 아무것도 하지 않음) */
 export function sendToSettings(channel: string, ...args: unknown[]): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -41,7 +53,7 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
   if (open) {
     if (plan.kind === 'switch-route') {
       route = next
-      const opts = settingsWindowOptions('', next)
+      const opts = settingsWindowOptions('', next, workAreaFor(open))
       open.setResizable(true)
       open.setMinimumSize(opts.minWidth ?? 0, opts.minHeight ?? 0)
       open.setSize(opts.width ?? 880, opts.height ?? 640)
@@ -61,7 +73,9 @@ export function openSettingsWindow(next: SettingsRoute, o: { closed?: () => void
     return
   }
   route = next
-  const w = new BrowserWindow(settingsWindowOptions(join(__dirname, '../preload/index.js'), next))
+  const w = new BrowserWindow(
+    settingsWindowOptions(join(__dirname, '../preload/index.js'), next, workAreaFor(null))
+  )
   // 메뉴 막대를 없앤다(Alt를 눌러 단축키를 녹화할 때 기본 메뉴가 나오지 않게)
   w.removeMenu()
   // 화면의 <title>이 창 제목(Sure-Mate 설정·시작하기)을 덮지 않게(작업 표시줄·Alt+Tab)

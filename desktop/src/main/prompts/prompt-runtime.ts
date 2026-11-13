@@ -57,6 +57,7 @@ export function createPromptRuntime(o: {
     },
     mask: (text, mo) => o.masking.mask(text, mo),
     defaultMasking: () => o.getSettings().masking.mode,
+    maskingTipDue: () => !o.getSettings().tips.maskingExampleSeen,
     writeClipboard: async (text, wo) => {
       // 실명이 든 글은 Win+V 기록·클라우드 동기화에서 뺀다. 가져오기의 늦은 복사 지켜보기가 끝난 뒤에 쓴다
       const r = await writeClipboardText(text, wo)

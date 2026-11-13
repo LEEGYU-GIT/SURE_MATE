@@ -5,7 +5,7 @@ import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-act
 import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
 import { parsePhraseKey, type NaturalChangeResult, type NaturalOpenResult, type NaturalView, type SearchContextPayload } from '../shared/natural/natural-ipc'
-import { IPC, type AppStatus, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
+import { IPC, parseMaskingTipSeen, type AppStatus, type MaskingTipSeen, type PromptPreview, type PromptRequest, type PromptRunResult } from '../shared/ipc-channels'
 import { parsePetBool, parsePetKey, parsePetMenuAction, parsePetRect } from '../shared/pet/pet-ipc'
 import type { PetKey, PetMenuAction, PetView } from '../shared/pet/pet-view'
 import { parsePromptRequest } from '../shared/prompt-request'
@@ -97,6 +97,8 @@ export interface IpcDeps {
   previewPrompt: (req: PromptRequest) => Promise<PromptPreview>
   runPrompt: (req: PromptRequest) => Promise<PromptRunResult>
   cancelPrompt: () => void
+  /** 확인 화면의 가명 처리 첫 안내를 다 봤다(설정 tips.maskingExampleSeen을 켠다) */
+  maskingTipSeen: (reason: MaskingTipSeen) => void
   getStatus: () => AppStatus
   wiki: GlossaryRuntime
   saveImeLog: (label: string, json: string) => Promise<string>
@@ -169,6 +171,10 @@ export function registerIpc(d: IpcDeps): void {
     return req ? d.runPrompt(req) : { ok: false, message: BAD_REQUEST }
   })
   on(IPC.promptCancel, () => d.cancelPrompt())
+  on(IPC.maskingTipSeen, (raw) => {
+    const reason = parseMaskingTipSeen(raw)
+    if (reason) d.maskingTipSeen(reason)
+  })
   handle<AppStatus | null>(IPC.appGetStatus, () => null, () => d.getStatus())
   handle<GlossaryEntry | null>(IPC.wikiGet, () => null, (id) => {
     const ok = wikiId(id)

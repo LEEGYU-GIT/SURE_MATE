@@ -51,6 +51,7 @@ export function mergeSettings(raw: unknown): Settings {
   const masking = isObj(r.masking) ? r.masking : {}
   const categories = isObj(masking.categories) ? masking.categories : {}
   const ai = isObj(r.ai) ? r.ai : {}
+  const tips = isObj(r.tips) ? r.tips : {}
   const custom = sanitizeAiTargets(ai.custom)
   const targetIds = allAiTargets(custom).map((t) => t.id)
   const d = DEFAULT_SETTINGS
@@ -78,7 +79,9 @@ export function mergeSettings(raw: unknown): Settings {
     ai: { defaultTarget: oneOf(ai.defaultTarget, targetIds, d.ai.defaultTarget), custom },
     onboardingDone: bool(r.onboardingDone, d.onboardingDone),
     bar: sanitizeBarSettings(r.bar),
-    pet: sanitizePetSettings(r.pet)
+    pet: sanitizePetSettings(r.pet),
+    // 옛 설정 파일·틀린 값은 아직 안 본 것(한 번 더 보여도 해가 없다)
+    tips: { maskingExampleSeen: bool(tips.maskingExampleSeen, d.tips.maskingExampleSeen) }
   }
 }
 

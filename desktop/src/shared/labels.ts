@@ -27,6 +27,9 @@ const MASKING_LABELS: Record<MaskingMode, string> = {
 
 export const maskingModeLabel = (mode: MaskingMode): string => MASKING_LABELS[mode]
 
+/** 팔레트의 가명 되돌리기 명령(cmd.unmask) 제목. 따라 해 보기·확인 화면 첫 안내가 다음에 할 일로 같은 이름을 부른다 */
+export const UNMASK_COMMAND_TITLE = '가명 되돌리기'
+
 const BAR_SHAPE_LABELS: Record<BarShape, string> = {
   edge: '가장자리 띠',
   capsule: '떠 있는 캡슐',

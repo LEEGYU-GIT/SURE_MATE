@@ -47,6 +47,8 @@ export interface PromptSessionDeps {
   mask(text: string, o: { mode: MaskingMode; disabledKeys: string[]; dryRun: boolean }): Promise<PromptMaskResult>
   /** 설정의 전체 기본 모드 */
   defaultMasking(): MaskingMode
+  /** 확인 화면의 가명 처리 첫 안내를 아직 보지 않았는지(설정 tips.maskingExampleSeen의 반대) */
+  maskingTipDue(): boolean
   /** excludeFromHistory면 Win+V 기록·클라우드 동기화에서 뺀다(실명이 든 글) */
   writeClipboard(text: string, o: { excludeFromHistory: boolean }): Promise<void>
   openUrl(url: string): Promise<void>
@@ -137,7 +139,8 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
       defaultSource: got.selection ? 'selection' : clipboard.trim() ? 'clipboard' : 'input',
       targets: list.map((t) => ({ id: t.id, name: t.name })),
       target: pickAiTarget({ template: template.aiTarget, defaultId, targets: list }).id,
-      masking: modeOf(template)
+      masking: modeOf(template),
+      maskingTip: d.maskingTipDue()
     })
     if (event === 'prompt.prepare') d.log(event, { templateId: template.id, selectionLength: got.selection.length, skipped: got.skipped ?? null, clipboardLength: clipboard.length })
     // 가져오지 못했으면 펫이 까닭을 알린다. busy(다른 가져오기가 진행 중)는 먼저 시작한 쪽이 처리한다

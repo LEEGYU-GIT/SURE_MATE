@@ -6,6 +6,7 @@ import { getForegroundWindow, isOwnWindow, isWindowVisible, setForeground } from
 import { realTimers } from '../timers'
 import { getPreviousHwnd, paletteHwnd } from '../windows/palette-window'
 import { createPetWindow } from '../windows/pet-window'
+import { settingsHwnd } from '../windows/settings-window'
 import { controlReturnTarget } from './pet-focus'
 import type { PetRuntimeEnv } from './pet-runtime'
 
@@ -42,13 +43,16 @@ export function electronPetEnv(): PetRuntimeEnv {
         return false
       }
     },
-    // 조종을 끝낼 때 돌아갈 창: Sure-Mate 창은 기억하지 않는다(팔레트면 팔레트가 돌아갈 창, M6 최종 검토 I1)
+    // 조종을 끝낼 때 돌아갈 창: 설정 창이 아닌 Sure-Mate 창은 기억하지 않는다(팔레트면 팔레트가 돌아갈 창, M6 최종 검토 I1).
+    // 설정 창(첫 실행 안내·따라 해 보기 포함)은 팔레트처럼 돌아갈 창으로 쓴다(2026-11-12)
     foreground: () => {
       try {
+        const settings = settingsHwnd()
         return controlReturnTarget({
           foreground: getForegroundWindow(),
           palette: { hwnd: paletteHwnd(), returnTo: getPreviousHwnd() },
-          isOwn: isOwnWindow
+          isOwn: isOwnWindow,
+          isReturnable: (hwnd) => hwnd === settings
         })
       } catch {
         return null

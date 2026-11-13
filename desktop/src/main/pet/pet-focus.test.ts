@@ -9,9 +9,18 @@ const SETTINGS = '700'
 const own = new Set([PALETTE, '600', SETTINGS])
 const isOwn = (h: string): boolean => own.has(h)
 
-describe('controlReturnTarget: 조종을 끝낼 때 돌아갈 창(Sure-Mate 창은 기억하지 않는다, M6 최종 검토 I1)', () => {
-  const pick = (foreground: string | null, paletteReturn: string | null = '1001'): string | null =>
-    controlReturnTarget({ foreground, palette: { hwnd: PALETTE, returnTo: paletteReturn }, isOwn })
+describe('controlReturnTarget: 조종을 끝낼 때 돌아갈 창(설정 창이 아닌 Sure-Mate 창은 기억하지 않는다, M6 최종 검토 I1)', () => {
+  const pick = (
+    foreground: string | null,
+    paletteReturn: string | null = '1001',
+    settings: string | null = SETTINGS
+  ): string | null =>
+    controlReturnTarget({
+      foreground,
+      palette: { hwnd: PALETTE, returnTo: paletteReturn },
+      isOwn,
+      isReturnable: (h) => h === settings
+    })
 
   it('사용자 창이면 그 창, 앞 창이 없으면(Win32 없음) null', () => {
     expect(pick('4242')).toBe('4242')
@@ -23,8 +32,21 @@ describe('controlReturnTarget: 조종을 끝낼 때 돌아갈 창(Sure-Mate 창�
     expect(pick(PALETTE, null)).toBeNull()
   })
 
-  it('그 밖의 Sure-Mate 창(설정 창 등)은 기억하지 않는다', () => {
-    expect(pick(SETTINGS)).toBeNull()
+  it('설정 창(첫 실행 안내·따라 해 보기 포함)은 사용자 창처럼 기억한다: 보이고 포커스를 받는 보통 창이다(2026-11-12)', () => {
+    expect(pick(SETTINGS)).toBe(SETTINGS)
+  })
+
+  it('펫 같은 그 밖의 Sure-Mate 창은 기억하지 않는다. 설정 창이 닫혀 있으면(null) 그 핸들도 Sure-Mate 창으로 본다', () => {
+    expect(pick('600')).toBeNull()
+    expect(pick(SETTINGS, '1001', null)).toBeNull()
+    // isReturnable을 주지 않으면 예전처럼 모든 Sure-Mate 창을 기억하지 않는다
+    expect(
+      controlReturnTarget({
+        foreground: SETTINGS,
+        palette: { hwnd: PALETTE, returnTo: '1001' },
+        isOwn
+      })
+    ).toBeNull()
   })
 })
 

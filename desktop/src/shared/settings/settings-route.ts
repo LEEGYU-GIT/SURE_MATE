@@ -1,7 +1,14 @@
 import { parseWorkspaceId } from '../workspace/workspace-ipc'
 
-/** 설정 창 경로(설계 문서 §5): 설정 창과, 같은 창에 뜨는 첫 실행 안내 */
-export type SettingsRoute = '/settings' | '/onboarding'
+/**
+ * 설정 창 경로(설계 문서 §5): 설정 창과, 같은 창에 뜨는 첫 실행 안내·30초 따라 해 보기(트레이 메뉴·팔레트 명령으로 언제든 연다).
+ * 따라 해 보기는 그 창에 선택해 둔 메모를 팔레트가 가져가야 하므로, 팔레트가 돌아갈 창으로 기억하는 설정 창에 띄운다
+ */
+export const SETTINGS_ROUTES = ['/settings', '/onboarding', '/try'] as const
+export type SettingsRoute = (typeof SETTINGS_ROUTES)[number]
+
+export const isSettingsRoute = (v: unknown): v is SettingsRoute =>
+  SETTINGS_ROUTES.includes(v as SettingsRoute)
 
 /**
  * 설정 창 탭 id(왼쪽 목록 순서, 설계 문서 §14). 이름표는 renderer/src/settings/tabs.ts에 있고, 탭을 더할 때는 두 곳에 함께

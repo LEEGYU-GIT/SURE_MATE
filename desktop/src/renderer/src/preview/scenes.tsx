@@ -34,6 +34,10 @@ import { Pet } from '../pet/Pet'
 import { PetSprite } from '../pet/PetSprite'
 import { Onboarding } from '../onboarding/Onboarding'
 import type { OnboardingState } from '../onboarding/onboarding-state'
+import { TRY_MEMO } from '../onboarding/try-guide'
+import { TryScreen } from '../onboarding/TryScreen'
+import type { PromptPreview } from '../../../shared/ipc-channels'
+import type { MaskTerm } from '../../../shared/masking/dictionary'
 import { SettingsApp } from '../settings/SettingsApp'
 import type { SettingsTabId } from '../settings/tabs'
 import { allAiTargets } from '../../../shared/ai-targets'
@@ -1168,6 +1172,245 @@ const NATURAL_SCENES: Scene[] = [
   naturalScene('settings-natural-narrow', '설정: 말하듯 입력, 가장 좁은 창 720×520', naturalView(), { width: 720, height: 520 })
 ]
 
+// ── 첫 실행 안내 세 화면(720×520, SCENE_W=720 SCENE_H=520으로 찍는다)과 30초 따라 해 보기, 확인 화면의 가명 처리 첫 안내 ──────────
+
+const TRY_WS = { id: 'ws-try', name: '업무 배치', windows: 5 }
+
+/** 첫 실행 안내 장면: 720×520 창 하나. tweak으로 설정 스냅숏을 바꾸고(단축키 등록 못 함 등), prep으로 단추를 눌러 펼친 모습을 찍는다 */
+function onboardingScene(
+  id: string,
+  title: string,
+  start: Partial<OnboardingState>,
+  o: { tweak?: (s: SettingsSnapshot) => void; canControl?: boolean; prep?: ScenePrepOptions } = {}
+): Scene {
+  const snapshot = settingsSnapshot()
+  o.tweak?.(snapshot)
+  return {
+    id,
+    title,
+    fixtures: {
+      settings: snapshot,
+      hotkeyCandidates: [
+        { acc: 'Alt+Space', available: true, suggested: false },
+        { acc: 'Ctrl+Alt+Space', available: false, suggested: false },
+        { acc: 'Alt+`', available: true, suggested: true }
+      ],
+      workspaces: { items: [], canControl: o.canControl ?? true }
+    },
+    render: () => (
+      <div style={{ width: 720, height: 520, overflow: 'hidden', position: 'relative' }}>
+        <Onboarding start={start} />
+        {o.prep ? <ScenePrep {...o.prep} /> : null}
+      </div>
+    )
+  }
+}
+
+/** 팔레트 단축키를 하나도 등록하지 못한 상태(기본 조합·대체 조합을 다른 앱이 씀) */
+const paletteUnregistered = (s: SettingsSnapshot): void => {
+  s.hotkeys.palette = { acc: 'Ctrl+Alt+Space', registered: false }
+}
+
+const ONBOARDING_SCENES: Scene[] = [
+  onboardingScene('onboarding-intro', '첫 실행 안내 1/3: 소개(업무 순간 네 가지)', {}),
+  onboardingScene('onboarding-workspace', '첫 실행 안내 2/3: 워크스페이스 체험(저장 전)', {
+    step: 'workspace'
+  }),
+  onboardingScene(
+    'onboarding-workspace-saved',
+    '첫 실행 안내 2/3: 저장 뒤(팔레트로 불러오기 안내)',
+    { step: 'workspace', workspace: TRY_WS }
+  ),
+  onboardingScene('onboarding-workspace-success', '첫 실행 안내 2/3: 불러오기를 해냄', {
+    step: 'workspace',
+    workspace: TRY_WS,
+    restored: true
+  }),
+  onboardingScene(
+    'onboarding-workspace-blocked',
+    '첫 실행 안내 2/3: 보안 프로그램이 창 제어를 막음(실패)',
+    { step: 'workspace' },
+    { canControl: false }
+  ),
+  onboardingScene('onboarding-ready', '첫 실행 안내 3/3: 준비 완료(팔레트 단축키 등록됨)', {
+    step: 'ready'
+  }),
+  onboardingScene(
+    'onboarding-ready-no-hotkey',
+    '첫 실행 안내 3/3: 팔레트 단축키를 등록하지 못함(고르기 펼침, 시작하기 막힘)',
+    { step: 'ready' },
+    { tweak: paletteUnregistered }
+  ),
+  onboardingScene(
+    'onboarding-ready-change',
+    '첫 실행 안내 3/3: 가명 처리 [바꾸기]를 펼침',
+    { step: 'ready' },
+    { prep: { pressText: '가명 처리 바꾸기' } }
+  )
+]
+
+/** 30초 따라 해 보기 장면: 720×520 창 하나. dictionary: 가명 사전(처음 설치하면 비어 있다) */
+function tryScene(
+  id: string,
+  title: string,
+  o: { tried?: boolean; dictionary?: MaskTerm[]; tweak?: (s: SettingsSnapshot) => void } = {}
+): Scene {
+  const snapshot = settingsSnapshot()
+  o.tweak?.(snapshot)
+  return {
+    id,
+    title,
+    fixtures: { settings: snapshot, dictionary: o.dictionary ?? [] },
+    render: () => (
+      <div style={{ width: 720, height: 520, overflow: 'hidden', position: 'relative' }}>
+        <TryScreen start={{ tried: o.tried }} />
+      </div>
+    )
+  }
+}
+
+/** '가명 사전 열기'를 처음 할 때 앱이 만드는 가상 예시 사전 */
+const EXAMPLE_DICTIONARY: MaskTerm[] = [
+  { id: 'example-client-1', category: 'client', canonical: '가상자동차', aliases: ['가상차'] },
+  { id: 'example-client-2', category: 'client', canonical: 'XY방산', aliases: [] }
+]
+
+const TRY_SCENES: Scene[] = [
+  tryScene('try', '30초 따라 해 보기: 처음 설치(가명 사전 비어 있음, IP가 처음 바뀜)'),
+  tryScene('try-done', '30초 따라 해 보기: 해냄(붙여넣기, 가명 되돌리기)', { tried: true }),
+  tryScene(
+    'try-dictionary',
+    '30초 따라 해 보기: 가명 사전에 가상자동차가 있음(CLIENT_A), 기본 AI 사내 LLM',
+    {
+      dictionary: EXAMPLE_DICTIONARY,
+      tweak: (s) => {
+        s.settings.ai.defaultTarget = 'custom-llm'
+      }
+    }
+  )
+]
+
+/** 따라 해 보기 메모를 회의록 정리 템플릿에 넣고 IP·경로를 바꾼 미리 보기(처음 설치: 가명 사전이 비어 회사 이름은 그대로) */
+function tryPreview(): PromptPreview {
+  const head = '다음 회의 메모를 정리해 주세요.\n\n'
+  const body = TRY_MEMO.replace('10.0.3.15', 'IP_1').replace('C:\\가상자동차\\시험결과', 'PATH_1')
+  const text = head + body
+  const at = (word: string): [number, number] => {
+    const i = text.indexOf(word)
+    return [i, i + word.length]
+  }
+  return {
+    text,
+    truncated: false,
+    inputLength: TRY_MEMO.length,
+    warnings: [],
+    notes: [],
+    highlights: [[head.length, text.length]],
+    masking: {
+      mode: 'restore',
+      items: [
+        {
+          key: 'ip:10.0.3.15',
+          category: 'ip',
+          original: '10.0.3.15',
+          replacement: 'IP_1',
+          count: 1,
+          enabled: true
+        },
+        {
+          key: 'path:c:\\가상자동차\\시험결과',
+          category: 'path',
+          original: 'C:\\가상자동차\\시험결과',
+          replacement: 'PATH_1',
+          count: 1,
+          enabled: true
+        }
+      ]
+    },
+    maskRanges: [at('IP_1'), at('PATH_1')]
+  }
+}
+
+/** 확인 화면 장면: 팔레트 창(720×460, SCENE_W=720 SCENE_H=460으로 찍는다)에 회의록 정리의 확인 화면 */
+function confirmScene(
+  id: string,
+  title: string,
+  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[] }
+): Scene {
+  return {
+    id,
+    title,
+    fixtures: {
+      status: {
+        paletteHotkey: 'Ctrl+Alt+Space',
+        maskingMode: o.masking ?? 'restore',
+        aiTargetName: 'Claude'
+      },
+      items: PALETTE_ITEMS,
+      preview: tryPreview(),
+      shown: {
+        mode: 'confirm',
+        draft: {
+          templateId: 'meeting-notes',
+          name: '회의록 정리',
+          group: '회의',
+          selection: { length: TRY_MEMO.length },
+          clipboardLength: 0,
+          defaultSource: 'selection',
+          targets: allAiTargets([]).map((t) => ({ id: t.id, name: t.name })),
+          target: 'claude',
+          masking: o.masking ?? 'restore',
+          maskingTip: o.maskingTip
+        }
+      }
+    },
+    render: () => <ConfirmStage keys={o.keys} />
+  }
+}
+
+/** 팔레트 창에 확인 화면을 띄우고, keys가 있으면 그린 뒤 화면에 키를 보낸다(사람이 Tab을 누른 것처럼) */
+function ConfirmStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
+  useEffect(() => {
+    const timers = keys.map((code, i) =>
+      setTimeout(
+        () =>
+          document.activeElement?.dispatchEvent(
+            new KeyboardEvent('keydown', { key: code, code, bubbles: true, cancelable: true })
+          ),
+        600 + i * 150
+      )
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [keys])
+  return (
+    <div
+      style={{
+        width: 720,
+        height: 460,
+        background: 'linear-gradient(135deg, #22355E 0%, #3B4F86 55%, #6A5B9A 100%)'
+      }}
+    >
+      <Palette />
+    </div>
+  )
+}
+
+const CONFIRM_SCENES: Scene[] = [
+  confirmScene('confirm-tip', '확인 화면: 가명 처리 첫 안내(바꾸고 되돌리기, 처음 한 번)', {
+    maskingTip: true
+  }),
+  confirmScene(
+    'confirm-tip-focused',
+    '확인 화면: 가명 처리 첫 안내에 Tab으로 초점(Enter·Space로 닫기)',
+    { maskingTip: true, keys: ['Tab', 'Tab'] }
+  ),
+  confirmScene('confirm-tip-remove', '확인 화면: 가명 처리 첫 안내(바꾸기만)', {
+    maskingTip: true,
+    masking: 'remove'
+  }),
+  confirmScene('confirm-seen', '확인 화면: 안내를 이미 봄(미리 보기 그대로)', { maskingTip: false })
+]
+
 export const SCENES: Scene[] = [
   {
     id: 'status-bar',
@@ -1260,35 +1503,11 @@ export const SCENES: Scene[] = [
   ),
   ...WORKSPACE_SCENES,
   ...NATURAL_SCENES,
-  onboardingScene('onboarding-1', '첫 실행 안내 1: 창 배치 따라 해 보기(저장 전)', { hotkey: 'Alt+`' }),
-  onboardingScene('onboarding-1-saved', '첫 실행 안내 1: 창 배치 저장 뒤(팔레트로 불러오기 안내)', { hotkey: 'Alt+`', workspace: { id: 'ws-try', name: '업무 배치', windows: 5 } }),
-  onboardingScene('onboarding-1-done', '첫 실행 안내 1: 불러오기를 마침(해냈어요)', { hotkey: 'Alt+`', workspace: { id: 'ws-try', name: '업무 배치', windows: 5 }, restored: true }),
-  onboardingScene('onboarding-2', '첫 실행 안내 2: 단축키(Ctrl+Alt+Space는 다른 앱이 씀)', { step: 2 }),
-  onboardingScene('onboarding-3', '첫 실행 안내 3: AI·가명 처리(쉬운 말과 예시)·자동 실행', { step: 3, hotkey: 'Alt+`' }),
-  onboardingScene('onboarding-4', '첫 실행 안내 4: 프롬프트 따라 해 보기', { step: 4, hotkey: 'Alt+`' }),
-  onboardingScene('onboarding-5', '첫 실행 안내 5: 말랑 메이트 소개', { step: 5, hotkey: 'Alt+`' })
+  ...ONBOARDING_SCENES,
+  ...TRY_SCENES,
+  ...CONFIRM_SCENES
 ]
 
-/** 첫 실행 안내 장면: 640×560 창 하나 */
-function onboardingScene(id: string, title: string, start: Partial<OnboardingState>): Scene {
-  return {
-    id,
-    title,
-    fixtures: {
-      settings: settingsSnapshot(),
-      hotkeyCandidates: [
-        { acc: 'Alt+Space', available: true, suggested: false },
-        { acc: 'Ctrl+Alt+Space', available: false, suggested: false },
-        { acc: 'Alt+`', available: true, suggested: true }
-      ]
-    },
-    render: () => (
-      <div style={{ width: 640, height: 560, overflow: 'hidden', position: 'relative' }}>
-        <Onboarding start={start} />
-      </div>
-    )
-  }
-}
 
 /** 설정 창 미리 보기용 상태(가상 값만: example.com 주소, 가상 모니터 이름) */
 function settingsSnapshot(): SettingsSnapshot {

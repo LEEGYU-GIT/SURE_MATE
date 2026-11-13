@@ -22,8 +22,8 @@ const PACK_IDS = ['cmd.glossary-export', 'cmd.glossary-import']
 const BAR_IDS = ['cmd.bar-shape']
 /** 말랑 메이트 명령은 바 모양 명령 바로 뒤 */
 const PET_IDS = ['cmd.pet-visible', 'cmd.pet-control', 'cmd.pet-sleep']
-/** 설정 열기 명령은 바 모양 명령 다음 */
-const SETTINGS_IDS = ['cmd.open-settings']
+/** 설정 열기 명령은 바 모양 명령 다음, 그 뒤에 30초 따라 해 보기 */
+const SETTINGS_IDS = ['cmd.open-settings', 'cmd.open-try']
 
 it('프롬프트는 템플릿 순서대로 prompt:<id>, 부제는 설명, 키워드는 별칭과 그룹, 명령은 뒤에', () => {
   const items = buildPaletteItems([t({ id: 'b', name: '나', description: '설명', aliases: ['별칭'], group: '회의' }), t({ id: 'a', name: '가' })], commands, {

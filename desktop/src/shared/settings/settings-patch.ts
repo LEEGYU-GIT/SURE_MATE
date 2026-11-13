@@ -26,12 +26,24 @@ export interface SettingsPatch {
   ai?: { defaultTarget?: string; custom?: AiTarget[] }
   bar?: Partial<Omit<BarSettings, 'positions'>>
   pet?: Partial<Omit<PetSettings, 'controlHotkey'>>
+  /** 처음 한 번 보이는 안내를 봤는지(확인 화면의 가명 처리 예시) */
+  tips?: Partial<Settings['tips']>
 }
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const TOP_KEYS = ['palette', 'launchAtLogin', 'onboardingDone', 'masking', 'ai', 'bar', 'pet'] as const
+const TOP_KEYS = [
+  'palette',
+  'launchAtLogin',
+  'onboardingDone',
+  'masking',
+  'ai',
+  'bar',
+  'pet',
+  'tips'
+] as const
+const TIP_KEYS = ['maskingExampleSeen'] as const
 const MASKING_KEYS = ['mode', 'categories', 'internalDomains', 'ttlHours', 'removeLabels'] as const
 const AI_KEYS = ['defaultTarget', 'custom'] as const
 const BAR_KEYS = ['shape', 'edge', 'monitor', 'pinnedPrompts', 'autoHide', 'opacity', 'wikiCardMs', 'wikiCardWidth'] as const
@@ -87,6 +99,20 @@ export function validateSettingsPatch(raw: unknown, cur: Settings): { ok: true; 
   if (raw.pet !== undefined) {
     if (!isObj(raw.pet)) errors.push('말랑 메이트 설정의 형식이 맞지 않아요')
     else validatePet(raw.pet, patch, errors, unknownKeys)
+  }
+  if (raw.tips !== undefined) {
+    if (!isObj(raw.tips)) errors.push('안내 설정의 형식이 맞지 않아요')
+    else {
+      unknownKeys(raw.tips, TIP_KEYS, 'tips.')
+      const tips: NonNullable<SettingsPatch['tips']> = {}
+      for (const k of TIP_KEYS) {
+        const v = raw.tips[k]
+        if (v === undefined) continue
+        if (typeof v !== 'boolean') errors.push(`tips.${k} 값은 켬·끔이어야 해요`)
+        else tips[k] = v
+      }
+      patch.tips = tips
+    }
   }
   return errors.length ? { ok: false, errors } : { ok: true, patch }
 }
@@ -275,5 +301,6 @@ export function applySettingsPatch(cur: Settings, p: SettingsPatch): Settings {
   if (p.ai) next.ai = { ...next.ai, ...p.ai }
   if (p.bar) next.bar = { ...next.bar, ...p.bar }
   if (p.pet) next.pet = { ...next.pet, ...p.pet }
+  if (p.tips) next.tips = { ...next.tips, ...p.tips }
   return next
 }
