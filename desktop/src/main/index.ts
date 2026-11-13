@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { optimizer } from '@electron-toolkit/utils'
-import { app, dialog, shell as electronShell, globalShortcut, screen, type Tray } from 'electron'
+import {
+  app,
+  dialog,
+  shell as electronShell,
+  globalShortcut,
+  powerMonitor,
+  screen,
+  type Tray
+} from 'electron'
 import builtinGlossary from '../../resources/glossary.json'
 import builtinIntents from '../../resources/intents.json'
 import builtinPrompts from '../../resources/prompts.json'
@@ -12,6 +20,7 @@ import type { WikiCardView } from '../shared/flyout/flyout-content'
 import { IPC, type OnboardingProgress, type ShownPayload } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import { parseGlossaryPack } from '../shared/glossary/pack'
+import { petAwayLine } from '../shared/pet/pet-copy'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode, PaletteItem } from '../shared/types'
@@ -52,6 +61,7 @@ import { createNaturalService } from './natural/natural-service'
 import { createPhraseStore } from './natural/phrase-store'
 import { createUsageStore } from './natural/usage-store'
 import { notify } from './notify'
+import { createAwayWatch, type AwayWatch } from './pet/away-watch'
 import { electronPetEnv } from './pet/pet-env'
 import { handOffForCapture } from './pet/pet-focus'
 import { createPetRuntime, type PetRuntime } from './pet/pet-runtime'
@@ -138,6 +148,8 @@ let hotkeys: HotkeyManager | null = null
 let barRuntime: BarRuntime | null = null
 /** 말랑 메이트(바 다음에 만든다). 시작하지 못했거나 앱을 끝낸 뒤에는 null(바·팔레트·트레이는 그대로 동작) */
 let petRuntime: PetRuntime | null = null
+/** Ttree 이석 미리 알림(2026-11-13). 앱이 준비되면(powerMonitor) 펫 다음에 만들고, 앱을 끝낼 때 멈춘다 */
+let awayWatch: AwayWatch | null = null
 /** 팔레트 위키와 위키 카드의 설명 복사(앱이 준비되면 만든다) */
 let glossaryRuntime: GlossaryRuntime | null = null
 /** 선택 텍스트 위키 카드(조회 단축키, 카드의 [클립보드 글로 찾기]) */
@@ -186,6 +198,8 @@ function applySettings(next: Settings): void {
   shell?.refresh()
   barRuntime?.refresh()
   petRuntime?.refresh()
+  // 이석 미리 알림을 켜고 끄거나 기준을 바꾸면 바로 다시 본다(펫이 새 설정을 읽은 뒤)
+  awayWatch?.refresh()
   settingsService.changed()
 }
 
@@ -446,6 +460,43 @@ function startPet(): void {
 }
 
 /**
+ * Ttree 이석 미리 알림(2026-11-13): Ttree가 설치된 PC에서 입력 없는 시간이 이석 기준 몇 분 전에 닿으면 말랑 메이트 말풍선으로
+ * (펫이 보일 수 없으면 Windows 알림으로) 알린다. Ttree와 같은 값(powerMonitor)을 읽기만 하고 입력을 흉내 내지 않는다.
+ * powerMonitor는 앱이 준비된 뒤에 쓸 수 있다. 바깥 값이 던지면 away-watch가 종류마다 한 번 away.error로 남기고
+ * 안전한 값(입력 있음·잠금 아님·Ttree 없음)으로 본다
+ */
+function startAwayWatch(): void {
+  awayWatch = createAwayWatch({
+    settings: () => settings.pet,
+    // 파일 몇 개가 있는지만 본다(앱을 지우거나 새로 깔면 다음 확인에 바뀐다)
+    installed: () => appCommands.installed().includes('ttree'),
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    locked: () => powerMonitor.getSystemIdleState(1) === 'locked',
+    petWarn: (text, holdMs) => petRuntime?.controller.awayWarn(text, holdMs) ?? false,
+    petClear: () => petRuntime?.controller.awayClear(),
+    notify,
+    log,
+    timers: realTimers
+  })
+  awayWatch.start()
+}
+
+/** 이석 미리 알림 미리 보기의 말풍선이 떠 있는 시간 */
+const AWAY_PREVIEW_HOLD_MS = 6000
+
+/**
+ * 이석 미리 알림 미리 보기(설정 창 말랑 메이트 탭 '미리 보기', 개발 명령 dev.awayPreview): 입력 없이 기다리지 않고 지금 한 번 보인다.
+ * 미리 보기라 알림을 꺼 두었거나 Ttree가 없어도 보인다. 문구는 실제 알림과 같고(지금 미리 알림 분), 펫이 보일 수 없으면
+ * Windows 알림으로 같은 문구를 띄운다. 기록에는 어느 쪽으로 알렸는지만 남기고 문구는 남기지 않는다
+ */
+function previewAwayWarn(): void {
+  const text = petAwayLine(settings.pet.awayLeadMin)
+  const byPet = petRuntime?.controller.awayWarn(text, AWAY_PREVIEW_HOLD_MS) ?? false
+  if (!byPet) notify(text)
+  log('away.preview', { via: byPet ? 'pet' : 'notify' })
+}
+
+/**
  * 위키 카드를 바 옆 펼침 창에 띄운다(바를 꺼 두었으면 커서가 있는 모니터의 바 쪽 가장자리 위쪽, 설계 §9).
  * 바와 펼침 창을 시작하지 못했으면 팔레트를 위키 범위(?)로 연다.
  */
@@ -471,6 +522,11 @@ async function runItem(id: string): Promise<void> {
   if (id === 'dev.imeLogger') {
     hidePalette({ restoreFocus: false })
     openImeLoggerWindow()
+    return
+  }
+  if (id === 'dev.awayPreview') {
+    hidePalette({ restoreFocus: true })
+    previewAwayWarn()
     return
   }
   if (isDevCommand(id)) return runDevCommand(id)
@@ -953,6 +1009,7 @@ if (!app.requestSingleInstanceLock()) {
         else void electronShell.openPath(join(userData, 'logs'))
       },
       openOnboarding: () => openSettings('/onboarding'),
+      awayPreview: previewAwayWarn,
       finishOnboarding: async () => {
         await changeSettings((cur) => ({ ...cur, onboardingDone: true }))
         log('onboarding.finish', {})
@@ -1061,6 +1118,14 @@ if (!app.requestSingleInstanceLock()) {
       log('pet.startError', { error: errorText(e) })
     }
 
+    // 이석 미리 알림은 펫 다음에 시작한다(펫이 없으면 Windows 알림으로 알린다)
+    try {
+      startAwayWatch()
+    } catch (e) {
+      awayWatch = null
+      log('away.startError', { error: errorText(e) })
+    }
+
     // 첫 실행 안내(설계 문서 §6). 끝내지 않았으면 다음 실행에도 띄운다
     if (shouldShowOnboarding(settings)) openSettings('/onboarding')
   })
@@ -1072,6 +1137,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()
+    // 이석 미리 알림 확인을 멈춘다(펫보다 먼저: 끝낸 펫 대신 Windows 알림을 띄우지 않게)
+    awayWatch?.dispose()
+    awayWatch = null
     // 펫의 동작 고리·커서 조회·맨 앞 유지 타이머와 화면·앱 일 구독을 멈춘다(바보다 먼저: 펫이 바에 이어져 있다)
     petRuntime?.dispose()
     petRuntime = null

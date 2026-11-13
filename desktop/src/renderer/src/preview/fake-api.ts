@@ -295,6 +295,7 @@ function fakeSettingsApi(fx: FakeFixtures, ws: ReturnType<typeof fakeWorkspaces>
     },
     openFile: () => {},
     openOnboarding: () => {},
+    awayPreview: () => {},
     onboardingCandidates: async () => fx.hotkeyCandidates,
     finishOnboarding: async () => {},
     onOnboardingProgress: () => () => {},

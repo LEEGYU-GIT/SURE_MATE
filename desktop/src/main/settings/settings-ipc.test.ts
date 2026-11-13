@@ -40,6 +40,7 @@ function deps(): SettingsIpcDeps & { [k: string]: unknown } {
     },
     openFile: vi.fn(),
     openOnboarding: vi.fn(),
+    awayPreview: vi.fn(),
     finishOnboarding: vi.fn(async () => {}),
     saveOnboardingWorkspace: vi.fn(async (name: string) => ({ ok: true as const, id: 'ws-1', name, windows: 3, skipped: { minimized: 0, overLimit: 0 } })),
     templates: {
@@ -79,6 +80,8 @@ it('설정 창이 보낸 요청만 처리한다(다른 창은 빈 결과·거절
   expect(d.hotkeys.startRecording).not.toHaveBeenCalled()
   send(IPC.settingsOpenFile, PALETTE, 'settings')
   expect(d.openFile).not.toHaveBeenCalled()
+  send(IPC.settingsAwayPreview, PALETTE)
+  expect(d.awayPreview).not.toHaveBeenCalled()
   // 설정 창이 없으면(닫힘) 아무 창도 받지 않는다
   d.contentsId = () => null
   expect(await handle(IPC.settingsGet, SETTINGS)).toBeNull()
@@ -140,6 +143,17 @@ it('파일 열기는 settings·logs만, 온보딩 열기·끝내기·후보', as
   await handle(IPC.onboardingFinish, SETTINGS)
   expect(d.finishOnboarding).toHaveBeenCalled()
   expect(await handle(IPC.onboardingCandidates, SETTINGS)).toEqual([])
+})
+
+it('이석 미리 알림 미리 보기: 설정 창이 보낸 것만 넘기고 같이 온 값은 쓰지 않는다(문구·분은 main이 지금 설정으로 정한다)', () => {
+  send(IPC.settingsAwayPreview, SETTINGS)
+  send(IPC.settingsAwayPreview, SETTINGS, '<가짜 문구>', 999)
+  expect(d.awayPreview).toHaveBeenCalledTimes(2)
+  expect(d.awayPreview).toHaveBeenLastCalledWith()
+  send(IPC.settingsAwayPreview, PALETTE)
+  d.contentsId = () => null
+  send(IPC.settingsAwayPreview, SETTINGS)
+  expect(d.awayPreview).toHaveBeenCalledTimes(2)
 })
 
 it('온보딩의 워크스페이스 저장은 설정 창만, 이름은 앞뒤 공백을 떼고 1~40자 글자만', async () => {

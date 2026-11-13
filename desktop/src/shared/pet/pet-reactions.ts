@@ -9,10 +9,11 @@ export const REACTION_MS = 1500
 
 /**
  * 앱 일에 대한 펫 반응: 표정·소품·한 번 도는 움직임을 holdMs 동안 덮어쓰고 말풍선을 띄운다(자세는 그대로).
- * nudge는 앱 일이 아니라 쉬어 가기 말(2026-11-13)이고 같은 말풍선·시간·닫기 규칙을 쓴다
+ * nudge는 앱 일이 아니라 쉬어 가기 말(2026-11-13)이고 같은 말풍선·시간·닫기 규칙을 쓴다.
+ * away는 Ttree 이석 미리 알림(2026-11-13)이고 같은 말풍선·닫기 규칙에 시간만 이석 기준까지(4초 이상)다
  */
 export interface PetReaction {
-  kind: 'celebrate' | 'warn' | 'hop' | 'note' | 'nudge'
+  kind: 'celebrate' | 'warn' | 'hop' | 'note' | 'nudge' | 'away'
   face: PetFace
   props: PetProp[]
   cue: 'hop' | null
@@ -60,4 +61,13 @@ export function reactionFor(
 /** 쉬어 가기 말: 웃는 얼굴과 폴짝 한 번(있는 움직임), 말풍선 4초(누르면 닫힘). 새 소품·긴 움직임은 없다 */
 export function nudgeReaction(text: string): PetReaction {
   return { kind: 'nudge', face: 'happy', props: [], cue: 'hop', bubble: text, holdMs: BUBBLE_MS }
+}
+
+/**
+ * Ttree 이석 미리 알림: 경고와 같은 걱정 얼굴·주황 느낌표에 폴짝 한 번(졸던 펫이 깨어 알린다). 말풍선은 이석 기준까지
+ * holdMs 동안 떠 있고(4초보다 짧거나 숫자가 아니면 4초) 누르면 닫힌다. 입력이 돌아오면 런타임(away-watch)이 닫는다
+ */
+export function awayReaction(text: string, holdMs: number): PetReaction {
+  const hold = Number.isFinite(holdMs) ? Math.max(BUBBLE_MS, holdMs) : BUBBLE_MS
+  return { kind: 'away', face: 'worried', props: ['alert'], cue: 'hop', bubble: text, holdMs: hold }
 }

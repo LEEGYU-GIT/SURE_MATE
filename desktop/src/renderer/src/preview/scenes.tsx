@@ -1578,9 +1578,27 @@ export const SCENES: Scene[] = [
   settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
   settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
   settingsScene('settings-pet', '설정: 말랑 메이트(기본값, 조종 단축키 없음)', 'pet'),
-  settingsScene('settings-pet-nudge', '설정: 말랑 메이트 아래쪽(기본값: 쉬어 가기 말 걸기 켬, 간격 60분)', 'pet', undefined, { scrollEnd: true }),
+  // 셋째 구역(반응과 말풍선)으로 내린다: 끝까지 내리면 그 아래 Ttree 이석 미리 알림 구역에 가려 쉬어 가기 말 행이 안 보인다
+  settingsScene('settings-pet-nudge', '설정: 말랑 메이트 반응과 말풍선(기본값: 쉬어 가기 말 걸기 켬, 간격 60분)', 'pet', undefined, {
+    scrollTo: '#settings-panel section:nth-of-type(3)'
+  }),
   settingsScene('settings-pet-set', '설정: 말랑 메이트(숨김·크게·차분·졸기 15분·움직임 줄이기, 조종 단축키 Ctrl+Alt+P)', 'pet', petSet),
-  settingsScene('settings-pet-set-end', '설정: 말랑 메이트 아래쪽(말풍선 끔 → 쉬어 가기 말은 지금 말하지 않음, 간격 30분, 조종 단축키 Ctrl+Alt+P 쓰는 중)', 'pet', petSet, { scrollEnd: true }),
+  settingsScene(
+    'settings-pet-set-end',
+    '설정: 말랑 메이트 아래쪽(말풍선 끔 → 쉬어 가기 말은 지금 말하지 않음, 간격 30분, 이석 미리 알림 끔, 조종 단축키 Ctrl+Alt+P 쓰는 중)',
+    'pet',
+    petSet,
+    { scrollEnd: true }
+  ),
+  settingsScene(
+    'settings-pet-away',
+    '설정: 말랑 메이트 아래쪽(Ttree 이석 미리 알림 기본값 20분 기준·2분 전, 말풍선 끔 → Windows 알림으로 알린다는 경고 글)',
+    'pet',
+    (s) => {
+      s.settings.pet = { ...s.settings.pet, bubbles: false }
+    },
+    { scrollEnd: true }
+  ),
   settingsScene(
     'settings-pet-taken',
     '설정: 말랑 메이트 아래쪽(조종 단축키를 다른 앱이 써서 등록 못 함)',
@@ -1627,9 +1645,25 @@ function settingsSnapshot(): SettingsSnapshot {
   }
 }
 
-/** 말랑 메이트 탭 미리 보기: 기본값을 모두 바꾼 상태(숨김, 크게, 차분, 졸기 15분, 말풍선 끔, 쉬어 가기 말 간격 30분, 움직임 줄이기, 조종 단축키 있음) */
+/**
+ * 말랑 메이트 탭 미리 보기: 기본값을 모두 바꾼 상태(숨김, 크게, 차분, 졸기 15분, 말풍선 끔, 쉬어 가기 말 간격 30분,
+ * 이석 미리 알림 끔(30분 기준·5분 전), 움직임 줄이기, 조종 단축키 있음)
+ */
 function petSet(s: SettingsSnapshot): void {
-  s.settings.pet = { ...s.settings.pet, visible: false, size: 72, activity: 'calm', sleepAfterMin: 15, bubbles: false, nudgeEveryMin: 30, reduceMotion: true, controlHotkey: 'Ctrl+Alt+P' }
+  s.settings.pet = {
+    ...s.settings.pet,
+    visible: false,
+    size: 72,
+    activity: 'calm',
+    sleepAfterMin: 15,
+    bubbles: false,
+    nudgeEveryMin: 30,
+    awayWarn: false,
+    awayAfterMin: 30,
+    awayLeadMin: 5,
+    reduceMotion: true,
+    controlHotkey: 'Ctrl+Alt+P'
+  }
   s.hotkeys['pet-control'] = { acc: 'Ctrl+Alt+P', registered: true }
 }
 
