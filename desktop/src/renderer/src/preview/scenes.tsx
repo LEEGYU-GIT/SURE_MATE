@@ -1386,6 +1386,34 @@ const TRY_SCENES: Scene[] = [
   )
 ]
 
+/**
+ * 확인 화면 배치 점검용 미리 보기(2026-11-13 최종 검토): 앞에 지시문을 lead줄 두고 넣은 글을 형광펜으로, 바뀐 이름을 가명으로 표시한다.
+ * names개만큼 서로 다른 바뀐 이름(가상 이름)을 만든다(넓은 창에서 바뀌는 이름 칩이 많을 때, 좁은 창에서 미리 보기가 길 때)
+ */
+function layoutPreview(o: { lead: number; names: number }): PromptPreview {
+  const head = Array.from({ length: o.lead }, (_, i) => `${i + 1}. 회의록 형식을 지키고 입력에 없는 내용은 만들지 마세요(지시문 ${i + 1}번째 줄).`).join('\n') + '\n\n입력:\n'
+  const names = Array.from({ length: o.names }, (_, i) => ({ original: `가상고객${i + 1}`, replacement: `CLIENT_${String.fromCharCode(65 + i)}` }))
+  const body = names.map((n, i) => `- ${n.replacement} 브레이크 시험 결과 공유 ${i + 1}건`).join('\n')
+  const text = head + body
+  const ranges = names.map((n): [number, number] => {
+    const at = text.indexOf(n.replacement)
+    return [at, at + n.replacement.length]
+  })
+  return {
+    text,
+    truncated: false,
+    inputLength: body.length,
+    warnings: [],
+    notes: [],
+    highlights: [[head.length, text.length]],
+    masking: {
+      mode: 'restore',
+      items: names.map((n, i) => ({ key: `client:${i}`, category: 'client', original: n.original, replacement: n.replacement, count: 1, enabled: true }))
+    },
+    maskRanges: ranges
+  }
+}
+
 /** 따라 해 보기 메모를 회의록 정리 템플릿에 넣고 IP·경로를 바꾼 미리 보기(처음 설치: 가명 사전이 비어 회사 이름은 그대로) */
 function tryPreview(): PromptPreview {
   const head = '다음 회의 메모를 정리해 주세요.\n\n'
@@ -1427,11 +1455,14 @@ function tryPreview(): PromptPreview {
   }
 }
 
-/** 확인 화면 장면: 팔레트 창(720×460, SCENE_W=720 SCENE_H=460으로 찍는다)에 회의록 정리의 확인 화면 */
+/**
+ * 확인 화면 장면: 팔레트 창에 회의록 정리의 확인 화면. 기본은 좁은 창 720×460(SCENE_W=720 SCENE_H=460으로 찍는다),
+ * wide면 캡처 창 크기 그대로(기본 SCENE_W=1040 SCENE_H=760, 두 칸 배치). input이면 직접 입력(선택한 글 없음)
+ */
 function confirmScene(
   id: string,
   title: string,
-  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[] }
+  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[]; wide?: boolean; input?: boolean; preview?: PromptPreview }
 ): Scene {
   return {
     id,
@@ -1443,16 +1474,16 @@ function confirmScene(
         aiTargetName: 'Claude'
       },
       items: PALETTE_ITEMS,
-      preview: tryPreview(),
+      preview: o.preview ?? tryPreview(),
       shown: {
         mode: 'confirm',
         draft: {
           templateId: 'meeting-notes',
           name: '회의록 정리',
           group: '회의',
-          selection: { length: TRY_MEMO.length },
+          selection: { length: o.input ? 0 : TRY_MEMO.length },
           clipboardLength: 0,
-          defaultSource: 'selection',
+          defaultSource: o.input ? 'input' : 'selection',
           targets: allAiTargets([]).map((t) => ({ id: t.id, name: t.name })),
           target: 'claude',
           masking: o.masking ?? 'restore',
@@ -1460,12 +1491,16 @@ function confirmScene(
         }
       }
     },
-    render: () => <ConfirmStage keys={o.keys} />
+    render: () => <ConfirmStage keys={o.keys} size={o.wide ? CONFIRM_WIDE : CONFIRM_NARROW} />
   }
 }
 
+const CONFIRM_NARROW = { width: 720, height: 460 }
+/** 넓은 장면은 캡처 창 크기를 그대로 쓴다(기본 1040×760으로 찍고, 작은 노트북은 992×504처럼 창 크기를 바꿔 찍는다) */
+const CONFIRM_WIDE = { width: '100vw', height: '100vh' }
+
 /** 팔레트 창에 확인 화면을 띄우고, keys가 있으면 그린 뒤 화면에 키를 보낸다(사람이 Tab을 누른 것처럼) */
-function ConfirmStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
+function ConfirmStage({ keys = [], size }: { keys?: string[]; size: { width: number | string; height: number | string } }): React.JSX.Element {
   useEffect(() => {
     const timers = keys.map((code, i) =>
       setTimeout(
@@ -1481,8 +1516,8 @@ function ConfirmStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
   return (
     <div
       style={{
-        width: 720,
-        height: 460,
+        width: size.width,
+        height: size.height,
         background: 'linear-gradient(135deg, #22355E 0%, #3B4F86 55%, #6A5B9A 100%)'
       }}
     >
@@ -1504,7 +1539,20 @@ const CONFIRM_SCENES: Scene[] = [
     maskingTip: true,
     masking: 'remove'
   }),
-  confirmScene('confirm-seen', '확인 화면: 안내를 이미 봄(미리 보기 그대로)', { maskingTip: false })
+  confirmScene('confirm-seen', '확인 화면: 안내를 이미 봄(미리 보기 그대로)', { maskingTip: false }),
+  confirmScene('confirm-wide', '확인 화면 넓은 창 1040×760: 왼쪽 설정 칸, 오른쪽 미리 보기(선택한 글)', { maskingTip: false, wide: true }),
+  confirmScene('confirm-wide-input', '확인 화면 넓은 창 1040×760: 직접 입력(위 약 1/3)과 미리 보기', { maskingTip: false, wide: true, input: true }),
+  confirmScene('confirm-wide-tip', '확인 화면 넓은 창 1040×760: 가명 처리 첫 안내가 오른쪽 칸을 덮음', { maskingTip: true, wide: true }),
+  confirmScene('confirm-narrow-input', '확인 화면 좁은 창 720×460: 직접 입력과 미리 보기(미리 보기 최소 높이)', { maskingTip: false, input: true }),
+  confirmScene('confirm-wide-many', '확인 화면 넓은 창: 바뀌는 이름 8개(이름 목록만 스크롤하고 AI 줄은 그 아래, 992×504로도 찍는다)', {
+    maskingTip: false,
+    wide: true,
+    preview: layoutPreview({ lead: 4, names: 8 })
+  }),
+  confirmScene('confirm-narrow-long', '확인 화면 좁은 창 720×460: 지시문 26줄 뒤의 넣은 글(미리 보기가 제 안에서 스크롤해 넣은 글을 보인다)', {
+    maskingTip: false,
+    preview: layoutPreview({ lead: 26, names: 2 })
+  })
 ]
 
 export const SCENES: Scene[] = [

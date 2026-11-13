@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { allAiTargets, sanitizeAiTargets } from '../../shared/ai-targets'
 import { ALL_CATEGORIES, type MaskCategory } from '../../shared/masking/types'
 import { sanitizeBarSettings } from '../../shared/bar/bar-settings'
+import { parseConfirmSize } from '../../shared/palette-rules'
 import { sanitizePetSettings } from '../../shared/pet/pet-settings'
 import {
   DEFAULT_SETTINGS,
@@ -55,10 +56,11 @@ export function mergeSettings(raw: unknown): Settings {
   const custom = sanitizeAiTargets(ai.custom)
   const targetIds = allAiTargets(custom).map((t) => t.id)
   const d = DEFAULT_SETTINGS
+  const confirmSize = parseConfirmSize(palette.confirmSize)
   return {
     version: 1,
     hotkeys: { palette: str(hotkeys.palette, d.hotkeys.palette), lookup: str(hotkeys.lookup, d.hotkeys.lookup) },
-    palette: { display: oneOf(palette.display, PALETTE_DISPLAYS, d.palette.display) },
+    palette: { display: oneOf(palette.display, PALETTE_DISPLAYS, d.palette.display), ...(confirmSize ? { confirmSize } : {}) },
     launchAtLogin: bool(r.launchAtLogin, d.launchAtLogin),
     masking: {
       mode: oneOf(masking.mode, SETTING_MASKING_MODES, d.masking.mode),

@@ -8,7 +8,8 @@ import type { MaskingMode } from '../types'
 export interface Settings {
   version: 1
   hotkeys: { palette: string; lookup: string }
-  palette: { display: PaletteDisplay }
+  /** display: 팔레트를 띄울 모니터. confirmSize: 확인 화면을 끌어서 바꾼 크기(DIP, 없으면 기본 1040×760, 2026-11-13) */
+  palette: { display: PaletteDisplay; confirmSize?: { width: number; height: number } }
   launchAtLogin: boolean
   /**
    * 가명 처리(설계 문서 §8): 전체 기본 모드, 분류별 켜기/끄기, 사내 도메인, 대응표 보관 시간,

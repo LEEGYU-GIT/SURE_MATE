@@ -31,6 +31,13 @@ it('빼기 모드 표기는 올바른 것만 남긴다(알려진 분류, 1~20자
   expect(mergeSettings({}).masking.removeLabels).toEqual({})
 })
 
+it('확인 화면 크기(palette.confirmSize): 정상 값은 남기고, 없거나 깨진 값은 빼서 기본 크기로 연다', () => {
+  expect(mergeSettings({ palette: { display: 'primary', confirmSize: { width: 1200.6, height: 820 } } }).palette).toEqual({ display: 'primary', confirmSize: { width: 1201, height: 820 } })
+  expect(mergeSettings({}).palette).toEqual({ display: 'cursor' })
+  expect(mergeSettings({ palette: { confirmSize: { width: -5, height: 820 } } }).palette).toEqual({ display: 'cursor' })
+  expect(mergeSettings({ palette: { confirmSize: 'big' } }).palette).toEqual({ display: 'cursor' })
+})
+
 it('파일이 없으면 기본값', async () => {
   expect(await loadSettings(dir)).toEqual(DEFAULT_SETTINGS)
 })
