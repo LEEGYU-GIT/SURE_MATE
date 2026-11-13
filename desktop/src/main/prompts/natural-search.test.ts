@@ -14,6 +14,7 @@ import { HIDE_WORKSPACE_ID, withHideWorkspace } from '../../shared/workspace/bui
 import { monitorFingerprint } from '../../shared/workspace/monitors'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { testWorkspace } from '../../shared/workspace/test-workspaces'
+import { appCommandItems } from '../apps/app-commands'
 import { workspacePaletteItems } from '../workspace/workspace-items'
 import { buildPaletteItems } from './palette-items'
 
@@ -44,8 +45,10 @@ const workspaces = workspacePaletteItems(
   ],
   monitorFingerprint([P, L])
 )
-// 펫 명령은 M6을 합치며 들어왔다(petVisible: true). 워크스페이스 항목은 "지금 배치 저장"(cmd.workspace-save)과 위 세 개
-const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge', petVisible: true, workspaces })
+// 펫 명령은 M6을 합치며 들어왔다(petVisible: true). 워크스페이스 항목은 "지금 배치 저장"(cmd.workspace-save)과 위 세 개.
+// 사내 메신저·Ttree 열기는 두 앱이 설치된 PC로 본다(2026-11-13)
+const apps = appCommandItems(['messenger', 'ttree'])
+const items = buildPaletteItems(templates, [], { maskingMode: 'restore', glossary: [...glossary, ...userTerms], barShape: 'edge', petVisible: true, workspaces, apps })
 const index = buildPaletteIndex(items)
 const pack = parseIntentPack(builtinIntents).pack!
 const NOW = Date.parse('2026-11-11T09:00:00.000Z')
@@ -54,7 +57,7 @@ const search = (q: string, c: SearchContext = ctx): ReturnType<typeof searchPale
 const top = (q: string, c?: SearchContext): string | undefined => search(q, c).items[0]?.id
 
 /**
- * 문장 표(설계 §13 완료 기준 "문장 40개 이상의 표로 Vitest를 돌려 모두 맨 위 후보가 맞는다"). 51줄.
+ * 문장 표(설계 §13 완료 기준 "문장 40개 이상의 표로 Vitest를 돌려 모두 맨 위 후보가 맞는다"). 63줄.
  * 정확도·평가·결과 줄은 원형 유지 규칙을 지킨다: 원형을 버리거나 감점이 없으면 '정확'(u-exact)이,
  * 1음절 어간을 허용하면 '평균'(u-mean)·'결함 리포트'가 맨 위로 온다.
  */
@@ -109,7 +112,19 @@ const TABLE: [sentence: string, top: string][] = [
   ['정확도', 'wiki:u-accuracy'],
   ['평가', 'wiki:hara'],
   ['결과', 'wiki:str'],
-  ['ghldmlfhr wjdflgownj', 'prompt:meeting-notes']
+  ['ghldmlfhr wjdflgownj', 'prompt:meeting-notes'],
+  ['메신저 열어줘', 'cmd.open-messenger'],
+  ['사내 메신저 띄워줘', 'cmd.open-messenger'],
+  ['쪽지', 'cmd.open-messenger'],
+  ['휴가 신청', 'cmd.open-ttree'],
+  ['연차 신청해줘', 'cmd.open-ttree'],
+  ['근무 시간', 'cmd.open-ttree'],
+  ['근무시간 보여줘', 'cmd.open-ttree'],
+  ['Ttree 열어줘', 'cmd.open-ttree'],
+  ['퇴근', 'cmd.open-ttree'],
+  ['이석 사유', 'prompt:ttree-worklog'],
+  ['근무 기록 정리해줘', 'prompt:ttree-worklog'],
+  ['Ttree 기록으로 주간보고 써줘', 'prompt:ttree-worklog']
 ]
 
 it('기본 자료가 모두 읽힌다(시험 전제)', () => {
@@ -285,10 +300,10 @@ function withFakeTerms(): NonNullable<typeof bigSet> {
 }
 
 // 이름이 '속도'로 시작하는 시험은 vitest.config.ts의 speed 묶음이 다른 시험이 모두 끝난 뒤 따로 잰다(CPU를 나눠 쓰지 않게)
-it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 51개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
+it('속도(설계 §16 "용어 2,000개에서 검색 갱신 50ms 이내"): 시험 용어 2,000개를 더해 문장 표 63개를 5번씩 잰 문장당 평균의 중앙값이 50ms 미만', () => {
   const { big, bigIndex } = withFakeTerms()
   const run = (q: string): void => void searchPalette(big, q, bigIndex, ctx)
-  expect(TABLE).toHaveLength(51)
+  expect(TABLE).toHaveLength(63)
   for (const [sentence] of TABLE) run(sentence) // 데우기 한 번
   const total = new Array<number>(TABLE.length).fill(0)
   for (let round = 0; round < 5; round++) {
