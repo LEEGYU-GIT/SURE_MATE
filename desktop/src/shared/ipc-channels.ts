@@ -149,6 +149,8 @@ export const IPC = {
   /** 설정 창 → main(send): settings.json·로그 폴더를 기본 프로그램으로 */
   settingsOpenFile: 'settings:open-file',
   settingsOpenOnboarding: 'settings:open-onboarding',
+  /** 설정 창 → main(send): 말랑 메이트 탭 '미리 보기' — 이석 미리 알림을 지금 한 번 보인다(알림을 꺼 두었거나 Ttree가 없어도) */
+  settingsAwayPreview: 'settings:away-preview',
   onboardingCandidates: 'onboarding:candidates',
   onboardingFinish: 'onboarding:finish',
   /** main → 온보딩: 따라 해 보기가 진행됐다(OnboardingProgress: 회의록 프롬프트 실행, 워크스페이스 불러오기) */
@@ -340,6 +342,8 @@ export interface SettingsApi {
   hotkeySet(id: SettingsHotkeyId, acc: string | null): Promise<HotkeySetResult>
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
+  /** 이석 미리 알림 미리 보기: main이 지금 한 번 알린다(말랑 메이트 말풍선, 보일 수 없으면 Windows 알림). 꺼 두었거나 Ttree가 없어도 보인다 */
+  awayPreview(): void
   onboardingCandidates(): Promise<HotkeyCandidate[]>
   finishOnboarding(): Promise<void>
   /** 따라 해 보기가 진행됐다(회의록 정리 프롬프트 실행, 워크스페이스 불러오기). 돌려받은 함수로 그만 듣는다 */

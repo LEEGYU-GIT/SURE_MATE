@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_PET_SETTINGS, PET_NUDGE_MINUTES, sanitizePetSettings, WALK_SPEED } from './pet-settings'
+import { DEFAULT_PET_SETTINGS, PET_AWAY_LEAD_MINUTES, PET_AWAY_MINUTES, PET_NUDGE_MINUTES, sanitizePetSettings, WALK_SPEED } from './pet-settings'
 
 it('기본값과 걷는 속도', () => {
   expect(DEFAULT_PET_SETTINGS).toEqual({
@@ -11,6 +11,9 @@ it('기본값과 걷는 속도', () => {
     reactions: true,
     nudges: true,
     nudgeEveryMin: 60,
+    awayWarn: true,
+    awayAfterMin: 20,
+    awayLeadMin: 2,
     controlHotkey: null,
     reduceMotion: false
   })
@@ -21,11 +24,26 @@ it('쉬어 가기 말(2026-11-13): 켬·끔과 간격 30·45·60·90분. 예전 
   expect(PET_NUDGE_MINUTES).toEqual([30, 45, 60, 90])
   // 쉬어 가기 말 전의 설정 파일
   const old = { visible: false, size: 72, activity: 'calm', sleepAfterMin: 10, bubbles: true, reactions: false, controlHotkey: 'Ctrl+Alt+P', reduceMotion: true }
-  expect(sanitizePetSettings(old)).toEqual({ ...old, nudges: true, nudgeEveryMin: 60 })
+  expect(sanitizePetSettings(old)).toEqual({ ...old, nudges: true, nudgeEveryMin: 60, awayWarn: true, awayAfterMin: 20, awayLeadMin: 2 })
   for (const m of PET_NUDGE_MINUTES) expect(sanitizePetSettings({ nudgeEveryMin: m }).nudgeEveryMin).toBe(m)
   for (const bad of [0, 50, 61, 120, '60', 60.5, null]) expect(sanitizePetSettings({ nudgeEveryMin: bad }).nudgeEveryMin, String(bad)).toBe(60)
   expect(sanitizePetSettings({ nudges: false }).nudges).toBe(false)
   expect(sanitizePetSettings({ nudges: 'no' }).nudges).toBe(true)
+})
+
+it('이석 미리 알림(2026-11-13): 켬·끔, 기준 10·15·20·30분, 미리 1·2·3·5분 전. 예전 파일(필드 없음)과 틀린 값은 기본값(켬, 20분, 2분 전)', () => {
+  expect(PET_AWAY_MINUTES).toEqual([10, 15, 20, 30])
+  expect(PET_AWAY_LEAD_MINUTES).toEqual([1, 2, 3, 5])
+  const old = sanitizePetSettings({ nudges: false, nudgeEveryMin: 30 })
+  expect(old).toMatchObject({ awayWarn: true, awayAfterMin: 20, awayLeadMin: 2 })
+  for (const m of PET_AWAY_MINUTES) expect(sanitizePetSettings({ awayAfterMin: m }).awayAfterMin).toBe(m)
+  for (const m of PET_AWAY_LEAD_MINUTES) expect(sanitizePetSettings({ awayLeadMin: m }).awayLeadMin).toBe(m)
+  for (const bad of [0, 5, 25, 60, '20', 20.5, null]) expect(sanitizePetSettings({ awayAfterMin: bad }).awayAfterMin, String(bad)).toBe(20)
+  for (const bad of [0, 4, 10, '2', 2.5, null]) expect(sanitizePetSettings({ awayLeadMin: bad }).awayLeadMin, String(bad)).toBe(2)
+  expect(sanitizePetSettings({ awayWarn: false }).awayWarn).toBe(false)
+  expect(sanitizePetSettings({ awayWarn: 'no' }).awayWarn).toBe(true)
+  // 미리 알림은 늘 기준보다 짧다(가장 짧은 기준 10분 > 가장 긴 미리 알림 5분)
+  expect(Math.min(...PET_AWAY_MINUTES)).toBeGreaterThan(Math.max(...PET_AWAY_LEAD_MINUTES))
 })
 
 it('undefined는 기본값과 같다', () => {

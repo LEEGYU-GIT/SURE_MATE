@@ -18,7 +18,9 @@ export const DEV_COMMAND_ITEMS: PaletteItem[] = [
   { id: 'dev.listWindows', group: 'command', title: '개발: 창 목록', keywords: ['window', 'dev'] },
   { id: 'dev.moveToOtherMonitor', group: 'command', title: '개발: 직전 창을 다른 모니터 왼쪽 절반으로', keywords: ['monitor', 'dev'] },
   { id: 'dev.pasteTest', group: 'command', title: '개발: 붙여넣기 시험', keywords: ['paste', 'dev'] },
-  { id: 'dev.clipboardExcludeTest', group: 'command', title: '개발: 클립보드 기록 제외 시험', keywords: ['clipboard', 'dev'] }
+  { id: 'dev.clipboardExcludeTest', group: 'command', title: '개발: 클립보드 기록 제외 시험', keywords: ['clipboard', 'dev'] },
+  // 스모크 시험·시연용: 입력 없이 기다리지 않고 이석 미리 알림을 지금 보인다. 펫·설정이 index.ts에 있어 dev.imeLogger처럼 runItem이 처리한다
+  { id: 'dev.awayPreview', group: 'command', title: '개발: 이석 미리 알림 보기', keywords: ['이석', 'away', 'dev'] }
 ]
 
 const fmt = (r: Rect): string => `${r.x},${r.y} ${r.width}×${r.height}`

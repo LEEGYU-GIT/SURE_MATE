@@ -32,6 +32,7 @@ const settings: SettingsApi = {
   hotkeySet: (id, acc) => ipcRenderer.invoke(IPC.settingsHotkeySet, id, acc),
   openFile: (which) => ipcRenderer.send(IPC.settingsOpenFile, which),
   openOnboarding: () => ipcRenderer.send(IPC.settingsOpenOnboarding),
+  awayPreview: () => ipcRenderer.send(IPC.settingsAwayPreview),
   onboardingCandidates: () => ipcRenderer.invoke(IPC.onboardingCandidates),
   finishOnboarding: () => ipcRenderer.invoke(IPC.onboardingFinish),
   // 받은 진행은 화면(onboarding-state)이 다시 확인한다

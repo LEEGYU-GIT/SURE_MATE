@@ -3,10 +3,14 @@ import { BAR_LIMITS, type BarSettings } from '../bar/bar-settings'
 import { ALL_CATEGORIES, type MaskCategory } from '../masking/types'
 import {
   PET_ACTIVITIES,
+  PET_AWAY_LEAD_MINUTES,
+  PET_AWAY_MINUTES,
   PET_LIMITS,
   PET_NUDGE_MINUTES,
   PET_SIZES,
   type PetActivity,
+  type PetAwayLeadMin,
+  type PetAwayMin,
   type PetNudgeMin,
   type PetSettings,
   type PetSize
@@ -58,10 +62,26 @@ const AI_KEYS = ['defaultTarget', 'custom'] as const
 const BAR_KEYS = ['shape', 'edge', 'monitor', 'pinnedPrompts', 'autoHide', 'opacity', 'wikiCardMs', 'wikiCardWidth'] as const
 const BAR_SHAPES = ['edge', 'capsule', 'off'] as const
 const BAR_EDGES = ['left', 'right'] as const
-/** 켬·끔 펫 필드와 오류 글에 쓰는 이름(설정 창의 행 이름) */
-const PET_SWITCHES = { visible: '보이기', bubbles: '말풍선', reactions: '반응', nudges: '쉬어 가기 말 걸기', reduceMotion: '움직임 줄이기' } as const
+/** 켬·끔 펫 필드와 오류 글에 쓰는 이름(설정 창의 행 이름. 이석 미리 알림만 구역 이름) */
+const PET_SWITCHES = {
+  visible: '보이기',
+  bubbles: '말풍선',
+  reactions: '반응',
+  nudges: '쉬어 가기 말 걸기',
+  awayWarn: '이석 미리 알림',
+  reduceMotion: '움직임 줄이기'
+} as const
 /** controlHotkey는 알려진 키지만 이 길로 받지 않는다(아래에서 까닭을 따로 알린다) */
-const PET_KEYS = [...(Object.keys(PET_SWITCHES) as (keyof typeof PET_SWITCHES)[]), 'size', 'activity', 'sleepAfterMin', 'nudgeEveryMin', 'controlHotkey'] as const
+const PET_KEYS = [
+  ...(Object.keys(PET_SWITCHES) as (keyof typeof PET_SWITCHES)[]),
+  'size',
+  'activity',
+  'sleepAfterMin',
+  'nudgeEveryMin',
+  'awayAfterMin',
+  'awayLeadMin',
+  'controlHotkey'
+] as const
 
 const idText = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max
 const intIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
@@ -288,6 +308,15 @@ function validatePet(p: Obj, patch: SettingsPatch, errors: string[], unknownKeys
   if (p.nudgeEveryMin !== undefined) {
     if (!PET_NUDGE_MINUTES.includes(p.nudgeEveryMin as PetNudgeMin)) errors.push(`쉬어 가기 말 간격은 ${PET_NUDGE_MINUTES.join('·')}분 가운데 하나예요`)
     else out.nudgeEveryMin = p.nudgeEveryMin as PetNudgeMin
+  }
+  // Ttree 이석 미리 알림(2026-11-13): 설정 창이 보이는 선택지와 같은 분만 받는다
+  if (p.awayAfterMin !== undefined) {
+    if (!PET_AWAY_MINUTES.includes(p.awayAfterMin as PetAwayMin)) errors.push(`이석 기준은 ${PET_AWAY_MINUTES.join('·')}분 가운데 하나예요`)
+    else out.awayAfterMin = p.awayAfterMin as PetAwayMin
+  }
+  if (p.awayLeadMin !== undefined) {
+    if (!PET_AWAY_LEAD_MINUTES.includes(p.awayLeadMin as PetAwayLeadMin)) errors.push(`미리 알림은 ${PET_AWAY_LEAD_MINUTES.join('·')}분 전 가운데 하나예요`)
+    else out.awayLeadMin = p.awayLeadMin as PetAwayLeadMin
   }
   patch.pet = out
 }

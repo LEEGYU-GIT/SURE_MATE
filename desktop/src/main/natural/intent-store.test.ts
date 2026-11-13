@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import builtin from '../../../resources/intents.json'
 import { parseIntentPack } from '../../shared/natural/intent-pack'
 import { readJsonFile } from '../files/atomic-write'
-import { createIntentCache, ensureUserIntents, INTENTS_FILE } from './intent-store'
+import { BUILTIN_INTENTS_FINGERPRINTS, createIntentCache, ensureUserIntents, INTENTS_FILE, intentsFingerprint } from './intent-store'
 
 // 읽는 사이에 편집기가 저장을 끝내는 경우를 흉내 내려고 감싼다(기본은 실제 동작 그대로)
 vi.mock('../files/atomic-write', async (importOriginal) => {
@@ -150,4 +150,30 @@ it('ensureUserIntents는 없을 때만 기본 목록을 쓰고 두 번째는 덮
   await writeFile(path(), 'mine')
   await ensureUserIntents(dir, builtin)
   expect(await readFile(path(), 'utf8')).toBe('mine')
+})
+
+it('지금 기본 목록의 지문이 BUILTIN_INTENTS_FINGERPRINTS에 있다(기본 목록을 바꾸면 새 지문을 더한다)', () => {
+  expect(BUILTIN_INTENTS_FINGERPRINTS.has(intentsFingerprint(builtin))).toBe(true)
+})
+
+it('고치지 않은 기본 목록 사본(단어 목록 열기가 만든 것)은 기본 목록(builtin)으로 읽고 알리지 않는다', async () => {
+  await ensureUserIntents(dir, builtin)
+  const onErrors = vi.fn()
+  expect(await createIntentCache(dir, builtin, onErrors).state()).toEqual({ pack: base, source: 'builtin', errors: [] })
+  expect(onErrors).not.toHaveBeenCalled()
+})
+
+it('예전 판(11-11, 프로그램 열기 규칙 전) 사본도 지금 기본 목록으로 읽어 새 규칙을 쓴다. 한 글자라도 고친 사본은 사용자 목록', async () => {
+  const old = { ...builtin, intents: builtin.intents.filter((r) => r.id !== 'messenger' && r.id !== 'ttree') }
+  expect(intentsFingerprint(old)).toBe('ab2c8c808852beb10492b7c85adf224838ffdab8876f9b8c79636e293f74df2f')
+  // BOM과 다른 들여쓰기로 저장해도 내용이 같으면 같은 사본이다
+  await writeFile(path(), '﻿' + JSON.stringify(old, null, 4))
+  const s = await createIntentCache(dir, builtin, vi.fn()).state()
+  expect(s.source).toBe('builtin')
+  expect(s.pack.intents.map((r) => r.id)).toContain('ttree')
+  // 사용자가 군말 하나를 더한 사본: 그 목록을 그대로 쓴다(새 규칙 없음)
+  await writeFile(path(), JSON.stringify({ ...old, fillers: [...old.fillers, '음'] }))
+  const edited = await createIntentCache(dir, builtin, vi.fn()).state()
+  expect(edited.source).toBe('user')
+  expect(edited.pack.intents.map((r) => r.id)).not.toContain('ttree')
 })
