@@ -34,6 +34,11 @@ function WriteSettings {
   $s | Add-Member -Force -NotePropertyName palette -NotePropertyValue ([pscustomobject]@{ display = 'primary' })
   # 첫 실행 안내 창이 시험 창의 포커스를 가져가지 않게
   $s | Add-Member -Force -NotePropertyName onboardingDone -NotePropertyValue $true
+  # 이석 미리 알림 미리 보기(b2)를 펫 말풍선으로 보이게 말랑 메이트를 보이고 말풍선을 켠다(나머지 펫 설정은 그대로)
+  $pet = if ($s.pet) { $s.pet } else { New-Object psobject }
+  $pet | Add-Member -Force -NotePropertyName visible -NotePropertyValue $true
+  $pet | Add-Member -Force -NotePropertyName bubbles -NotePropertyValue $true
+  $s | Add-Member -Force -NotePropertyName pet -NotePropertyValue $pet
   New-Item -ItemType Directory -Force $dir | Out-Null
   $s | ConvertTo-Json -Depth 8 | Set-Content -Path $settings -Encoding utf8
 }

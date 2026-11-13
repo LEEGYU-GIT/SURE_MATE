@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { AppEvent } from '../../shared/app-events'
 import { PET_TIMING } from '../../shared/pet/pet-behavior'
-import { PET_CONTROL_GUIDE, petAwayLine } from '../../shared/pet/pet-copy'
+import { PET_CONTROL_GUIDE, petAwayCountdownLine, petAwayLine } from '../../shared/pet/pet-copy'
 import {
   bubbleHop,
   bubbleSlot,
@@ -3928,5 +3928,144 @@ describe('Ttree 이석 미리 알림(2026-11-13): 언제 알릴지는 away-watch
       cueSeq: 0
     })
     expect(bubble(t)?.text).toBe(AWAY_TEXT)
+  })
+
+  describe('awayUpdate: 기준 30초 전부터 초 세기(2026-11-13)는 떠 있는 알림의 글만 바꾼다', () => {
+    const C30 = petAwayCountdownLine(30)
+    const C29 = petAwayCountdownLine(29)
+
+    it('seq·얼굴·소품·폴짝(cue)·반응 시간은 그대로이고 바뀐 글만 한 번 보낸다. 타이머를 늘리지 않고 기록하지 않는다', () => {
+      const t = make()
+      t.c.start()
+      expect(t.c.awayWarn(C30, 30_000)).toBe(true)
+      const before = t.c.view()!
+      const timers = vi.getTimerCount()
+      vi.advanceTimersByTime(1_000)
+      t.window.send.mockClear()
+      expect(t.c.awayUpdate(C29)).toBe(true)
+      expect(t.window.send).toHaveBeenCalledTimes(1)
+      expect(t.window.send.mock.lastCall![0]).toEqual({
+        ...before,
+        bubble: { ...before.bubble!, text: C29 }
+      })
+      expect(look(t)).toEqual(before.look)
+      expect(bubble(t)).toMatchObject({ seq: 1, text: C29 })
+      expect(mode(t)).toBe('idle')
+      expect(vi.getTimerCount()).toBe(timers)
+      // 같은 글이면 보내지 않는다
+      t.window.send.mockClear()
+      expect(t.c.awayUpdate(C29)).toBe(true)
+      expect(t.window.send).not.toHaveBeenCalled()
+      // 반응 시간을 다시 시작하지 않는다: awayWarn이 잡은 30초(이석 기준)에 닫힌다
+      vi.advanceTimersByTime(29_000 - 1)
+      expect(bubble(t)?.text).toBe(C29)
+      vi.advanceTimersByTime(1)
+      expect(bubble(t)).toBeNull()
+      expect(look(t)).toMatchObject({ face: 'normal', props: ['sunglasses'] })
+      expect(reacts(t)).toEqual([])
+      expect(JSON.stringify(t.log.mock.calls)).not.toContain('초 뒤')
+    })
+
+    it('바 꼭대기에 앉아 있거나 움직임 줄이기여도 글만 바꾼다(자세·cue 그대로)', () => {
+      const s = make()
+      s.c.start()
+      untilMode(s, 'sit')
+      s.c.awayWarn(C30, 30_000)
+      expect(s.c.awayUpdate(C29)).toBe(true)
+      expect(look(s)).toMatchObject({ pose: 'sit', face: 'worried', cueSeq: 1 })
+      expect(bubble(s)?.text).toBe(C29)
+
+      const r = make({ settings: { reduceMotion: true } })
+      r.c.start()
+      r.c.awayWarn(C30, 30_000)
+      expect(r.c.awayUpdate(C29)).toBe(true)
+      expect(look(r)).toMatchObject({ face: 'worried', cue: null, cueSeq: 0 })
+    })
+
+    it('클릭 판정은 옛 사각형으로 이어 가다가(통과로 바뀌지 않는다) 렌더러가 다시 잰 사각형으로 바꾼다', () => {
+      const t = make()
+      t.c.start()
+      t.c.awayWarn(C30, 30_000)
+      const r = reportBubble(t)
+      const win = t.c.status().window!
+      t.env.cursor = { x: win.x + r.x + 90, y: win.y + r.y + 20 }
+      vi.advanceTimersByTime(150)
+      expect(lastIgnore(t)).toBe(false)
+      t.window.setIgnoreMouse.mockClear()
+      t.c.awayUpdate(C29)
+      vi.advanceTimersByTime(150)
+      expect(t.window.setIgnoreMouse).not.toHaveBeenCalled()
+      // 다시 잰 말풍선이 커서 왼쪽에서 끝나면 그 사각형으로 판정한다
+      t.c.bubbleRect({ x: r.x + 100, y: r.y, width: 80, height: r.height })
+      vi.advanceTimersByTime(150)
+      expect(lastIgnore(t)).toBe(true)
+      // 바뀐 말풍선도 누르면 닫힌다
+      t.c.bubbleClick()
+      expect(bubble(t)).toBeNull()
+    })
+
+    it('이석 알림이 떠 있지 않으면(없음·앱 반응·쉬어 가기 말·조종 안내·닫힘·시간 끝) false이고 아무것도 바꾸지 않는다', () => {
+      const t = make()
+      t.c.start()
+      t.window.send.mockClear()
+      expect(t.c.awayUpdate(C29)).toBe(false)
+      expect(t.window.send).not.toHaveBeenCalled()
+      t.c.react(UNMASKED)
+      expect(t.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(t)).toMatchObject({ seq: 1, text: '원래 이름으로 되돌렸어요.' })
+
+      const n = make()
+      n.c.start()
+      n.c.nudge(NUDGE_LINE)
+      expect(n.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(n)?.text).toBe(NUDGE_LINE)
+
+      const k = make()
+      k.c.start()
+      k.c.awayWarn(C30, 30_000)
+      k.c.startControl()
+      expect(k.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(k)?.text).toBe(PET_CONTROL_GUIDE)
+
+      const c = make()
+      c.c.start()
+      c.c.awayWarn(C30, 30_000)
+      c.c.awayClear()
+      expect(c.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(c)).toBeNull()
+
+      const e = make()
+      e.c.start()
+      e.c.awayWarn(C30, 4_000)
+      vi.advanceTimersByTime(4_000)
+      expect(e.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(e)).toBeNull()
+    })
+
+    it('숨김·말풍선 끔·빈 문구·끝낸 뒤면 false(빈 문구는 떠 있는 글을 그대로 둔다)', () => {
+      const h = make()
+      h.c.start()
+      h.c.awayWarn(C30, 30_000)
+      h.c.setFullscreen(true)
+      expect(h.c.awayUpdate(C29)).toBe(false)
+      h.c.setFullscreen(false)
+      expect(bubble(h)).toBeNull()
+
+      const b = make()
+      b.c.start()
+      b.c.awayWarn(C30, 30_000)
+      b.env.settings = { ...b.env.settings, bubbles: false }
+      b.c.refresh()
+      expect(b.c.awayUpdate(C29)).toBe(false)
+      expect(bubble(b)).toBeNull()
+
+      const m = make()
+      m.c.start()
+      m.c.awayWarn(C30, 30_000)
+      expect(m.c.awayUpdate('  ')).toBe(false)
+      expect(bubble(m)?.text).toBe(C30)
+      m.c.dispose()
+      expect(m.c.awayUpdate(C29)).toBe(false)
+    })
   })
 })

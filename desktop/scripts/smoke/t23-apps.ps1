@@ -48,6 +48,8 @@ public static class T23W {
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  // Alt+Tab과 같은 창 전환(앞 창에 키를 보내지 않는다). 메신저·Ttree가 앞에 있을 때 시험 창을 가져오는 데 쓴다
+  [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr h, bool altTab);
   // 키 없이 target을 앞으로: 앞 창(expected) 스레드의 입력 상태에 잠시 붙어 SetForegroundWindow를 부르고 바로 뗀다.
   // 그사이 앞 창이 바뀌었으면 아무것도 하지 않는다(부르는 쪽이 앞 창이 메신저·Ttree가 아님을 확인한 뒤 부른다)
   public static bool FocusByAttach(IntPtr target, IntPtr expected) {
@@ -149,7 +151,10 @@ function LearnPalette($show) {
   $rc = New-Object 'W+RECT'
   if (-not [W]::GetWindowRect($fg.hwnd, [ref]$rc)) { return $false }
   $s = [double]$show.scale; $b = $show.bounds
-  $ok = ([Math]::Abs(($rc.Right - $rc.Left) - $b.width * $s) -le 4 -and [Math]::Abs(($rc.Bottom - $rc.Top) - $b.height * $s) -le 4)
+  $w = $rc.Right - $rc.Left; $h = $rc.Bottom - $rc.Top
+  $r.info_palette_rect = '{0}x{1} (palette.show {2:N0}x{3:N0})' -f $w, $h, ($b.width * $s), ($b.height * $s)
+  # 창 사각형에는 보이지 않는 테두리(acrylic 창의 크기 조절 테두리)가 더해질 수 있어 48px까지 본다. 바·펫·펼침 창은 크기가 훨씬 달라 섞이지 않는다
+  $ok = ([Math]::Abs($w - $b.width * $s) -le 48 -and [Math]::Abs($h - $b.height * $s) -le 48)
   if ($ok) { $script:paletteHwnd = $fg.hwnd }
   return $ok
 }
@@ -200,6 +205,8 @@ function FocusTestWindow {
       if (SendKey 0x12 'any') { [void][W]::SetForegroundWindow($form.Handle); [void](SendKey 0x12 'any' -Up) }
     } elseif ($protected -contains (ProcName $fg.pid)) {
       [void][W]::SetForegroundWindow($form.Handle)
+      # 포커스 권한이 없으면(앞 시험이 메신저를 앞에 두고 끝남) Alt+Tab 같은 창 전환으로 가져온다. 메신저·Ttree에는 키를 보내지 않는다
+      if (-not (IsTestFg (FgNow))) { [T23W]::SwitchToThisWindow($form.Handle, $true) }
     } else {
       if (-not [T23W]::FocusByAttach($form.Handle, $fg.hwnd)) {
         # 앞 창이 없거나(전환 중, 시험 프로세스는 숨김으로 시작해 포커스 권한이 없다) 입력 연결이 안 되면 NewTestForm처럼 Alt를 눌러
@@ -225,7 +232,37 @@ function Ask([string]$text) {
   if (-not (TypeText $text)) { $script:why = 'the palette left the foreground while typing'; return $null }
   $script:typed++
   Pump 900
+  CapturePalette ('t23-before-enter-{0}' -f $script:typed)
   return $o
+}
+# Sure-Mate 창 하나(DIP 사각형, 펫 창)만 찍는다(%TEMP%\sure-mate-smoke). 다른 창·화면 전체는 찍지 않는다
+function CaptureRect([string]$name, $rect, [double]$scale) {
+  Add-Type -AssemblyName System.Drawing
+  $x = [int][Math]::Round($rect.x * $scale); $y = [int][Math]::Round($rect.y * $scale)
+  $w = [int][Math]::Round($rect.width * $scale); $h = [int][Math]::Round($rect.height * $scale)
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  try {
+    $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size $w, $h))
+    $dir = Join-Path $env:TEMP 'sure-mate-smoke'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $bmp.Save((Join-Path $dir "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $g.Dispose(); $bmp.Dispose() }
+}
+# 팔레트 창만 찍는다(판정이 틀렸을 때 입력칸과 목록을 보려고, %TEMP%\sure-mate-smoke). 다른 창·화면 전체는 찍지 않는다
+function CapturePalette([string]$name) {
+  if ($script:paletteHwnd -eq [IntPtr]::Zero) { return }
+  $rc = New-Object 'W+RECT'
+  if (-not [W]::GetWindowRect($script:paletteHwnd, [ref]$rc)) { return }
+  Add-Type -AssemblyName System.Drawing
+  $bmp = New-Object System.Drawing.Bitmap ($rc.Right - $rc.Left), ($rc.Bottom - $rc.Top)
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  try {
+    $g.CopyFromScreen($rc.Left, $rc.Top, 0, 0, $bmp.Size)
+    $dir = Join-Path $env:TEMP 'sure-mate-smoke'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $bmp.Save((Join-Path $dir "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $g.Dispose(); $bmp.Dispose() }
 }
 # 맨 위 행을 Enter로 실행한다. 이번 팔레트가 검색 화면 그대로일 때만(확인 화면에서는 누르지 않는다). Enter는 0.12초 뒤 뗀다
 # (앱은 Enter·보조키를 뗄 때까지 팔레트를 그대로 두므로 뗄 때도 팔레트가 앞에 있다)
@@ -370,6 +407,32 @@ try {
       }
     }
   } catch { StepFailed 'ttree_top' 'error_b_ttree' $_ }
+
+  # b2. 이석 미리 알림 미리 보기(개발 명령 dev.awayPreview): '이석 알림' → Enter → away.preview(via pet) → 펫 창만 찍는다
+  #     (미리 알림 문구 0.8초, 초 세기 3.4초·4.4초 무렵). 실제 입력 없는 시간·Ttree와는 상관없다
+  try {
+    $o = Ask '이석 알림'
+    $mark = LogMark
+    if (-not $o -or -not (PickTop $o)) { $r.away_preview = "skipped ($script:why)"; ClosePalette }
+    else {
+      $run = WaitLog $mark 'palette.run' { $true } 3000
+      $pv = WaitLog $mark 'away.preview' { $true } 3000
+      $r.away_preview = ($null -ne $run -and $run.id -eq 'dev.awayPreview' -and $null -ne $pv -and $pv.via -eq 'pet')
+      $scale = [double]$o.show.scale
+      $shots = @()
+      Pump 800
+      $pet = PetWindowRect $scale
+      if ($pet) {
+        foreach ($step in @(@{ name = 't23-away-1-warning'; wait = 0 }, @{ name = 't23-away-2-countdown'; wait = 2600 }, @{ name = 't23-away-3-countdown'; wait = 1000 })) {
+          if ($step.wait -gt 0) { Pump $step.wait }
+          CaptureRect $step.name $pet $scale
+          $shots += $step.name
+        }
+      }
+      $r.info_away = 'ran={0} via={1} pet_window={2} shots={3}' -f (RunText $run), $(if ($pv) { $pv.via } else { 'none' }), ($null -ne $pet), ($shots -join ',')
+      Pump 3000
+    }
+  } catch { StepFailed 'away_preview' 'error_b2_away' $_ }
 
   # c. 메신저(마지막): '메신저 열어줘' → Enter → 12초 안에 apps.open(messenger)과 앞 창 프로세스 SURESOFTMessenger.
   #    Enter를 뗀 뒤로는 키를 보내지 않는다(팔레트가 남아 있어도 닫지 않는다: run-smoke.ps1이 앱을 끝낸다)

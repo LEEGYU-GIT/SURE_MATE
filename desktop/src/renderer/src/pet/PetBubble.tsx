@@ -8,7 +8,9 @@ import {
   bubbleRect,
   keepTogether,
   splitLead,
-  tailOffset
+  spokenBubble,
+  tailOffset,
+  type SpokenBubble
 } from './bubble-box'
 
 type Bubble = NonNullable<PetView['bubble']>
@@ -22,17 +24,21 @@ export interface PetBubbleProps {
 }
 
 /**
- * 말랑 메이트 말풍선 층(설계 §14-2 "말풍선 4초, 누르면 닫힘"). 늘 그려 두는 알림 영역(role="status") 안에
- * 말풍선 하나(마지막 것)를 띄운다. 영역을 먼저 두어야 화면 읽기 프로그램이 새 문구를 읽는다.
+ * 말랑 메이트 말풍선 층(설계 §14-2 "말풍선 4초, 누르면 닫힘"). 말풍선 하나(마지막 것)를 띄우고, 늘 그려 두는 알림 영역
+ * (role="status", 화면에는 안 보임)에 그 문구를 둔다. 영역을 먼저 두어야 화면 읽기 프로그램이 새 문구를 읽는다.
+ * 알림 영역은 새 말풍선(seq)마다 한 번만 바뀐다(spokenBubble): 같은 말풍선의 글만 바뀌는 이석 초 세기(1초마다)를
+ * 숫자마다 다시 읽지 않게 한다. 보이는 말풍선은 같은 글을 두 번 읽지 않게 읽기에서 뺀다
  */
 export function PetBubble({ bubble, target, reduceMotion }: PetBubbleProps): React.JSX.Element {
+  const [spoken, setSpoken] = useState<SpokenBubble | null>(null)
+  const next = spokenBubble(spoken, bubble)
+  // 앞 그리기에서 이어 온 값을 고친다(새 말풍선·닫힘일 때만). 같은 값이면 그대로라 다시 그리지 않는다
+  if (next !== spoken) setSpoken(next)
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      className="pointer-events-none absolute inset-0"
-    >
+    <div className="pointer-events-none absolute inset-0">
+      <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {next?.text ?? ''}
+      </p>
       {bubble ? <SpeechBubble bubble={bubble} target={target} reduceMotion={reduceMotion} /> : null}
     </div>
   )
@@ -93,7 +99,8 @@ function originOf(side: SlotSide, rect: Rect, offset: number): string {
  * 흰 바탕(--white)·--ink 글자 13·외곽선 2·모서리 8, 펫 얼굴을 가리키는 꼬리. 첫 문장(상태)은 굵게.
  * 처음에는 숨긴 채 자리 왼쪽 위에 그려 크기를 재고(useLayoutEffect, 그리기 전) 너비를 가장 긴 줄에 맞춘 뒤,
  * 자리 안에 놓고 그 사각형을 main에 알린다.
- * 나타날 때만 꼬리 끝에서 200ms ease-out으로 들어오고, 새 반응이 문구를 바꾸면 그 자리에서 글만 바뀐다. 닫을 때는 움직임 없이 사라진다.
+ * 나타날 때만 꼬리 끝에서 200ms ease-out으로 들어오고, 새 반응이 문구를 바꾸거나 이석 초 세기가 숫자를 바꾸면(같은 seq)
+ * 그 자리에서 글만 바뀐다(seq로 다시 붙이지 않으므로 들어오는 움직임은 다시 돌지 않는다). 닫을 때는 움직임 없이 사라진다.
  */
 function SpeechBubble({
   bubble,
@@ -153,6 +160,7 @@ function SpeechBubble({
         maxWidth: slot.width,
         transformOrigin: rect ? originOf(side, rect, offset) : undefined
       }}
+      aria-hidden="true"
       data-side={side}
       data-reduce-motion={reduceMotion ? '' : undefined}
       onClick={() => window.sureMate.petBubbleClick()}

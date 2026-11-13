@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { AWAY } from '../../shared/pet/pet-away'
-import { petAwayLine } from '../../shared/pet/pet-copy'
+import { petAwayCountdownLine, petAwayLine } from '../../shared/pet/pet-copy'
 import { DEFAULT_PET_SETTINGS, type PetSettings } from '../../shared/pet/pet-settings'
 import { globalTimers } from '../bar/test-timers'
 import { createAwayWatch, type AwayWatch } from './away-watch'
@@ -22,6 +22,8 @@ type Env = {
   lastInput: number
   /** 펫이 말풍선으로 알릴 수 있는지 */
   pet: boolean
+  /** 떠 있는 이석 알림 말풍선 문구(가짜 펫: petWarn이 띄우고 petUpdate가 바꾸고 petClear가 닫는다) */
+  bubble: string | null
 }
 
 type Harness = {
@@ -34,6 +36,7 @@ type Harness = {
   idleSeconds: Mock<() => number>
   locked: Mock<() => boolean>
   petWarn: Mock<(text: string, holdMs: number) => boolean>
+  petUpdate: Mock<(text: string) => boolean>
   petClear: Mock<() => void>
   notify: Mock<(text: string) => void>
   log: Mock<(event: string, data: Record<string, unknown>) => void>
@@ -47,14 +50,26 @@ function make(
     installed: o.installed ?? true,
     locked: false,
     lastInput: Date.now(),
-    pet: o.pet ?? true
+    pet: o.pet ?? true,
+    bubble: null
   }
   const settings = vi.fn(() => env.settings)
   const installed = vi.fn(() => env.installed)
   const idleSeconds = vi.fn(() => Math.floor((Date.now() - env.lastInput) / 1000))
   const locked = vi.fn(() => env.locked)
-  const petWarn = vi.fn<(text: string, holdMs: number) => boolean>(() => env.pet)
-  const petClear = vi.fn<() => void>()
+  const petWarn = vi.fn<(text: string, holdMs: number) => boolean>((text) => {
+    if (!env.pet) return false
+    env.bubble = text
+    return true
+  })
+  const petUpdate = vi.fn<(text: string) => boolean>((text) => {
+    if (env.bubble === null) return false
+    env.bubble = text
+    return true
+  })
+  const petClear = vi.fn<() => void>(() => {
+    env.bubble = null
+  })
   const notify = vi.fn<(text: string) => void>()
   const log = vi.fn<(event: string, data: Record<string, unknown>) => void>()
   const w = createAwayWatch({
@@ -63,6 +78,7 @@ function make(
     idleSeconds,
     locked,
     petWarn,
+    petUpdate,
     petClear,
     notify,
     log,
@@ -79,6 +95,7 @@ function make(
     idleSeconds,
     locked,
     petWarn,
+    petUpdate,
     petClear,
     notify,
     log
@@ -107,10 +124,16 @@ describe('createAwayWatch: Ttree 이석 미리 알림(2026-11-13)의 확인 고�
     expect(logs(t, 'away.warn')).toEqual([{ via: 'pet', idleSec: 1080, afterMin: 20, leadMin: 2 }])
     expect(vi.getTimerCount()).toBe(1)
 
-    // 알린 뒤에는 2초마다 보고, 기준을 넘겨도 다시(늦게) 알리지 않는다
-    vi.advanceTimersByTime(10 * MIN)
-    expect(t.idleSeconds).toHaveBeenCalledTimes(19 + (10 * MIN) / AWAY.watchMs)
+    // 알린 뒤 초 세기(19분 30초) 전까지는 2초마다 본다
+    vi.advanceTimersByTime(90_000 - 1)
+    expect(t.idleSeconds).toHaveBeenCalledTimes(19 + 44)
     expect(t.petWarn).toHaveBeenCalledTimes(1)
+    // 기준을 넘긴 뒤에는 다시(늦게) 알리지 않고 2초마다 본다
+    vi.advanceTimersByTime(30_000 + 1)
+    const atLimit = t.idleSeconds.mock.calls.length
+    vi.advanceTimersByTime(10 * MIN)
+    expect(t.idleSeconds).toHaveBeenCalledTimes(atLimit + (10 * MIN) / AWAY.watchMs)
+    expect(t.petWarn).toHaveBeenCalledTimes(2) // 미리 알림 + 초 세기 첫 숫자
     expect(t.notify).not.toHaveBeenCalled()
     expect(t.petClear).not.toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(1)
@@ -331,7 +354,171 @@ describe('createAwayWatch: Ttree 이석 미리 알림(2026-11-13)의 확인 고�
   })
 })
 
+describe('createAwayWatch: 기준 30초 전부터 초 세기(2026-11-13 사용자 요청)', () => {
+  const count = (n: number): string => petAwayCountdownLine(n)
+
+  it('19분 30초에 첫 숫자 30을 새 말풍선(petWarn, 기준까지 30초)으로, 그다음 1초마다 29…1은 글만 바꾼다(petUpdate). 기준에서 끝난다', () => {
+    const t = make()
+    t.w.start()
+    vi.advanceTimersByTime(18 * MIN)
+    expect(t.petWarn).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(90_000 - 1)
+    expect(t.petWarn).toHaveBeenCalledTimes(1)
+    expect(t.petUpdate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(t.petWarn).toHaveBeenCalledTimes(2)
+    expect(t.petWarn).toHaveBeenLastCalledWith(count(30), 30_000)
+    expect(t.petUpdate).not.toHaveBeenCalled()
+    expect(logs(t, 'away.countdown')).toEqual([{ via: 'pet' }])
+
+    // 초 세기 동안에는 0.25초마다 보고(다음 확인은 늘 하나), 숫자가 바뀔 때만 한 번씩 바꾼다
+    const before = t.idleSeconds.mock.calls.length
+    for (let n = 29; n >= 1; n -= 1) {
+      vi.advanceTimersByTime(999)
+      expect(t.petUpdate).toHaveBeenCalledTimes(29 - n)
+      vi.advanceTimersByTime(1)
+      expect(t.petUpdate).toHaveBeenCalledTimes(30 - n)
+      expect(t.petUpdate).toHaveBeenLastCalledWith(count(n))
+      expect(t.env.bubble).toBe(count(n))
+      expect(vi.getTimerCount()).toBe(1)
+    }
+    expect(t.idleSeconds).toHaveBeenCalledTimes(before + (29 * 1000) / AWAY.tickMs)
+    expect(t.petWarn).toHaveBeenCalledTimes(2)
+    expect(t.notify).not.toHaveBeenCalled()
+    expect(logs(t, 'away.countdown')).toHaveLength(1)
+
+    // 20분(기준): 더 세지도 알리지도 않고 2초마다 본다. 말풍선은 펫의 반응 시간(기준까지)이 닫는다
+    vi.advanceTimersByTime(1000)
+    const atLimit = t.idleSeconds.mock.calls.length
+    vi.advanceTimersByTime(10 * MIN)
+    expect(t.idleSeconds).toHaveBeenCalledTimes(atLimit + (10 * MIN) / AWAY.watchMs)
+    expect(t.petUpdate).toHaveBeenCalledTimes(29)
+    expect(t.petWarn).toHaveBeenCalledTimes(2)
+    expect(t.notify).not.toHaveBeenCalled()
+    expect(t.petClear).not.toHaveBeenCalled()
+    // 문구는 기록하지 않는다
+    expect(JSON.stringify(t.log.mock.calls)).not.toContain('초 뒤')
+  })
+
+  it('초 세기 중 입력이 돌아오면 0.25초 안에 닫고 세기를 멈춘다. 다음에 이어지면 첫 숫자부터 다시 띄우고 한 번 기록한다', () => {
+    const t = make()
+    t.w.start()
+    vi.advanceTimersByTime(19 * MIN + 45_000)
+    expect(t.petUpdate).toHaveBeenLastCalledWith(count(15))
+    t.input()
+    vi.advanceTimersByTime(AWAY.tickMs - 1)
+    expect(t.petClear).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(t.petClear).toHaveBeenCalledTimes(1)
+    expect(t.env.bubble).toBeNull()
+    expect(logs(t, 'away.clear')).toEqual([{ reason: 'input' }])
+    const updates = t.petUpdate.mock.calls.length
+    // 입력 뒤 19분 30초 직전까지: 18분에 다시 미리 알림만(초 세기 없음)
+    vi.advanceTimersByTime(19 * MIN + 30_000 - 1)
+    expect(t.petUpdate).toHaveBeenCalledTimes(updates)
+    expect(t.petWarn).toHaveBeenCalledTimes(3)
+    expect(t.petWarn).toHaveBeenLastCalledWith(TEXT, 2 * MIN)
+    vi.advanceTimersByTime(1)
+    expect(t.petWarn).toHaveBeenCalledTimes(4)
+    expect(t.petWarn).toHaveBeenLastCalledWith(count(30), 30_000)
+    expect(logs(t, 'away.countdown')).toEqual([{ via: 'pet' }, { via: 'pet' }])
+  })
+
+  it('미리 알림이 Windows 알림으로 갔으면(펫이 못 보임) 숫자마다 Windows 알림을 보내지 않고, 펫이 보일 수 있게 되면 그때 띄운다', () => {
+    const t = make({ pet: false })
+    t.w.start()
+    vi.advanceTimersByTime(18 * MIN)
+    expect(t.notify).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(90_000)
+    expect(t.petWarn).toHaveBeenLastCalledWith(count(30), 30_000)
+    expect(logs(t, 'away.countdown')).toEqual([{ via: 'none' }])
+    // 떠 있는 말풍선이 없어 글을 못 바꾸면 띄우기를 다시 해 본다(못 띄워도 Windows 알림은 없다)
+    vi.advanceTimersByTime(5_000)
+    expect(t.petUpdate).toHaveBeenCalledTimes(5)
+    expect(t.petWarn).toHaveBeenCalledTimes(2 + 5)
+    expect(t.notify).toHaveBeenCalledTimes(1)
+    // 펫이 보일 수 있게 되면 다음 숫자에 띄우고(폴짝), 그다음은 글만 바꾼다
+    t.env.pet = true
+    vi.advanceTimersByTime(1_000)
+    expect(t.petWarn).toHaveBeenCalledTimes(8)
+    expect(t.petWarn).toHaveBeenLastCalledWith(count(24), 24_000)
+    vi.advanceTimersByTime(23_000)
+    expect(t.petWarn).toHaveBeenCalledTimes(8)
+    expect(t.petUpdate).toHaveBeenLastCalledWith(count(1))
+    expect(t.env.bubble).toBe(count(1))
+    expect(t.notify).toHaveBeenCalledTimes(1)
+    expect(logs(t, 'away.countdown')).toHaveLength(1)
+  })
+
+  it('말풍선이 사라지면(다른 반응·숨김 등) 다음 숫자에 다시 띄운다', () => {
+    const t = make()
+    t.w.start()
+    vi.advanceTimersByTime(19 * MIN + 35_000)
+    expect(t.petWarn).toHaveBeenCalledTimes(2)
+    t.env.bubble = null
+    vi.advanceTimersByTime(1_000)
+    expect(t.petWarn).toHaveBeenCalledTimes(3)
+    expect(t.petWarn).toHaveBeenLastCalledWith(count(24), 24_000)
+    vi.advanceTimersByTime(1_000)
+    expect(t.petWarn).toHaveBeenCalledTimes(3)
+    expect(t.petUpdate).toHaveBeenLastCalledWith(count(23))
+    expect(logs(t, 'away.countdown')).toHaveLength(1)
+  })
+
+  it('알리지 않은 채 초 세기에 닿으면(19분 40초에 켬) 첫 숫자가 알림이다: 20부터 새 말풍선, 미리 알림(away.warn)은 없다', () => {
+    const t = make({ settings: { awayWarn: false } })
+    t.w.start()
+    vi.advanceTimersByTime(19 * MIN + 40_000)
+    t.env.settings = { ...t.env.settings, awayWarn: true }
+    t.w.refresh()
+    expect(t.petWarn).toHaveBeenCalledTimes(1)
+    expect(t.petWarn).toHaveBeenCalledWith(count(20), 20_000)
+    expect(logs(t, 'away.warn')).toEqual([])
+    expect(logs(t, 'away.countdown')).toEqual([{ via: 'pet' }])
+    vi.advanceTimersByTime(1_000)
+    expect(t.petUpdate).toHaveBeenCalledWith(count(19))
+    expect(t.notify).not.toHaveBeenCalled()
+  })
+
+  it('초 세기 중 잠그거나 끄면 닫고 세기를 멈춘다', () => {
+    const l = make()
+    l.w.start()
+    vi.advanceTimersByTime(19 * MIN + 40_000)
+    l.env.locked = true
+    vi.advanceTimersByTime(AWAY.tickMs)
+    expect(l.petClear).toHaveBeenCalledTimes(1)
+    expect(logs(l, 'away.clear')).toEqual([{ reason: 'locked' }])
+    const updates = l.petUpdate.mock.calls.length
+    vi.advanceTimersByTime(MIN)
+    expect(l.petUpdate).toHaveBeenCalledTimes(updates)
+
+    const o = make()
+    o.w.start()
+    vi.advanceTimersByTime(19 * MIN + 40_000)
+    o.env.settings = { ...o.env.settings, awayWarn: false }
+    o.w.refresh()
+    expect(o.petClear).toHaveBeenCalledTimes(1)
+    expect(logs(o, 'away.clear')).toEqual([{ reason: 'off' }])
+    vi.advanceTimersByTime(MIN)
+    expect(o.petWarn).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(2) // 두 고리가 각각 다음 확인 하나
+  })
+})
+
 describe('createAwayWatch: 바깥 값이 던져도 확인은 이어 간다(종류마다 한 번 away.error)', () => {
+  it('초 세기 중 글 바꾸기가 던지면 한 번 기록하고 새 말풍선으로 띄운다(Windows 알림은 없다)', () => {
+    const t = make()
+    t.petUpdate.mockImplementation(() => {
+      throw new Error('gone')
+    })
+    t.w.start()
+    vi.advanceTimersByTime(19 * MIN + 32_000)
+    expect(errors(t)).toEqual([{ where: 'petUpdate', error: 'gone' }])
+    expect(t.petWarn).toHaveBeenCalledTimes(4) // 미리 알림, 30, 29, 28
+    expect(t.petWarn).toHaveBeenLastCalledWith(petAwayCountdownLine(28), 28_000)
+    expect(t.notify).not.toHaveBeenCalled()
+  })
+
   it('입력 없는 시간을 읽지 못하면 0(입력 있음)으로 보고 오류는 한 번만 남긴다', () => {
     const t = make()
     t.idleSeconds.mockImplementation(() => {

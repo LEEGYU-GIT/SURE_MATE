@@ -20,7 +20,7 @@ import type { WikiCardView } from '../shared/flyout/flyout-content'
 import { IPC, type OnboardingProgress, type ShownPayload } from '../shared/ipc-channels'
 import type { GlossaryEntry } from '../shared/glossary/types'
 import { parseGlossaryPack } from '../shared/glossary/pack'
-import { petAwayLine } from '../shared/pet/pet-copy'
+import { petAwayCountdownLine, petAwayLine } from '../shared/pet/pet-copy'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode, PaletteItem } from '../shared/types'
@@ -473,6 +473,8 @@ function startAwayWatch(): void {
     idleSeconds: () => powerMonitor.getSystemIdleTime(),
     locked: () => powerMonitor.getSystemIdleState(1) === 'locked',
     petWarn: (text, holdMs) => petRuntime?.controller.awayWarn(text, holdMs) ?? false,
+    // 마지막 30초 초 세기: 떠 있는 이석 알림 말풍선의 문구만 바꾼다(없으면 false)
+    petUpdate: (text) => petRuntime?.controller.awayUpdate(text) ?? false,
     petClear: () => petRuntime?.controller.awayClear(),
     notify,
     log,
@@ -481,19 +483,37 @@ function startAwayWatch(): void {
   awayWatch.start()
 }
 
-/** 이석 미리 알림 미리 보기의 말풍선이 떠 있는 시간 */
-const AWAY_PREVIEW_HOLD_MS = 6000
+/** 이석 미리 알림 미리 보기: 미리 알림 문구를 warnMs 보인 뒤 초 세기를 countFrom초부터 1초마다(실제는 기준 30초 전부터) */
+const AWAY_PREVIEW = { warnMs: 2500, countFrom: 5, tickMs: 1000 } as const
+/** 미리 보기 초 세기 타이머(다시 누르면 처음부터, 앱을 끝낼 때 지운다) */
+let awayPreviewTimers: ReturnType<typeof setTimeout>[] = []
+function stopAwayPreview(): void {
+  for (const t of awayPreviewTimers) clearTimeout(t)
+  awayPreviewTimers = []
+}
 
 /**
  * 이석 미리 알림 미리 보기(설정 창 말랑 메이트 탭 '미리 보기', 개발 명령 dev.awayPreview): 입력 없이 기다리지 않고 지금 한 번 보인다.
- * 미리 보기라 알림을 꺼 두었거나 Ttree가 없어도 보인다. 문구는 실제 알림과 같고(지금 미리 알림 분), 펫이 보일 수 없으면
- * Windows 알림으로 같은 문구를 띄운다. 기록에는 어느 쪽으로 알렸는지만 남기고 문구는 남기지 않는다
+ * 미리 보기라 알림을 꺼 두었거나 Ttree가 없어도 보인다. 문구는 실제 알림과 같고(지금 미리 알림 분), 이어서 실제 마지막 30초처럼
+ * 문구만 1초마다 바꾸는 초 세기를 5초부터 보인다(말풍선을 눌러 닫으면 멈춘다). 펫이 보일 수 없으면 Windows 알림으로 첫 문구만 띄운다.
+ * 기록에는 어느 쪽으로 알렸는지만 남기고 문구는 남기지 않는다
  */
 function previewAwayWarn(): void {
+  stopAwayPreview()
   const text = petAwayLine(settings.pet.awayLeadMin)
-  const byPet = petRuntime?.controller.awayWarn(text, AWAY_PREVIEW_HOLD_MS) ?? false
+  const holdMs = AWAY_PREVIEW.warnMs + AWAY_PREVIEW.countFrom * AWAY_PREVIEW.tickMs
+  const byPet = petRuntime?.controller.awayWarn(text, holdMs) ?? false
   if (!byPet) notify(text)
   log('away.preview', { via: byPet ? 'pet' : 'notify' })
+  if (!byPet) return
+  for (let i = 0; i < AWAY_PREVIEW.countFrom; i++) {
+    const seconds = AWAY_PREVIEW.countFrom - i
+    awayPreviewTimers.push(
+      setTimeout(() => {
+        if (!(petRuntime?.controller.awayUpdate(petAwayCountdownLine(seconds)) ?? false)) stopAwayPreview()
+      }, AWAY_PREVIEW.warnMs + i * AWAY_PREVIEW.tickMs)
+    )
+  }
 }
 
 /**
@@ -1139,6 +1159,7 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll()
     // 이석 미리 알림 확인을 멈춘다(펫보다 먼저: 끝낸 펫 대신 Windows 알림을 띄우지 않게)
     awayWatch?.dispose()
+    stopAwayPreview()
     awayWatch = null
     // 펫의 동작 고리·커서 조회·맨 앞 유지 타이머와 화면·앱 일 구독을 멈춘다(바보다 먼저: 펫이 바에 이어져 있다)
     petRuntime?.dispose()

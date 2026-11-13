@@ -62,6 +62,23 @@ export function bubbleMeasureKey(b: {
   return [b.seq, b.side, b.slot.x, b.slot.y, b.slot.width, b.slot.height, b.text].join('|')
 }
 
+/** 화면 읽기 프로그램에 알린 말풍선: 새 말풍선(seq)과 그때 문구 */
+export type SpokenBubble = { seq: number; text: string }
+
+/**
+ * 알림 영역(role="status")에 둘 문구. 새 말풍선(seq)이면 그 문구를 알리고, 같은 말풍선의 글만 바뀌면(이석 초 세기: 1초마다)
+ * 처음 문구를 그대로 둔다. 알림 영역 글이 바뀔 때마다 화면 읽기 프로그램이 문장 전체를 다시 읽기 때문이다.
+ * 말풍선이 없으면 null(비운다). 그대로 둘 때는 받은 값을 그대로 돌려준다(다시 그리지 않게)
+ */
+export function spokenBubble(
+  prev: SpokenBubble | null,
+  bubble: { seq: number; text: string } | null
+): SpokenBubble | null {
+  if (!bubble) return null
+  if (prev && prev.seq === bubble.seq) return prev
+  return { seq: bubble.seq, text: bubble.text }
+}
+
 /** 꼬리 자리: 펫 쪽 가장자리(above는 아래, left는 오른쪽, right는 왼쪽)를 따라 잰 거리. 얼굴을 가리키되 모서리를 비킨다 */
 export function tailOffset(o: {
   rect: Rect
