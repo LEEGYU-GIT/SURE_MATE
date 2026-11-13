@@ -1,7 +1,9 @@
 import {
   decidePress,
+  focusLeftOnHidden,
   HIDE_SESSION_MS,
   type HiddenWindow,
+  type HideNote,
   type HideSession,
   type HideTarget,
   pinCheck,
@@ -18,8 +20,10 @@ import {
 export interface HidePorts {
   /** 지금 앞 창(없거나 읽지 못하면 null) */
   foreground(): string | null
-  /** 그 창의 지금 상태(없어졌으면 null) */
+  /** 그 창의 지금 상태(없어졌거나 숨었으면 null. 최소화한 창은 보이는 창이다) */
   state(hwnd: string): { minimized: boolean; maximized: boolean; hung: boolean } | null
+  /** 창이 아직 있는지(IsWindow). 스스로 숨은 창(트레이로 닫은 메신저)도 있는 창이다 */
+  exists(hwnd: string): boolean
   /** 활성화 없이 최소화(ShowWindowAsync SW_SHOWMINNOACTIVE). 보내지 못했으면 false */
   minimize(hwnd: string): boolean
   /** 최소화를 푼다: 최대화였으면 최대화로(SW_SHOWMAXIMIZED), 아니면 활성화 없이(SW_SHOWNOACTIVATE) */
@@ -70,16 +74,22 @@ export interface HideCounts {
 }
 
 export interface HideController {
-  /** 지금 앞 창(감추기 직전 앞 창으로 기억한다) */
+  /** 지금 앞 창의 맨 위 소유 창(감추기 직전 앞 창으로 기억한다. 대화상자는 그 앱 창, 검토 I2) */
   front(): string | null
-  /** 바탕 화면에 포커스(최소화된 앞 창이 키 입력을 받지 않게, needsDesktopFocus) */
-  focusDesktop(): boolean
+  /**
+   * 감추기 끝의 실제 앞 창 확인(focusLeftOnHidden, 검토 I2): 키 입력이 내린 창·최소화된 창·숨은 창으로 가면 바탕 화면에 포커스를 준다.
+   * needed는 옮겨야 했는지, moved는 실제로 옮겼는지
+   */
+  settleFocus(hidden: ReadonlySet<string>): { needed: boolean; moved: boolean }
   /** 지금 누르면 할 일(감춘 기록과 지금 창 상태로, decidePress) */
   decide(): PressDecision
-  /** 내리고 확인한 뒤 감춘 기록을 새로 시작한다(carry를 이어서 기억) */
-  hide(o: { targets: readonly HideTarget[]; front: string | null; carry: readonly HiddenWindow[] }): Promise<HideCounts>
-  /** 내렸던 창을 되돌리고 감춘 기록을 지운다 */
-  unhide(d: Extract<PressDecision, { kind: 'restore' }>): Promise<{ restored: number; skipped: number; focused: boolean }>
+  /**
+   * 내리고 확인한 뒤 감춘 기록을 새로 시작한다(carry를 이어서 기억). elevated는 관리자 권한이라 고르지 않은 창 수, saved는 남길 창을
+   * 저장해 두었는지: 감출 때의 문제(HideNote)로 기록해 두었다가 되돌릴 때 알린다
+   */
+  hide(o: { targets: readonly HideTarget[]; front: string | null; carry: readonly HiddenWindow[]; elevated?: number; saved?: boolean }): Promise<HideCounts>
+  /** 내렸던 창을 되돌리고 감춘 기록을 지운다. earlier는 감출 때의 문제 */
+  unhide(d: Extract<PressDecision, { kind: 'restore' }>): Promise<{ restored: number; skipped: number; focused: boolean; earlier?: HideNote }>
   /** 지금 누르면 되돌릴 창 수(없으면 0). 팔레트·바 메뉴·설정 창 표시용 */
   restorable(): number
   /** 그 창들 가운데 지금 항상 위인 창(감추기 전에 읽어 Sure-Mate가 고정한 창과 가린다) */
@@ -123,14 +133,17 @@ export function createHideController(p: HidePorts): HideController {
     p.log('workspace.unpin', { released: release.length, dropped: total, trigger })
   }
 
+  /** 고정한 창이 아직 있는지: 숨은 창도 풀어야 하므로 보이는지가 아니라 IsWindow로만 판단한다(검토 I1) */
+  const exists = (hwnd: string): boolean => attempt(() => p.exists(hwnd), false)
+
   function release(trigger: PinTrigger): void {
     if (!pins) return
-    const r = pinRelease({ pinned: pins.pinned, alive: (h) => state(h) !== null })
+    const r = pinRelease({ pinned: pins.pinned, alive: exists })
     end(trigger, r.release, r.dropped)
     if (trigger !== 'switched') return
-    // 사용자가 고른 창: 푼 창이 보통 창 맨 위로 오므로 그 창을 다시 올린다
+    // 사용자가 고른 창(Sure-Mate 설정·팔레트 창 포함): 푼 창이 보통 창 맨 위로 오므로 그 창을 다시 올린다
     const fg = attempt(() => p.foregroundRoot(), null)
-    if (fg && !fg.own)
+    if (fg)
       void p
         .sleep(T.switchRaiseDelayMs)
         .then(() => p.raise(fg.hwnd))
@@ -139,7 +152,7 @@ export function createHideController(p: HidePorts): HideController {
 
   function tick(): void {
     if (!pins) return
-    const r = pinRelease({ pinned: pins.pinned, alive: (h) => state(h) !== null })
+    const r = pinRelease({ pinned: pins.pinned, alive: exists })
     if (r.release.length === 0) {
       end('gone', [], r.dropped)
       return
@@ -151,8 +164,13 @@ export function createHideController(p: HidePorts): HideController {
   }
 
   return {
-    front: () => attempt(() => p.foreground(), null),
-    focusDesktop: () => attempt(() => p.focusDesktop(), false),
+    front: () => attempt(() => p.foregroundRoot()?.hwnd ?? p.foreground(), null),
+
+    settleFocus(hidden) {
+      const needed = focusLeftOnHidden({ foreground: attempt(() => p.foregroundRoot(), null), hidden, state })
+      return { needed, moved: needed && attempt(() => p.focusDesktop(), false) }
+    },
+
     decide,
 
     async hide(o) {
@@ -179,7 +197,8 @@ export function createHideController(p: HidePorts): HideController {
         else if (t.elevated === false) failed++
         else elevated++
       }
-      session = startSession({ now: p.now(), front: o.front, hidden, carry: o.carry })
+      const note: HideNote = { elevated: (o.elevated ?? 0) + elevated, skipped: hung + failed, saved: o.saved ?? true }
+      session = startSession({ now: p.now(), front: o.front, hidden, carry: o.carry, note })
       return { minimized: hidden.length, elevated, hung, failed, hidden: new Set(hidden.map((w) => w.hwnd)) }
     },
 
@@ -199,6 +218,7 @@ export function createHideController(p: HidePorts): HideController {
       }
       if (shown.length > 0) await waitUntil(() => shown.every((w) => state(w.hwnd)?.minimized !== true))
       let restored = 0
+      const raised = new Set<string>()
       // 아래에서 위로 올려 감추기 전 z-순서를 되살린다(요청마다 잠깐 쉬어 비동기 요청이 차례대로 처리되게)
       for (const w of shown) {
         const s = state(w.hwnd)
@@ -208,6 +228,7 @@ export function createHideController(p: HidePorts): HideController {
           continue
         }
         attempt(() => p.raise(w.hwnd), undefined)
+        raised.add(w.hwnd)
         restored++
         await p.sleep(T.raiseGapMs)
       }
@@ -215,10 +236,11 @@ export function createHideController(p: HidePorts): HideController {
       if (d.focus !== null && state(d.focus) !== null) {
         const focus = d.focus
         await p.sleep(T.focusDelayMs)
-        attempt(() => p.raise(focus), undefined)
+        // 방금 올린 창은 다시 올리지 않는다(검토 C1: 반쯤 처리된 앞 요청 때문에 항상 위로 남을 수 있다). 포커스를 받으면 맨 위로 온다
+        if (!raised.has(focus)) attempt(() => p.raise(focus), undefined)
         focused = attempt(() => p.setForeground(focus), false)
       }
-      return { restored, skipped, focused }
+      return { restored, skipped, focused, ...(d.note ? { earlier: d.note } : {}) }
     },
 
     restorable() {

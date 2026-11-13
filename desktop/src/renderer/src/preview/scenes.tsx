@@ -1036,7 +1036,7 @@ const WS_LIST: WorkspaceListView = {
 const WS_HIDE: Workspace = {
   id: 'builtin-hide',
   name: '화면 감추기',
-  aliases: ['감추기', '숨기기', '가리기', '화면 숨기기', '화면 가리기', '창 숨기기', '창 내리기'],
+  aliases: ['감추기', '화면 숨기기', '화면 가리기'],
   hotkey: 'Ctrl+Alt+H',
   layouts: {},
   updatedAt: '2026-11-12T09:00:00.000Z'

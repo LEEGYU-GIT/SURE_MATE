@@ -42,13 +42,18 @@ export function restoreSummary(name: string, r: RestoreReport): string {
 }
 
 /**
- * 화면 감추기 알림(설정 창 결과 줄도 같다): 이름 · 내린 창 수(관리자 권한·그 밖에 내리지 못한 창 수) · 저장한 창의 배치 결과.
- * 남길 창을 저장하지 않았으면 저장하는 곳(설정)을 알린다. 다시 누름은 되돌린 창 수
+ * 화면 감추기 결과 문구. 감추기(hide)는 설정 창 결과 줄에만 보인다(2026-11-12 판정: 뒤에 선 사람이 볼 수 있어 알림을 띄우지 않는다):
+ * 이름 · 내린 창 수(관리자 권한·그 밖에 내리지 못한 창 수) · 저장한 창의 배치 결과, 남길 창을 저장하지 않았으면 저장하는 곳(설정).
+ * 다시 누름(unhide)은 알림으로도 보이며 되돌린 창 수와 감출 때의 문제(earlier)를 함께 알린다
  */
 export function hideSummary(name: string, r: RestoreReport, h: HideOutcome): string {
   if (h.kind === 'unhide') {
     const parts = [name, `내렸던 창 ${h.restored}개를 되돌렸어요`]
     if (h.skipped > 0) parts.push(`창 ${h.skipped}개는 되돌리지 못했어요`)
+    const e = h.earlier
+    if (e && e.elevated > 0) parts.push(`감출 때 관리자 권한 창 ${e.elevated}개는 내리지 못했어요`)
+    if (e && e.skipped > 0) parts.push(`감출 때 창 ${e.skipped}개는 내리지 못했어요`)
+    if (e && !e.saved) parts.push('설정에서 남길 창을 저장할 수 있어요')
     return parts.join(' · ')
   }
   const parts = [name, h.minimized > 0 ? `창 ${h.minimized}개를 내렸어요` : '내릴 창이 없어요']

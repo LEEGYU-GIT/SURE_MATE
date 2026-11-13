@@ -220,10 +220,13 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan, o?:
     let restoredFocus = false
     if (choice.target !== null) {
       const { hwnd } = choice
-      const up = attempt(() => {
-        p.raise(hwnd)
-        return true
-      }, false)
+      // 방금 맨 마지막에 올린 창이면 다시 올리지 않는다(2026-11-12 검토 C1): 반쯤 처리된 앞 요청 때문에 항상 위로 남을 수 있다
+      const up =
+        raised.at(-1) === hwnd ||
+        attempt(() => {
+          p.raise(hwnd)
+          return true
+        }, false)
       restoredFocus = choice.action === 'raise' ? up : attempt(() => p.setForeground(hwnd), false)
     }
     return {

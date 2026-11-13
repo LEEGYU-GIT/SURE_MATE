@@ -78,8 +78,9 @@ try {
   $left = @(@('phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
   $wsPath = Join-Path $appDir 'workspaces.json'
   if (Test-Path $wsPath) {
-    $wsNow = @(); try { $wsNow = @((Get-Content $wsPath -Raw -Encoding UTF8 | ConvertFrom-Json).workspaces) } catch { $wsNow = @('unreadable') }
-    if (@($wsNow | Where-Object { $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
+    $wsDoc = $null; try { $wsDoc = Get-Content $wsPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+    if (-not $wsDoc) { $left += 'workspaces.json (unreadable)' }
+    elseif (@(@($wsDoc.workspaces) | Where-Object { $_ -and $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
   }
   if ($left.Count -gt 0) { throw "t22-run.ps1로 실행한다(시작할 때 없어야 하는 파일이 있다: $($left -join ', '))" }
   $r.info_palette_hotkey = $Combo

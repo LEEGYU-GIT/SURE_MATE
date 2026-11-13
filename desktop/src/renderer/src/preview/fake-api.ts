@@ -246,8 +246,10 @@ function fakeWorkspaces(fx: FakeFixtures): {
         ...state,
         items: state.items.map((i) => {
           if (i.workspace.id !== id) return i
-          const { keepOnTop: _drop, ...rest } = i.workspace
-          return { ...i, workspace: on ? { ...rest, keepOnTop: true } : rest }
+          const workspace = { ...i.workspace }
+          if (on) workspace.keepOnTop = true
+          else delete workspace.keepOnTop
+          return { ...i, workspace }
         })
       })
       return true

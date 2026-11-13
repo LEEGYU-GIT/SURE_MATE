@@ -135,10 +135,10 @@ const plan = (steps: RestoreStep[], extra: Partial<ReadyPlan> = {}): ReadyPlan =
 const only = (calls: string[], re: RegExp): string[] => calls.filter((c) => re.test(c))
 
 describe('createRestoreRunner', () => {
-  it('보통 창: state → move → state → raise(끝에 맨 위 복원 창을 한 번 더 맨 위로)', async () => {
+  it('보통 창: state → move → state → raise(끝의 포커스 창이 방금 올린 맨 위 창이면 다시 올리지 않는다, C1)', async () => {
     const w = world({ a: win() })
     const rep = await createRestoreRunner(w.ports).run(plan([step('a')]))
-    expect(only(w.calls, /^(state|move|raise)/)).toEqual(['state:a', 'state:a', 'move:a', 'state:a', 'raise:a', 'raise:a'])
+    expect(only(w.calls, /^(state|move|raise)/)).toEqual(['state:a', 'state:a', 'move:a', 'state:a', 'raise:a'])
     expect(rep.outcomes[0]).toMatchObject({ result: 'placed', diff: 0 })
     expect(rep.placed).toBe(1)
   })
@@ -250,10 +250,10 @@ describe('createRestoreRunner', () => {
     expect(rep.restoredFocus).toBe(true)
   })
 
-  it('raise는 placed·off에만, steps 순서(끝에 맨 위 복원 창을 한 번 더 맨 위로)', async () => {
+  it('raise는 placed·off에만, steps 순서(맨 위 복원 창은 끝에 다시 올리지 않는다, C1)', async () => {
     const w = world({ a: win(), b: win({ alwaysOff: 25 }), c: win({ hung: true }), d: win() })
     await createRestoreRunner(w.ports).run(plan([step('a'), step('b'), step('c'), step('d')]))
-    expect(only(w.calls, /^raise/)).toEqual(['raise:a', 'raise:b', 'raise:d', 'raise:d'])
+    expect(only(w.calls, /^raise/)).toEqual(['raise:a', 'raise:b', 'raise:d'])
   })
 
   it('첫 이동이 30px 어긋났다 고쳐져도 maxDiff는 30', async () => {
@@ -317,7 +317,7 @@ describe('createRestoreRunner', () => {
     it('시작 때 앞 창이 워크스페이스 밖의 다른 앱 창이면 맨 위 복원 창(마지막에 올린 창)에 포커스를 주고 시작 때 창은 올리지 않는다', async () => {
       const w = world({ a: win(), b: win() }, 'messenger')
       const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]))
-      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:b', 'raise:b', 'fg:b'])
+      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:b', 'fg:b'])
       expect(w.ports.foreground()).toBe('b')
       expect(rep).toMatchObject({ focusTarget: 'workspace', restoredFocus: true })
     })
@@ -341,7 +341,7 @@ describe('createRestoreRunner', () => {
       const w = world({ a: win(), fg: win({ ignoreMove: true }) })
       const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('fg')]))
       expect(rep.outcomes.map((o) => o.result)).toEqual(['placed', 'blocked'])
-      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:a', 'fg:a'])
+      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'fg:a'])
       expect(rep).toMatchObject({ focusTarget: 'workspace', restoredFocus: true })
     })
 
@@ -365,7 +365,7 @@ describe('createRestoreRunner', () => {
     it('화면 감추기가 내린 시작 창(hidden)은 돌려줄 창이 아니다: 올린 창이 있으면 맨 위 복원 창, 없으면 아무 창도 올리지 않는다(최소화된 창에 포커스를 주지 않게)', async () => {
       const w = world({ a: win(), b: win() }, 'messenger')
       const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]), { hidden: new Set(['messenger']) })
-      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:b', 'raise:b', 'fg:b'])
+      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:b', 'fg:b'])
       expect(rep).toMatchObject({ focusTarget: 'workspace', restoredFocus: true })
 
       const none = world({ a: win({ gone: true }) }, 'messenger')

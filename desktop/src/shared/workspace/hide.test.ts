@@ -4,7 +4,7 @@ import {
   HIDE_SESSION_MS,
   hideCandidates,
   type HideSession,
-  needsDesktopFocus,
+  focusLeftOnHidden,
   pinCheck,
   pinRelease,
   pinTargets,
@@ -65,6 +65,13 @@ describe('내릴 창(hideCandidates): 설계 §11 대상 창 규칙과 같은 �
     expect(hideCandidates({ ...base, windows, keep: new Set() }).targets.map((t) => t.hwnd)).toEqual(['201'])
   })
 
+  it('시작 메뉴·검색·알림 센터·작업 전환 같은 셸 화면은 고르지 않는다(검토 M7)', () => {
+    const shell = ['Windows.UI.Core.CoreWindow', 'XamlExplorerHostIslandWindow', 'MultitaskingViewFrame', 'ForegroundStaging', 'TopLevelWindowForOverflowXamlIsland', 'NotifyIconOverflowWindow', 'Shell_InputSwitchTopLevelWindow'].map((className, i) =>
+      testWindow({ hwnd: `5${i}`, exe: 'StartMenuExperienceHost.exe', className, title: '시작', frame: { x: 0, y: 0, width: 600, height: 700 } })
+    )
+    expect(hideCandidates({ ...base, windows: [...shell, chat], keep: new Set() }).targets.map((t) => t.hwnd)).toEqual(['201'])
+  })
+
   it('최대화 상태를 함께 기억한다(되돌릴 때 최대화로)', () => {
     const r = hideCandidates({ ...base, windows: [chat, word], keep: new Set() })
     expect(r.targets).toEqual([
@@ -97,6 +104,7 @@ const session = (o: Partial<HideSession> = {}): HideSession => ({
     { hwnd: '203', maximized: false }
   ],
   front: '201',
+  note: { elevated: 1, skipped: 0, saved: false },
   ...o
 })
 const minimizedAll = (hwnd: string): { minimized: boolean } | null => ({ minimized: hwnd !== '101' })
@@ -106,7 +114,7 @@ describe('다시 누름(decidePress): 10분 안·내린 창이 그대로면 되�
     expect(decidePress({ session: null, now: T0, state: minimizedAll })).toEqual({ kind: 'hide', why: 'first', carry: [] })
   })
 
-  it('10분 안이고 내린 창이 모두 최소화 상태면 되돌리기: 아래에서 위 차례, 감추기 직전 앞 창에 포커스', () => {
+  it('10분 안이고 내린 창이 모두 최소화 상태면 되돌리기: 아래에서 위 차례, 감추기 직전 앞 창에 포커스, 감출 때의 문제(note)를 함께', () => {
     expect(decidePress({ session: session(), now: T0 + HIDE_SESSION_MS - 1, state: minimizedAll })).toEqual({
       kind: 'restore',
       windows: [
@@ -114,7 +122,8 @@ describe('다시 누름(decidePress): 10분 안·내린 창이 그대로면 되�
         { hwnd: '202', maximized: true },
         { hwnd: '201', maximized: false }
       ],
-      focus: '201'
+      focus: '201',
+      note: { elevated: 1, skipped: 0, saved: false }
     })
   })
 
@@ -125,7 +134,7 @@ describe('다시 누름(decidePress): 10분 안·내린 창이 그대로면 되�
 
   it('사라진 창은 건너뛰고 남은 창만 되돌린다. 앞 창이 사라졌으면 맨 위로 되돌릴 창에 포커스', () => {
     const state = (hwnd: string): { minimized: boolean } | null => (hwnd === '201' ? null : { minimized: true })
-    expect(decidePress({ session: session(), now: T0 + 1000, state })).toEqual({
+    expect(decidePress({ session: session(), now: T0 + 1000, state })).toMatchObject({
       kind: 'restore',
       windows: [
         { hwnd: '203', maximized: false },
@@ -164,6 +173,7 @@ describe('세션 시작(startSession): 이번에 내린 창 다음에 이어서 
     const s = startSession({
       now: T0 + 5000,
       front: '202',
+      note: { elevated: 0, skipped: 1, saved: true },
       hidden: [
         { hwnd: '202', maximized: true },
         { hwnd: '204', maximized: false }
@@ -176,6 +186,7 @@ describe('세션 시작(startSession): 이번에 내린 창 다음에 이어서 
     expect(s).toEqual({
       at: T0 + 5000,
       front: '202',
+      note: { elevated: 0, skipped: 1, saved: true },
       hidden: [
         { hwnd: '202', maximized: true },
         { hwnd: '204', maximized: false },
@@ -185,19 +196,22 @@ describe('세션 시작(startSession): 이번에 내린 창 다음에 이어서 
   })
 })
 
-describe('감춘 뒤 포커스(needsDesktopFocus)', () => {
+describe('감춘 뒤 실제 앞 창 확인(focusLeftOnHidden, 검토 I2): 키 입력이 내린 창으로 가면 바탕 화면에 포커스', () => {
   const hidden = new Set(['201', '202'])
-  it('불러오기가 포커스를 줄 창을 골랐으면(맨 위 업무 창·시작 창) 그대로', () => {
-    expect(needsDesktopFocus({ focusTarget: 'workspace', front: '201', hidden })).toBe(false)
-    expect(needsDesktopFocus({ focusTarget: 'start', front: '900', hidden })).toBe(false)
+  const state = (hwnd: string): { minimized: boolean } | null => (hwnd === '101' || hwnd === '900' ? { minimized: false } : hwnd === '203' ? { minimized: true } : null)
+  it('앞 창(맨 위 소유 창)이 보이는 업무 창이나 Sure-Mate 설정 창이면 그대로', () => {
+    expect(focusLeftOnHidden({ foreground: { hwnd: '101', own: false }, hidden, state })).toBe(false)
+    expect(focusLeftOnHidden({ foreground: { hwnd: '900', own: true }, hidden, state })).toBe(false)
   })
-  it('고른 창이 없고(저장 전·못 찾음) 감추기 직전 앞 창을 내렸으면 바탕 화면에 포커스(키 입력이 내린 창으로 가지 않게)', () => {
-    expect(needsDesktopFocus({ focusTarget: null, front: '201', hidden })).toBe(true)
-    expect(needsDesktopFocus({ focusTarget: undefined, front: '202', hidden })).toBe(true)
+  it('앞 창의 맨 위 소유 창이 내린 창이면(다른 이름으로 저장 대화상자·메신저 대화 창 포함) 바탕 화면으로', () => {
+    expect(focusLeftOnHidden({ foreground: { hwnd: '201', own: false }, hidden, state })).toBe(true)
   })
-  it('앞 창을 내리지 않았으면(Sure-Mate 설정 창 등) 그대로', () => {
-    expect(needsDesktopFocus({ focusTarget: null, front: '900', hidden })).toBe(false)
-    expect(needsDesktopFocus({ focusTarget: null, front: null, hidden })).toBe(false)
+  it('포커스를 주지 못해 앞 창이 최소화된 창·숨은 창으로 남았으면 바탕 화면으로', () => {
+    expect(focusLeftOnHidden({ foreground: { hwnd: '203', own: false }, hidden, state })).toBe(true)
+    expect(focusLeftOnHidden({ foreground: { hwnd: '777', own: true }, hidden, state })).toBe(true)
+  })
+  it('앞 창이 없으면 키 입력을 받는 창이 없어 그대로', () => {
+    expect(focusLeftOnHidden({ foreground: null, hidden, state })).toBe(false)
   })
 })
 
@@ -232,11 +246,21 @@ describe('감춘 동안 업무 창을 항상 위에 두기(옵션, 2026-11-12)',
     expect(pinCheck({ until, now: T0 + 1000, keep, foreground: { hwnd: '201', own: false } })).toBe('switched')
   })
 
-  it('살피기: 업무 창·Sure-Mate 창(팔레트·설정)·앞 창을 읽지 못함은 그대로 둔다', () => {
+  it('살피기: 시계가 거꾸로 가면(감춘 시각보다 앞) expired(검토 M2)', () => {
+    const keep = new Set(['101'])
+    const until = T0 + HIDE_SESSION_MS
+    expect(pinCheck({ until, now: T0 - 1, keep, foreground: { hwnd: '101', own: false } })).toBe('expired')
+  })
+
+  it('살피기: Sure-Mate 창(설정·팔레트)이 앞이어도 switched(검토 M6: 고정한 창이 설정 창을 덮지 않게)', () => {
+    const keep = new Set(['101'])
+    expect(pinCheck({ until: T0 + HIDE_SESSION_MS, now: T0 + 1000, keep, foreground: { hwnd: '777', own: true } })).toBe('switched')
+  })
+
+  it('살피기: 업무 창·앞 창을 읽지 못함은 그대로 둔다', () => {
     const keep = new Set(['101', '102', '103'])
     const until = T0 + HIDE_SESSION_MS
     expect(pinCheck({ until, now: T0 + 1000, keep, foreground: { hwnd: '102', own: false } })).toBeNull()
-    expect(pinCheck({ until, now: T0 + 1000, keep, foreground: { hwnd: '777', own: true } })).toBeNull()
     expect(pinCheck({ until, now: T0 + 1000, keep, foreground: null })).toBeNull()
   })
 

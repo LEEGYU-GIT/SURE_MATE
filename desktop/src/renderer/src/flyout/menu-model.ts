@@ -108,9 +108,10 @@ export const WORKSPACE_MENU_TEXT = {
 /** 워크스페이스 행의 설명: 다른 구성은 색(warn)만이 아니라 글로도 알린다(§14-4). 화면 감추기는 누르면 일어나는 일 */
 function workspaceDetail(w: Extract<FlyoutContent, { kind: 'workspace-menu' }>['workspaces'][number]): string {
   const T = WORKSPACE_MENU_TEXT
+  // 되돌릴 창이 있으면 누르면 되돌리기만 하므로 다른 모니터 구성보다 먼저 적는다(검토 M11)
+  if (w.hide && w.restorable) return T.hideRestore(w.restorable)
   if (w.otherConfig) return `${T.windows(w.windows)} · ${T.otherConfig}`
   if (!w.hide) return T.windows(w.windows)
-  if (w.restorable) return T.hideRestore(w.restorable)
   return w.windows > 0 ? T.hideKeep(w.windows) : T.hideAll
 }
 
@@ -122,7 +123,7 @@ export function workspaceMenuRows(c: Extract<FlyoutContent, { kind: 'workspace-m
     title: w.name,
     detail: workspaceDetail(w),
     checked: false,
-    tone: w.otherConfig ? 'warn' : 'normal',
+    tone: w.otherConfig && !(w.hide && w.restorable) ? 'warn' : 'normal',
     action: { type: 'workspace-run', id: w.id }
   }))
   rows.push({

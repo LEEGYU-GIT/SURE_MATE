@@ -22,8 +22,8 @@ describe('기본 워크스페이스 화면 감추기(2026-11-12 사용자 결정
     expect(isHideWorkspace('ws-qa')).toBe(false)
   })
 
-  it('별칭은 감추기·숨기기·가리기를 포함하고 별칭 제한(10개, 하나에 40자) 안이다', () => {
-    expect(HIDE_WORKSPACE_ALIASES).toEqual(expect.arrayContaining(['감추기', '숨기기', '가리기']))
+  it('별칭은 감추기·화면 숨기기·화면 가리기(다른 명령과 겹치는 숨기기·가리기·창 …은 빼고, 검토 M9)이고 별칭 제한(10개, 하나에 40자) 안이다', () => {
+    expect(HIDE_WORKSPACE_ALIASES).toEqual(['감추기', '화면 숨기기', '화면 가리기'])
     expect(HIDE_WORKSPACE_ALIASES.length).toBeLessThanOrEqual(WORKSPACE_LIMITS.aliases)
     for (const a of HIDE_WORKSPACE_ALIASES) expect(a.length).toBeLessThanOrEqual(WORKSPACE_LIMITS.alias)
   })

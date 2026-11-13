@@ -1,19 +1,32 @@
 import { describe, expect, it } from 'vitest'
 import { HIDE_SESSION_MS, type HideTarget } from '../../shared/workspace/hide'
-import { createHideController, HIDE_TIMING, type HidePorts } from './hide-runner'
+import { createHideController, type HideController, HIDE_TIMING, type HidePorts } from './hide-runner'
 
 interface Win {
   minimized: boolean
   maximized: boolean
   hung?: boolean
   gone?: boolean
+  /** 스스로 숨은 창(트레이로 닫은 메신저): IsWindow는 true, 보이는 창 상태는 null */
+  hiddenSelf?: boolean
   topmost?: boolean
   /** 최소화 요청을 무시한다(관리자 권한 창: UIPI) */
   ignoreMinimize?: boolean
 }
 
+interface FakeWorld {
+  ports: HidePorts
+  calls: string[]
+  logs: [string, Record<string, unknown>][]
+  timers: { ms: number; fn: () => void; stopped: boolean }[]
+  advance(ms: number): void
+  setFg(h: string | null): void
+  /** 살피기 타이머를 한 번 돌린다 */
+  tick(): void
+}
+
 /** 가짜 창 세계: 최소화·되돌리기는 다음 sleep 뒤에 적용된다(ShowWindowAsync처럼). fg는 앞 창(맨 위 소유 창) */
-function world(wins: Record<string, Win>, o: { fg?: string | null; own?: string[] } = {}) {
+function world(wins: Record<string, Win>, o: { fg?: string | null; own?: string[]; desktopFails?: boolean; roots?: Record<string, string> } = {}): FakeWorld {
   const calls: string[] = []
   const logs: [string, Record<string, unknown>][] = []
   let clock = 1_000_000
@@ -24,8 +37,9 @@ function world(wins: Record<string, Win>, o: { fg?: string | null; own?: string[
     foreground: () => fg,
     state: (h) => {
       const w = wins[h]
-      return !w || w.gone ? null : { minimized: w.minimized, maximized: w.maximized, hung: w.hung === true }
+      return !w || w.gone || w.hiddenSelf ? null : { minimized: w.minimized, maximized: w.maximized, hung: w.hung === true }
     },
+    exists: (h) => Boolean(wins[h]) && !wins[h].gone,
     minimize: (h) => {
       calls.push(`min:${h}`)
       const w = wins[h]
@@ -47,12 +61,14 @@ function world(wins: Record<string, Win>, o: { fg?: string | null; own?: string[
     },
     focusDesktop: () => {
       calls.push('desktop')
+      if (o.desktopFails) return false
+      fg = 'desktop'
       return true
     },
     topmost: (h) => wins[h]?.topmost === true,
     pin: (h) => void calls.push(`pin:${h}`),
     unpin: (h) => void calls.push(`unpin:${h}`),
-    foregroundRoot: () => (fg === null ? null : { hwnd: fg, own: (o.own ?? []).includes(fg) }),
+    foregroundRoot: () => (fg === null ? null : { hwnd: o.roots?.[fg] ?? fg, own: (o.own ?? []).includes(fg) }),
     sleep: async (ms) => {
       clock += ms
       while (pending.length) pending.shift()!()
@@ -94,7 +110,8 @@ describe('내리기(hide): 활성화 없이 내리고 내려간 것을 확인해
         { hwnd: 'b', maximized: true },
         { hwnd: 'a', maximized: false }
       ],
-      focus: 'a'
+      focus: 'a',
+      note: { elevated: 0, skipped: 1, saved: true }
     })
     expect(c.restorable()).toBe(2)
   })
@@ -122,8 +139,9 @@ describe('되돌리기(unhide): 아래에서 위 차례로 되살리고 올린 �
     const d = c.decide()
     if (d.kind !== 'restore') throw new Error('restore expected')
     const r = await c.unhide(d)
-    expect(w.calls).toEqual(['show:b:max', 'show:a:normal', 'raise:b', 'raise:a', 'raise:a', 'fg:a'])
-    expect(r).toEqual({ restored: 2, skipped: 0, focused: true })
+    // 앞 창(a)은 방금 맨 위로 올렸으므로 다시 올리지 않는다(검토 C1: 반쯤 처리된 요청 때문에 항상 위로 남지 않게)
+    expect(w.calls).toEqual(['show:b:max', 'show:a:normal', 'raise:b', 'raise:a', 'fg:a'])
+    expect(r).toEqual({ restored: 2, skipped: 0, focused: true, earlier: { elevated: 0, skipped: 0, saved: true } })
     expect(c.decide()).toEqual({ kind: 'hide', why: 'first', carry: [] })
   })
 
@@ -143,7 +161,7 @@ describe('되돌리기(unhide): 아래에서 위 차례로 되살리고 올린 �
 })
 
 describe('감춘 동안 업무 창을 항상 위에 두기(옵션)', () => {
-  async function pinned(o: { fg?: string | null; own?: string[] } = {}) {
+  async function pinned(o: { fg?: string | null; own?: string[] } = {}): Promise<{ w: FakeWorld; c: HideController }> {
     const w = world(
       { ws1: { minimized: false, maximized: false }, ws2: { minimized: false, maximized: false }, top: { minimized: false, maximized: false, topmost: true }, chat: { minimized: false, maximized: false } },
       o
@@ -171,12 +189,10 @@ describe('감춘 동안 업무 창을 항상 위에 두기(옵션)', () => {
     expect(only(w.calls, /^unpin:/)).toHaveLength(2)
   })
 
-  it('업무 창·Sure-Mate 창이 앞이면 그대로, 사용자가 다른 창으로 옮기면(switched) 풀고 그 창을 다시 올린다', async () => {
-    const { w } = await pinned({ fg: 'ws1', own: ['palette'] })
+  it('업무 창(원래 항상 위인 업무 창 포함)이 앞이면 그대로, 사용자가 다른 창으로 옮기면(switched) 풀고 그 창을 다시 올린다', async () => {
+    const { w } = await pinned({ fg: 'ws1' })
     w.tick()
     w.setFg('top')
-    w.tick()
-    w.setFg('palette')
     w.tick()
     expect(only(w.calls, /^unpin:/)).toEqual([])
     w.setFg('chat')
@@ -197,9 +213,9 @@ describe('감춘 동안 업무 창을 항상 위에 두기(옵션)', () => {
 
   it('사라진 고정 창은 버리고(풀지 않는다), 모두 사라지면 살피기를 멈춘다(gone)', async () => {
     const { w, c } = await pinned({ fg: 'ws1' })
-    // ws2를 닫는다
-    const state = w.ports.state
-    w.ports.state = (h) => (h === 'ws2' ? null : state(h))
+    // ws2를 닫는다(IsWindow false)
+    const exists = w.ports.exists
+    w.ports.exists = (h) => h !== 'ws2' && exists(h)
     w.tick()
     expect(only(w.calls, /^unpin:/)).toEqual([])
     c.release('quit')
@@ -207,7 +223,7 @@ describe('감춘 동안 업무 창을 항상 위에 두기(옵션)', () => {
     expect(w.logs.at(-1)).toEqual(['workspace.unpin', { released: 1, dropped: 1, trigger: 'quit' }])
 
     const again = await pinned({ fg: 'ws1' })
-    again.w.ports.state = () => null
+    again.w.ports.exists = () => false
     again.w.tick()
     expect(again.w.timers.every((t) => t.stopped)).toBe(true)
     expect(again.w.logs.at(-1)).toEqual(['workspace.unpin', { released: 0, dropped: 2, trigger: 'gone' }])
@@ -219,5 +235,59 @@ describe('감춘 동안 업무 창을 항상 위에 두기(옵션)', () => {
     await c.hide({ targets: [target('a')], front: null, carry: [] })
     expect(c.pin([], [])).toBe(0)
     expect(w.timers).toEqual([])
+  })
+})
+
+describe('검토 수정(2026-11-12)', () => {
+  it('(I1) 고정한 창이 스스로 숨어도(트레이로 닫음) 있는 창이면 풀고(숨긴 채 NOTOPMOST), 정말 사라진 창만 버린다', async () => {
+    const wins: Record<string, Win> = { ws1: { minimized: false, maximized: false }, ws2: { minimized: false, maximized: false } }
+    const w = world(wins, { fg: 'ws1' })
+    const c = createHideController(w.ports)
+    await c.hide({ targets: [], front: 'ws1', carry: [], elevated: 0, saved: true })
+    c.pin(['ws1', 'ws2'], ['ws1', 'ws2'])
+    wins.ws2.hiddenSelf = true
+    w.tick()
+    c.release('press')
+    expect(only(w.calls, /^unpin:/)).toEqual(['unpin:ws1', 'unpin:ws2'])
+    expect(w.logs.at(-1)).toEqual(['workspace.unpin', { released: 2, dropped: 0, trigger: 'press' }])
+  })
+
+  it('(I2) 감추기 직전 앞 창은 맨 위 소유 창으로 기억한다(대화상자는 그 앱 창)', () => {
+    const w = world({ chat: { minimized: false, maximized: false } }, { fg: 'dialog', roots: { dialog: 'chat' } })
+    expect(createHideController(w.ports).front()).toBe('chat')
+  })
+
+  it('(I2) 끝에 앞 창의 맨 위 소유 창이 내린 창이거나 최소화된 채면 바탕 화면에 포커스를 주고 실제 결과를 돌려준다', async () => {
+    const wins: Record<string, Win> = { chat: { minimized: false, maximized: false }, ws: { minimized: false, maximized: false } }
+    const w = world(wins, { fg: 'dialog', roots: { dialog: 'chat' } })
+    const c = createHideController(w.ports)
+    const r = await c.hide({ targets: [target('chat')], front: c.front(), carry: [], elevated: 0, saved: true })
+    expect(c.settleFocus(r.hidden)).toEqual({ needed: true, moved: true })
+    expect(w.calls.at(-1)).toBe('desktop')
+    // 보이는 업무 창이 앞이면 그대로
+    w.setFg('ws')
+    expect(c.settleFocus(r.hidden)).toEqual({ needed: false, moved: false })
+    // 포커스를 주지 못해 최소화된 창이 앞으로 남은 경우도 바탕 화면으로, 실패하면 moved false
+    const failing = world({ chat: { minimized: true, maximized: false } }, { fg: 'chat', desktopFails: true })
+    expect(createHideController(failing.ports).settleFocus(new Set())).toEqual({ needed: true, moved: false })
+  })
+
+  it('(M6) Sure-Mate 창(설정)이 앞이 되면 풀고 그 창을 다시 올린다', async () => {
+    const w = world({ ws1: { minimized: false, maximized: false } }, { fg: 'ws1', own: ['settings'] })
+    const c = createHideController(w.ports)
+    await c.hide({ targets: [], front: 'ws1', carry: [], elevated: 0, saved: true })
+    c.pin(['ws1'], ['ws1'])
+    w.setFg('settings')
+    w.tick()
+    expect(only(w.calls, /^unpin:/)).toEqual(['unpin:ws1'])
+    await w.ports.sleep(HIDE_TIMING.switchRaiseDelayMs)
+    expect(w.calls.at(-1)).toBe('raise:settings')
+  })
+
+  it('감출 때의 문제(관리자 권한·내리지 못한 창·저장 전)를 기록해 두었다가 되돌리기 판단에 함께 준다(감추기는 알리지 않는다)', async () => {
+    const w = world({ a: { minimized: false, maximized: false }, x: { minimized: false, maximized: false, ignoreMinimize: true } })
+    const c = createHideController(w.ports)
+    await c.hide({ targets: [target('a'), target('x')], front: 'a', carry: [], elevated: 2, saved: false })
+    expect(c.decide()).toMatchObject({ kind: 'restore', note: { elevated: 2, skipped: 1, saved: false } })
   })
 })

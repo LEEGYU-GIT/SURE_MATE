@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { barShapeLabel, maskingModeLabel } from '../../../shared/labels'
 import type { FlyoutContent } from '../../../shared/flyout/flyout-content'
-import { barMenuRows, labelParts, maskingMenuRows, workspaceMenuRows } from './menu-model'
+import { barMenuRows, labelParts, maskingMenuRows, type MenuRow, workspaceMenuRows } from './menu-model'
 
 describe('가명 처리 메뉴', () => {
   it('끔이면 3행이고 끔 행만 선택·주의(warn)이며, 행마다 그 모드로 바꾸는 동작', () => {
@@ -124,12 +124,14 @@ describe('워크스페이스 메뉴', () => {
   })
 
   it('화면 감추기(기본) 행: 저장 전에는 모든 창을, 저장한 뒤에는 그 창만 남긴다고, 되돌릴 창이 있으면 되돌리기로 적는다(한 줄)', () => {
-    const hide = (o: { windows: number; restorable?: number; otherConfig?: boolean }) =>
+    const hide = (o: { windows: number; restorable?: number; otherConfig?: boolean }): MenuRow =>
       workspaceMenuRows(content({ workspaces: [{ id: 'builtin-hide', name: '화면 감추기', windows: o.windows, otherConfig: o.otherConfig ?? false, hide: true, ...(o.restorable ? { restorable: o.restorable } : {}) }] }))[0]
     expect(hide({ windows: 0 })).toMatchObject({ key: 'workspace:builtin-hide', title: '화면 감추기', detail: '열린 창을 모두 내려요', tone: 'normal', action: { type: 'workspace-run', id: 'builtin-hide' } })
     expect(hide({ windows: 2 }).detail).toBe('창 2개만 남기고 내려요')
     expect(hide({ windows: 2, restorable: 12 }).detail).toBe('내렸던 창 12개 되돌리기')
     expect(hide({ windows: 2, otherConfig: true })).toMatchObject({ detail: '창 2개 · 다른 모니터 구성', tone: 'warn' })
+    // 되돌릴 창이 있으면 다른 모니터 구성보다 되돌리기가 먼저다(검토 M11): 누르면 되돌리기만 한다
+    expect(hide({ windows: 2, restorable: 12, otherConfig: true })).toMatchObject({ detail: '내렸던 창 12개 되돌리기', tone: 'normal' })
     for (const t of ['열린 창을 모두 내려요', '창 22개만 남기고 내려요', '내렸던 창 40개 되돌리기']) expect(t.length, t).toBeLessThanOrEqual(18)
   })
 })

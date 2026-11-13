@@ -90,7 +90,8 @@ export function workspacePaletteItems(list: readonly Workspace[], fingerprint: s
       const { windows, otherConfig } = layoutInfo(ws, fingerprint)
       const parts = [isHideWorkspace(ws.id) ? hideSubtitle(windows, o.restorable ?? 0) : `창 ${windows}개`]
       if (ws.hotkey) parts.push(ws.hotkey)
-      if (otherConfig) parts.push('다른 모니터 구성')
+      // 화면 감추기를 누르면 되돌리기만 할 때는 다른 모니터 구성을 적지 않는다(검토 M11)
+      if (otherConfig && !(isHideWorkspace(ws.id) && (o.restorable ?? 0) > 0)) parts.push('다른 모니터 구성')
       return { id: `${ITEM_PREFIX}${ws.id}`, group: 'workspace', title: ws.name, subtitle: parts.join(' · '), keywords: [...ws.aliases] }
     })
   ]

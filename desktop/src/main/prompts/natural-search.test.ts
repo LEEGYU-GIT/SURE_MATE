@@ -125,12 +125,35 @@ describe('문장 표: 맨 위 후보', () => {
   })
 })
 
-it('기본 워크스페이스 화면 감추기: 감추기·숨기기·가리기 말로 찾고, 가명 처리·말랑 메이트 숨기기 문장은 그대로', () => {
+it('기본 워크스페이스 화면 감추기: 화면 감추기·감추기 말로 찾고, 가명 처리·말랑 메이트 숨기기 문장은 그대로', () => {
   const hide = `workspace:${HIDE_WORKSPACE_ID}`
-  for (const q of ['화면 감춰줘', '화면 숨겨줘', '화면 가려줘', '창 숨겨줘', '창 내려줘', '감춰줘', '화면 감추기', 'ghkaus rkacnrl']) expect(top(q), q).toBe(hide)
+  for (const q of ['화면 감춰줘', '화면 숨겨줘', '화면 가려줘', '감춰줘', '화면 감추기', 'ghkaus rkacnrl']) expect(top(q), q).toBe(hide)
   expect(search('화면 감춰줘').top).toEqual({ id: hide, label: '창 배치' })
   expect(top('선택한 글 가려줘')).toBe('cmd.mask-selection')
   expect(top('말랑 메이트 숨겨줘')).toBe('cmd.pet-visible')
+})
+
+it('(검토 M9) 화면 감추기의 별칭이 다른 명령의 맨 위를 빼앗지 않는다: 화면 감추기가 없을 때와 맨 위가 같다(Enter 한 번에 모든 창을 내리지 않게)', () => {
+  const without = buildPaletteItems(templates, [], {
+    maskingMode: 'restore',
+    glossary: [...glossary, ...userTerms],
+    barShape: 'edge',
+    petVisible: true,
+    workspaces: workspaces.filter((i) => i.id !== `workspace:${HIDE_WORKSPACE_ID}`)
+  })
+  const withoutIndex = buildPaletteIndex(without)
+  for (const q of ['가리기', '가려줘', '숨기기', '숨겨줘', '숨겨', '창', '창 정리해줘']) {
+    expect(top(q), q).toBe(searchPalette(without, q, withoutIndex, ctx).items[0]?.id)
+  }
+})
+
+it("(검토 M10) '@'만 쳤을 때 화면 감추기를 최근에 썼어도 맨 위는 '지금 배치 저장'이다(@ 다음 Enter는 저장, 모든 창을 내리지 않게)", () => {
+  const usage = new Map<string, UsageRecord>([[`workspace:${HIDE_WORKSPACE_ID}`, { count: 3, lastAt: new Date(NOW - 60_000).toISOString() }]])
+  const s = search('@', { ...ctx, usage })
+  expect(s.items[0].id).toBe('cmd.workspace-save')
+  expect(s.recent).not.toContain(`workspace:${HIDE_WORKSPACE_ID}`)
+  // 범위 없는 빈 화면의 최근 항목에는 그대로 보인다
+  expect(search('', { ...ctx, usage }).recent).toContain(`workspace:${HIDE_WORKSPACE_ID}`)
 })
 
 it('(Review Focus 4) 낱말·영어 낱말·초성·오타·치는 중인 글은 말하듯 입력을 켜도 M4 검색과 맨 위가 같다', () => {

@@ -6,6 +6,7 @@ import { recentIds, usageScore, type UsageRecord } from '../../../shared/natural
 import { PALETTE_GROUPS, parseQuery } from '../../../shared/palette-query'
 import { buildSearchIndex, compactOf, rank, type SearchIndex } from '../../../shared/search/ranker'
 import type { PaletteGroup, PaletteItem } from '../../../shared/types'
+import { HIDE_WORKSPACE_ID } from '../../../shared/workspace/builtin'
 import { WORKSPACE_LIMITS } from '../../../shared/workspace/types'
 
 /** 팔레트 항목 색인. 제목, 별칭은 키워드, 본문은 부제와 본문(위키 설명)과 태그 */
@@ -19,6 +20,9 @@ export function buildPaletteIndex(items: PaletteItem[]): SearchIndex {
     }))
   )
 }
+
+/** 기본 워크스페이스 화면 감추기의 팔레트 항목 id */
+const HIDE_ITEM_ID = `workspace:${HIDE_WORKSPACE_ID}`
 
 /** 한 번에 그리는 목록 줄 수 상한. 용어가 2,000개여도 한 번 칠 때마다 수천 줄을 다시 그리지 않게(설계 문서 §16 검색 갱신 50ms) */
 export const MAX_ROWS = 50
@@ -93,6 +97,8 @@ export function searchPalette(items: PaletteItem[], query: string, index: Search
     for (const id of recentIds(ctx.usage, ctx.usage.size)) {
       if (recent.length >= RECENT_MAX) break
       const item = byId.get(id)
+      // `@` 범위의 최근 항목에는 화면 감추기를 두지 않는다: `@` 다음 Enter는 맨 위 '지금 배치 저장'이어야 한다(모든 창을 내리지 않게, 검토 M10)
+      if (scope === 'workspace' && id === HIDE_ITEM_ID) continue
       if (item && (!scope || item.group === scope)) recent.push(item)
     }
     const shown = new Set(recent.map((item) => item.id))

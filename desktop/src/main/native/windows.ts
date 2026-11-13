@@ -236,19 +236,58 @@ export interface ZOrderWin32 {
   SWP_ASYNCWINDOWPOS: number
 }
 
+/** Sure-Mate가 방금 항상 위로 만들었거나 푼 창을 기억하는 시간(비동기 SetWindowPos 요청이 처리될 때까지) */
+export const TOPMOST_LEDGER_MS = 2000
+
+/**
+ * Sure-Mate가 방금 HWND_TOPMOST·HWND_NOTOPMOST를 보낸 창(2026-11-12 검토 C1). 비동기 요청이 반쯤 처리된 동안에는 그 창이
+ * WS_EX_TOPMOST로 보이므로, 기억하는 동안은 원래 항상 위인 창이 아니라 보통 창으로 다룬다. 그대로 읽으면 다음 올리기가 HWND_TOPMOST만
+ * 보내 창이 항상 위로 남고, 그 뒤로는 그 창을 원래 항상 위인 창으로 오해한다
+ */
+export interface TopmostLedger {
+  mark(hwnd: string): void
+  ours(hwnd: string): boolean
+}
+
+export function createTopmostLedger(now: () => number = Date.now, ttlMs: number = TOPMOST_LEDGER_MS): TopmostLedger {
+  const until = new Map<string, number>()
+  return {
+    mark(hwnd) {
+      const t = now()
+      for (const [h, u] of until) if (u <= t) until.delete(h)
+      until.set(hwnd, t + ttlMs)
+    },
+    ours(hwnd) {
+      const u = until.get(hwnd)
+      return u !== undefined && u > now()
+    }
+  }
+}
+
+/** 앱 전체가 함께 쓰는 기록(불러오기의 올리기·화면 감추기의 고정과 풀기) */
+const ledger = createTopmostLedger()
+
+/** 원래 항상 위인 창인지: WS_EX_TOPMOST이고 Sure-Mate가 방금 항상 위로 만들거나 푼 창이 아니다 */
+export function isTopmostWith(w: ZOrderWin32, hwnd: string, l: TopmostLedger = ledger): boolean {
+  return (Number(w.GetWindowLongPtrW(w.toHwnd(hwnd), w.GWL_EXSTYLE)) & w.WS_EX_TOPMOST) !== 0 && !l.ours(hwnd)
+}
+
 /**
  * 다른 앱의 창을 지금 앞 창(메신저·Word 등)보다 위로 올린다. 위치·크기·활성 상태는 그대로다.
  * HWND_TOP으로 올리려면 그 창의 프로세스가 SetForegroundWindow 권한을 가져야 해서(SetWindowPos 문서) 다른 앱의 창은 대개 올라가지
  * 않는다. 맨 앞(HWND_TOPMOST)으로 올린 직후 보통 창(HWND_NOTOPMOST)으로 되돌리면 권한 없이 보통 창 가운데 맨 위에 남는다.
- * 원래 항상 위(WS_EX_TOPMOST)인 창은 되돌리지 않는다(그 창의 항상 위 설정을 바꾸지 않게).
+ * 원래 항상 위(WS_EX_TOPMOST)인 창은 되돌리지 않는다(그 창의 항상 위 설정을 바꾸지 않게). 방금 Sure-Mate가 올린 창은 요청이 덜 처리돼
+ * 항상 위로 보여도 보통 창으로 다룬다(isTopmostWith).
  * 두 요청 모두 SWP_ASYNCWINDOWPOS: 응답이 느린 창에서 main이 멈추지 않고, 그 창의 메시지 큐에서 차례를 지킨다
  */
-export function bringToFront(w: ZOrderWin32, hwnd: string): void {
+export function bringToFront(w: ZOrderWin32, hwnd: string, l: TopmostLedger = ledger): void {
   const h = w.toHwnd(hwnd)
   const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | w.SWP_ASYNCWINDOWPOS
-  const topmost = (Number(w.GetWindowLongPtrW(h, w.GWL_EXSTYLE)) & w.WS_EX_TOPMOST) !== 0
+  const topmost = isTopmostWith(w, hwnd, l)
   w.SetWindowPos(h, w.HWND_TOPMOST, 0, 0, 0, 0, flags)
-  if (!topmost) w.SetWindowPos(h, w.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+  if (topmost) return
+  w.SetWindowPos(h, w.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+  l.mark(hwnd)
 }
 
 /** 복원한 창을 다른 창 위로 올린다(bringToFront, 비동기). Win32를 쓸 수 없으면 아무것도 하지 않는다 */
@@ -257,10 +296,14 @@ export function raiseWindow(hwnd: string): void {
   bringToFront(win32(), hwnd)
 }
 
-/** 항상 위로 고정(on, HWND_TOPMOST)하거나 푼다(HWND_NOTOPMOST). 이동·크기·활성화 없이 비동기(화면 감추기의 항상 위 옵션) */
-export function setTopmost(w: ZOrderWin32, hwnd: string, on: boolean): void {
+/**
+ * 항상 위로 고정(on, HWND_TOPMOST)하거나 푼다(HWND_NOTOPMOST). 이동·크기·활성화 없이 비동기(화면 감추기의 항상 위 옵션).
+ * SWP_SHOWWINDOW가 없어 숨은 창(트레이로 숨은 앱)도 보이지 않은 채 풀린다. 고정·풀기 모두 기록한다(isTopmostWith)
+ */
+export function setTopmost(w: ZOrderWin32, hwnd: string, on: boolean, l: TopmostLedger = ledger): void {
   const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | w.SWP_ASYNCWINDOWPOS
   w.SetWindowPos(w.toHwnd(hwnd), on ? w.HWND_TOPMOST : w.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+  l.mark(hwnd)
 }
 
 /** setTopmost를 Win32로. Win32를 쓸 수 없으면 아무것도 하지 않는다 */
@@ -269,12 +312,18 @@ export function pinWindow(hwnd: string, on: boolean): void {
   setTopmost(win32(), hwnd, on)
 }
 
-/** 원래 항상 위(WS_EX_TOPMOST)인지. Win32를 쓸 수 없거나 창이 없으면 false */
+/** 원래 항상 위인지(isTopmostWith: Sure-Mate가 방금 올리거나 푼 창은 아니다). Win32를 쓸 수 없거나 창이 없으면 false */
 export function isTopmost(hwnd: string): boolean {
   if (!nativeStatus().ok) return false
   const w = win32()
-  const h = w.toHwnd(hwnd)
-  return Boolean(w.IsWindow(h)) && (Number(w.GetWindowLongPtrW(h, w.GWL_EXSTYLE)) & w.WS_EX_TOPMOST) !== 0
+  return Boolean(w.IsWindow(w.toHwnd(hwnd))) && isTopmostWith(w, hwnd)
+}
+
+/** 창이 아직 있는지(IsWindow). 숨은 창도 있는 창이다. Win32를 쓸 수 없으면 false */
+export function windowExists(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  return Boolean(w.IsWindow(w.toHwnd(hwnd)))
 }
 
 /** 활성화 없이 최소화(ShowWindowAsync SW_SHOWMINNOACTIVE, 비동기). 보냈으면 true. Win32를 쓸 수 없으면 false */

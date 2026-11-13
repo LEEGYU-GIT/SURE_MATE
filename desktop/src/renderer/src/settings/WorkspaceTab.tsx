@@ -89,8 +89,8 @@ const COPY = {
   unhide: '내렸던 창 되돌리기',
   unhiding: '되돌리는 중…',
   hideLayoutHelp: (n: number): string =>
-    n > 0 ? `남길 창 ${n}개를 불러오고 나머지 창은 내려요. 같은 프로그램 창이 여럿이면 ‘제목에 포함’으로 구분해요.` : '남길 창이 없어 누르면 열린 창을 모두 내려요.',
-  hideNoRules: '아직 남길 창이 없어 누르면 열린 창을 모두 내려요. 업무 창을 놓고 ‘지금 배치로 다시 저장’을 누르세요.',
+    n > 0 ? `남길 창 ${n}개를 불러오고 나머지 창은 내려요. 같은 프로그램 창이 여럿이면 ‘제목에\u00a0포함’으로 구분해요.` : '남길 창이 없어 누르면 열린 창을 모두 내려요.',
+  hideNoRules: '아직 남길 창이 없어 누르면 열린 창을 모두 내려요. 업무 창을 놓고 ‘지금\u00a0배치로\u00a0다시\u00a0저장’을 누르세요.',
   hideRecaptureHelp: ['다시 저장하면 남길 창을', '지금 열린 창으로 바꿔요.', '이름·별칭·단축키는 그대로예요.'],
   keepOnTopSection: '감추는 동안',
   keepOnTop: '감춘 동안 업무 창을 항상 위에 두기',
@@ -283,7 +283,8 @@ function WorkspaceRow({ view, onOpen, ref }: { view: WorkspaceView; onOpen(): vo
   const ws = view.workspace
   const n = enabledCount(ws)
   const caption = isHideWorkspace(ws.id) ? hideCaption(n, view.restorable) : COPY.windows(n)
-  const otherConfig = !view.sameConfig && hasLayout(ws)
+  // 화면 감추기를 누르면 되돌리기만 할 때는 다른 모니터 구성을 적지 않는다(검토 M11)
+  const otherConfig = !view.sameConfig && hasLayout(ws) && !(isHideWorkspace(ws.id) && (view.restorable ?? 0) > 0)
   const label = [
     `${ws.name} 열기`,
     caption,

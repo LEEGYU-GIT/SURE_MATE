@@ -12,10 +12,11 @@ export const HIDE_WORKSPACE_NAME = '화면 감추기'
 /** 이름이 다른 워크스페이스와 겹칠 때 쓰는 이름 */
 const HIDE_WORKSPACE_NAME_TAKEN = '화면 감추기 (기본)'
 /**
- * 팔레트에서 '화면 감춰줘'·'화면 숨겨줘'·'창 내려줘'처럼 말해도 맨 위에 오게 하는 별칭(natural-search 시험이 확인한다).
- * 별칭 제한(10개, 하나에 40자) 안이다
+ * 팔레트에서 '화면 감춰줘'·'화면 숨겨줘'·'화면 가려줘'처럼 말해도 맨 위에 오게 하는 별칭(natural-search 시험이 확인한다).
+ * '숨기기'·'가리기'·'창 …'은 넣지 않는다: '숨겨줘'(말랑 메이트 숨기기)·'가리기'(선택한 글 가리기)·'창 정리해줘'(지금 배치 저장)의 맨 위를
+ * 빼앗아 Enter 한 번에 모든 창을 내린다(2026-11-12 검토 M9)
  */
-export const HIDE_WORKSPACE_ALIASES: readonly string[] = ['감추기', '숨기기', '가리기', '화면 숨기기', '화면 가리기', '창 숨기기', '창 내리기']
+export const HIDE_WORKSPACE_ALIASES: readonly string[] = ['감추기', '화면 숨기기', '화면 가리기']
 /** 만들 때 이 조합이 비어 있으면 단축키로 정한다(defaultHideHotkey) */
 export const HIDE_DEFAULT_HOTKEY = 'Ctrl+Alt+H'
 

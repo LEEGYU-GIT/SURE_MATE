@@ -110,6 +110,13 @@ describe('화면 감추기 알림(hideSummary, 2026-11-12)', () => {
       '화면 감추기 · 창 1개를 내렸어요 · 주 모니터로 모았어요 · 창 1개 모두 배치했어요'
     )
   })
+  it('다시 누름: 감출 때의 문제(관리자 권한·내리지 못한 창·저장 전)는 감추기가 알리지 않으므로 되돌릴 때 함께 알린다', () => {
+    expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 3, skipped: 0, earlier: { elevated: 2, skipped: 1, saved: false } })).toBe(
+      '화면 감추기 · 내렸던 창 3개를 되돌렸어요 · 감출 때 관리자 권한 창 2개는 내리지 못했어요 · 감출 때 창 1개는 내리지 못했어요 · 설정에서 남길 창을 저장할 수 있어요'
+    )
+    expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 3, skipped: 0, earlier: { elevated: 0, skipped: 0, saved: true } })).toBe('화면 감추기 · 내렸던 창 3개를 되돌렸어요')
+  })
+
   it('다시 누름: 되돌린 수, 되돌리지 못한 창이 있으면 그 수', () => {
     expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 12, skipped: 0 })).toBe('화면 감추기 · 내렸던 창 12개를 되돌렸어요')
     expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 2, skipped: 1 })).toBe('화면 감추기 · 내렸던 창 2개를 되돌렸어요 · 창 1개는 되돌리지 못했어요')

@@ -256,9 +256,14 @@ try {
   $left = @(@('phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
   $builtinAtStart = $false
   if (Test-Path $wsFile) {
-    $wsNow = @(); try { $wsNow = @((ReadWs).workspaces) } catch { $wsNow = @('unreadable') }
-    if (@($wsNow | Where-Object { $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
-    $builtinAtStart = (@($wsNow | Where-Object { $_.id -eq 'builtin-hide' }).Count -eq 1)
+    # ReadWs는 읽지 못하면 $null이다. 그때 @($null)을 워크스페이스 하나로 세지 않게 따로 알린다
+    $wsDoc = ReadWs
+    if (-not $wsDoc) { $left += 'workspaces.json (unreadable)' }
+    else {
+      $wsNow = @(@($wsDoc.workspaces) | Where-Object { $_ })
+      if (@($wsNow | Where-Object { $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
+      $builtinAtStart = (@($wsNow | Where-Object { $_.id -eq 'builtin-hide' }).Count -eq 1)
+    }
   }
   if ($left.Count -gt 0) { throw "t21-run.ps1로 실행한다(시작할 때 없어야 하는 파일이 있다: $($left -join ', '))" }
   $r.builtin_created = $builtinAtStart
@@ -578,7 +583,8 @@ try {
   # 7-2. 화면 감추기(기본 워크스페이스, 2026-11-12): C를 최소화한 채 팔레트 '@화면 감추기' → 목록 끝 '지금 배치로 바꾸기' 줄(End) → Enter로
   #    B가 보이는 배치를 화면 감추기에 저장(workspace.save op recapture, id builtin-hide) → C를 보통 상태로 되돌린 뒤 '@화면 감추기' Enter →
   #    workspace.hide(출처 palette)이고 저장하지 않은 C는 최소화, 저장한 B는 최소화가 아님 → 한 번 더 '@화면 감추기' Enter → workspace.unhide이고
-  #    C가 보통 상태로 돌아온다. 이 단계는 열린 다른 앱 창도 잠시 내렸다가 되돌린다. 기본 워크스페이스가 없거나 앞 단계가 성립하지 않으면 skipped
+  #    C가 보통 상태로 돌아온다. 저장할 때 보이던 다른 앱 창은 화면 감추기에 함께 저장되므로 내려가지 않고, 저장한 뒤에 연 창만 C와 함께
+  #    잠시 내렸다가 되돌린다. 기본 워크스페이스가 없거나 앞 단계가 성립하지 않으면 skipped
   $hideKeys = @('hide_saved', 'hide_minimizes_others', 'hide_press_again_restores')
   try {
     $hideName = '화면 감추기'

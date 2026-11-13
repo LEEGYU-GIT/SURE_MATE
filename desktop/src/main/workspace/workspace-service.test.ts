@@ -3,7 +3,7 @@ import type { MonitorInfo, WindowInfo } from '../../shared/types'
 import type { CaptureSkipped } from '../../shared/workspace/capture'
 import { HIDE_WORKSPACE_ID, HIDE_WORKSPACE_NAME, withHideWorkspace } from '../../shared/workspace/builtin'
 import { EDIT_ERRORS } from '../../shared/workspace/edit'
-import type { PressDecision } from '../../shared/workspace/hide'
+import type { HideNote, PressDecision } from '../../shared/workspace/hide'
 import { hideSummary, restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../shared/workspace/messages'
 import { monitorFingerprint, monitorKey } from '../../shared/workspace/monitors'
 import type { ReadyPlan } from '../../shared/workspace/restore-plan'
@@ -578,22 +578,24 @@ const hideEmpty = (): Workspace => withHideWorkspace([], { now: new Date(NOW), h
 const hideSaved = (o: Partial<Workspace> = {}): Workspace => ({ ...testWorkspace({ id: HIDE_WORKSPACE_ID, name: HIDE_WORKSPACE_NAME, aliases: [] }), ...o })
 
 /** 부른 차례를 남기는 가짜 화면 감추기(내리기는 모두 성공, 되돌리기도 모두 성공) */
-function fakeHide(o: { decide?: PressDecision; front?: string | null; topmost?: string[] } = {}): { hide: HideController; calls: string[] } {
+function fakeHide(
+  o: { decide?: PressDecision; front?: string | null; topmost?: string[]; settle?: { needed: boolean; moved: boolean }; earlier?: HideNote } = {}
+): { hide: HideController; calls: string[] } {
   const calls: string[] = []
   const hide: HideController = {
     front: () => (o.front === undefined ? '201' : o.front),
-    focusDesktop: () => {
-      calls.push('desktop')
-      return true
+    settleFocus: (hidden) => {
+      calls.push(`settle:${[...hidden].sort().join(',')}`)
+      return o.settle ?? { needed: false, moved: false }
     },
     decide: () => o.decide ?? { kind: 'hide', why: 'first', carry: [] },
     hide: async (x) => {
-      calls.push(`hide:${x.targets.map((t) => t.hwnd).join(',')}|front:${x.front}|carry:${x.carry.length}`)
+      calls.push(`hide:${x.targets.map((t) => t.hwnd).join(',')}|front:${x.front}|carry:${x.carry.length}|elevated:${x.elevated}|saved:${x.saved}`)
       return { minimized: x.targets.length, elevated: 0, hung: 0, failed: 0, hidden: new Set(x.targets.map((t) => t.hwnd)) }
     },
     unhide: async (d) => {
       calls.push(`unhide:${d.windows.map((x) => x.hwnd).join(',')}|focus:${d.focus}`)
-      return { restored: d.windows.length, skipped: 0, focused: true }
+      return { restored: d.windows.length, skipped: 0, focused: true, ...(o.earlier ? { earlier: o.earlier } : {}) }
     },
     restorable: () => 3,
     topmost: (hs) => new Set([...hs].filter((h) => (o.topmost ?? []).includes(h))),
@@ -659,25 +661,44 @@ describe('화면 감추기 불러오기(run): 저장한 창만 남기고 나머�
     const { hide, calls } = fakeHide()
     const { w, service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS, WORD], hide })
     const r = await service.run(HIDE_WORKSPACE_ID, 'hotkey')
-    expect(calls).toEqual(['release:press', 'hide:201,202|front:201|carry:0'])
+    expect(calls).toEqual(['release:press', 'hide:201,202|front:201|carry:0|elevated:0|saved:true', 'settle:201,202'])
     expect(w.plans).toHaveLength(1)
     expect(w.runHidden).toEqual([['201', '202']])
     expect(r).toMatchObject({ ok: true, hide: { kind: 'hide', minimized: 2, elevated: 0, skipped: 0, saved: true } })
     if (!r.ok) throw new Error('ok expected')
-    expect(w.notes).toEqual([hideSummary(HIDE_WORKSPACE_NAME, r.report, r.hide!)])
-    expect(w.logs).toContainEqual(['workspace.hide', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, minimized: 2, elevated: 0, hung: 0, failed: 0, why: 'first', saved: true, desktop: false })])
+    // 감추기는 알리지 않는다(2026-11-12 판정: 뒤에 선 사람이 알림을 본다). 결과는 설정 창 결과 줄(r)과 기록에만
+    expect(w.notes).toEqual([])
+    expect(hideSummary(HIDE_WORKSPACE_NAME, r.report, r.hide!)).toBe('화면 감추기 · 창 2개를 내렸어요 · 창 3개 모두 배치했어요')
+    expect(w.logs).toContainEqual(['workspace.hide', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, minimized: 2, elevated: 0, hung: 0, failed: 0, why: 'first', saved: true, desktop: false, focusLeft: false })])
     expect(w.logs).toContainEqual(['workspace.restore', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, total: 3, placed: 3 })])
     expect(w.restored).toEqual([{ id: HIDE_WORKSPACE_ID, source: 'hotkey', after: 'workspace.hide' }])
   })
 
-  it('저장한 창이 없으면(처음) 모든 앱 창을 내리고 불러오기는 하지 않으며, 감추기 직전 앞 창을 내렸으면 바탕 화면에 포커스', async () => {
-    const { hide, calls } = fakeHide()
+  it('저장한 창이 없으면(처음) 모든 앱 창을 내리고 불러오기는 하지 않으며, 끝에 실제 앞 창을 확인해 옮긴 결과를 기록한다(알림 없음)', async () => {
+    const { hide, calls } = fakeHide({ settle: { needed: true, moved: true } })
     const { w, service } = world({ list: [hideEmpty()], windows: [CHAT, ...TEST_WINDOWS], hide })
     const r = await service.run(HIDE_WORKSPACE_ID, 'palette')
-    expect(calls).toEqual(['release:press', 'hide:201,101,102,103|front:201|carry:0', 'desktop'])
+    expect(calls).toEqual(['release:press', 'hide:201,101,102,103|front:201|carry:0|elevated:0|saved:false', 'settle:101,102,103,201'])
     expect(w.plans).toEqual([])
     expect(r).toMatchObject({ ok: true, report: { total: 0, placed: 0 }, hide: { kind: 'hide', minimized: 4, saved: false } })
-    expect(w.notes).toEqual(['화면 감추기 · 창 4개를 내렸어요 · 설정에서 남길 창을 저장할 수 있어요'])
+    expect(w.notes).toEqual([])
+    expect(w.logs).toContainEqual(['workspace.hide', expect.objectContaining({ desktop: true, focusLeft: false })])
+  })
+
+  it('바탕 화면으로 옮기지 못했으면 그 결과를 기록한다(focusLeft)', async () => {
+    const { hide } = fakeHide({ settle: { needed: true, moved: false } })
+    const { w, service } = world({ list: [hideEmpty()], windows: [CHAT], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(w.logs).toContainEqual(['workspace.hide', expect.objectContaining({ desktop: false, focusLeft: true })])
+  })
+
+  it('다른 모니터 구성에서 저장했어도 묻지 않고(감추는 중에 질문 창을 띄우지 않는다) 주 모니터로 모아 불러온다', async () => {
+    const { hide } = fakeHide()
+    const { w, service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS], monitors: [P], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(w.confirms).toEqual([])
+    expect(w.plans).toHaveLength(1)
+    expect(w.plans[0].gathered).toBe(true)
   })
 
   it('다시 누름(10분 안): 내렸던 창을 되돌리고 알린다(창 목록·runner를 부르지 않는다)', async () => {
@@ -693,11 +714,23 @@ describe('화면 감추기 불러오기(run): 저장한 창만 남기고 나머�
     expect(w.logs).toContainEqual(['workspace.unhide', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, restored: 2, skipped: 0, focused: true })])
   })
 
+  it('되돌리기 알림이 감출 때의 문제를 함께 알린다. 저장 전 안내는 앱을 실행하는 동안 한 번만', async () => {
+    const decide: PressDecision = { kind: 'restore', windows: [{ hwnd: '201', maximized: false }], focus: '201' }
+    const { hide } = fakeHide({ decide, earlier: { elevated: 1, skipped: 0, saved: false } })
+    const { w, service } = world({ list: [hideEmpty()], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(w.notes).toEqual([
+      '화면 감추기 · 내렸던 창 1개를 되돌렸어요 · 감출 때 관리자 권한 창 1개는 내리지 못했어요 · 설정에서 남길 창을 저장할 수 있어요',
+      '화면 감추기 · 내렸던 창 1개를 되돌렸어요 · 감출 때 관리자 권한 창 1개는 내리지 못했어요'
+    ])
+  })
+
   it('사용자가 내린 창을 되살린 뒤 누르면(changed) 다시 감추고 아직 최소화된 창을 이어서 기억한다', async () => {
     const { hide, calls } = fakeHide({ decide: { kind: 'hide', why: 'changed', carry: [{ hwnd: '300', maximized: false }] } })
     const { service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS], hide })
     await service.run(HIDE_WORKSPACE_ID, 'bar')
-    expect(calls).toContain('hide:201|front:201|carry:1')
+    expect(calls).toContain('hide:201|front:201|carry:1|elevated:0|saved:true')
   })
 
   it('Win32를 쓸 수 없으면 보안 프로그램 안내만 하고 아무 창도 내리지 않는다', async () => {

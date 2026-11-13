@@ -4,7 +4,7 @@ import type { MonitorInfo, Rect, WindowInfo } from '../../shared/types'
 import { hideFirst, isHideWorkspace, withHideWorkspace } from '../../shared/workspace/builtin'
 import { captureLayout } from '../../shared/workspace/capture'
 import { applyWorkspaceEdit, type WorkspaceEdit } from '../../shared/workspace/edit'
-import { hideCandidates, type HideOutcome, needsDesktopFocus, pinTargets, workspaceWindowIds } from '../../shared/workspace/hide'
+import { hideCandidates, type HideOutcome, pinTargets, workspaceWindowIds } from '../../shared/workspace/hide'
 import { hideSummary, restoreSummary, saveSummary, WORKSPACE_NOTES as NOTES } from '../../shared/workspace/messages'
 import { monitorFingerprint } from '../../shared/workspace/monitors'
 import { planRestore, type ReadyPlan, type RestorePlan, type RestoreStep } from '../../shared/workspace/restore-plan'
@@ -271,10 +271,15 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     return layout ? layout.windows.filter((r) => r.enabled).length : 0
   }
 
+  /** 저장 전 안내('설정에서 남길 창을 저장할 수 있어요')를 이번 실행에서 이미 되돌리기 알림에 보였는지(한 번만 보인다) */
+  let hintShown = false
+
   /**
-   * 화면 감추기(기본 워크스페이스, 2026-11-12): 항상 위 고정을 먼저 풀고, 10분 안의 다시 누름이면 내렸던 창을 되돌린다. 아니면 저장한 창
-   * (업무 창)이 아닌 앱 창을 모든 모니터에서 활성화 없이 내리고(개인 화면을 먼저 가린다), 저장한 창을 불러온 뒤 포커스를 정하고(chooseFocus,
-   * 줄 창이 없고 앞 창을 내렸으면 바탕 화면), 옵션이 켜져 있으면 배치한 업무 창을 항상 위에 둔다. 알림은 이름과 창 수, 기록은 건수만
+   * 화면 감추기(기본 워크스페이스, 2026-11-12): 항상 위 고정을 먼저 풀고, 10분 안의 다시 누름이면 내렸던 창을 되돌리고 알린다(감출 때의
+   * 문제도 이때 함께). 아니면 저장한 창(업무 창)이 아닌 앱 창을 모든 모니터에서 활성화 없이 먼저 내리고(개인 화면을 먼저 가린다), 저장한 창을
+   * 불러온 뒤(다른 모니터 구성이면 묻지 않고 주 모니터로 모은다) 실제 앞 창을 확인해 키 입력이 내린 창으로 가면 바탕 화면에 포커스를 주고,
+   * 옵션이 켜져 있으면 배치한 업무 창을 항상 위에 둔다. 감추기는 알림·질문 창을 띄우지 않는다(뒤에 선 사람이 본다, 2026-11-12 판정):
+   * 결과는 설정 창 결과 줄과 기록(건수만)에만 남는다
    */
   async function runHide(ws: Workspace, source: WorkspaceSource, h: HideController, fail: (reason: WorkspaceFailReason, extra?: Record<string, unknown>) => WorkspaceRunResult): Promise<WorkspaceRunResult> {
     const started = d.now().getTime()
@@ -283,7 +288,10 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     const decision = h.decide()
     if (decision.kind === 'restore') {
       const r = await h.unhide(decision)
-      const hide: HideOutcome = { kind: 'unhide', restored: r.restored, skipped: r.skipped }
+      // 저장 전 안내는 실행하는 동안 한 번만(매번 되돌릴 때마다 보이지 않게)
+      const earlier = r.earlier && !r.earlier.saved && hintShown ? { ...r.earlier, saved: true } : r.earlier
+      if (r.earlier && !r.earlier.saved) hintShown = true
+      const hide: HideOutcome = { kind: 'unhide', restored: r.restored, skipped: r.skipped, ...(earlier ? { earlier } : {}) }
       const report = emptyReport(elapsed())
       d.notify(hideSummary(ws.name, report, hide))
       d.log('workspace.unhide', { source, ok: true, id: ws.id, restored: r.restored, skipped: r.skipped, focused: r.focused, ms: elapsed() })
@@ -299,29 +307,20 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     }
     const keep = workspaceWindowIds(ws, snap.monitors, snap.windows)
     const cand = hideCandidates({ windows: snap.windows, monitors: snap.monitors, toDip: d.toDip, keep, selfElevated: d.selfElevated(), selfPid: d.selfPid ?? process.pid })
+    // 감추기 직전 앞 창의 맨 위 소유 창(대화상자는 그 앱 창, 검토 I2)
     const front = h.front()
     // 감추기 전에 이미 항상 위인 업무 창은 Sure-Mate가 고정한 창이 아니다(불러오기의 올리기가 잠깐 항상 위로 만들기 전에 읽는다)
     const topmostBefore = ws.keepOnTop ? h.topmost(keep) : new Set<string>()
-    const m = await h.hide({ targets: cand.targets, front, carry: decision.carry })
+    const saved = enabledRules(ws, snap.monitors) > 0
+    const m = await h.hide({ targets: cand.targets, front, carry: decision.carry, elevated: cand.elevated, saved })
 
-    const plan = (gather: boolean, s: ReturnType<WorkspaceServiceDeps['snapshot']>): RestorePlan =>
-      planRestore({ workspace: ws, monitors: s.monitors, windows: s.windows, gather, selfElevated: d.selfElevated() })
-    let p = plan(false, snap)
-    if (p.kind === 'needs-gather') {
-      // 다른 모니터 구성: 다른 워크스페이스처럼 먼저 묻는다(창은 이미 내렸다). 거절하면 저장한 창은 불러오지 않는다
-      let accepted = false
-      try {
-        accepted = await d.confirmGather({ savedMonitors: p.savedMonitors, currentMonitors: p.currentMonitors })
-      } catch (e) {
-        d.log('workspace.gatherError', { error: errorText(e) })
-      }
-      d.log('workspace.gather', { source, accepted, savedMonitors: p.savedMonitors, currentMonitors: p.currentMonitors })
-      try {
-        p = accepted ? plan(true, d.snapshot()) : { kind: 'empty' }
-      } catch (e) {
-        d.log('workspace.hideError', { error: errorText(e) })
-        p = { kind: 'empty' }
-      }
+    // 다른 모니터 구성이어도 묻지 않고 주 모니터로 모은다(감추는 중에 질문 창을 띄우지 않는다). 같은 구성이면 그 배치를 쓴다
+    let p: RestorePlan
+    try {
+      p = planRestore({ workspace: ws, monitors: snap.monitors, windows: snap.windows, gather: true, selfElevated: d.selfElevated() })
+    } catch (e) {
+      d.log('workspace.hideError', { error: errorText(e) })
+      p = { kind: 'empty' }
     }
     let report = emptyReport(0)
     let steps: RestoreStep[] = []
@@ -333,12 +332,10 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
         d.log('workspace.hideError', { error: errorText(e) })
       }
     }
-    const desktop = needsDesktopFocus({ focusTarget: report.focusTarget, front, hidden: m.hidden })
-    if (desktop) h.focusDesktop()
+    // 실제 앞 창 확인(검토 I2): 키 입력이 내린 창·최소화된 창으로 가면 바탕 화면으로. 기록은 판단이 아니라 실제 결과
+    const focus = h.settleFocus(m.hidden)
     const pinned = ws.keepOnTop ? h.pin(pinTargets({ steps, outcomes: report.outcomes, topmostBefore }), keep) : 0
-    const saved = enabledRules(ws, snap.monitors) > 0
     const hide: HideOutcome = { kind: 'hide', minimized: m.minimized, elevated: cand.elevated + m.elevated, skipped: m.hung + m.failed, saved }
-    d.notify(hideSummary(ws.name, report, hide))
     if (report.total > 0) logRestore(source, ws.id, report)
     d.log('workspace.hide', {
       source,
@@ -351,7 +348,9 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
       carried: decision.carry.length,
       why: decision.why,
       saved,
-      desktop,
+      gathered: report.gathered,
+      desktop: focus.moved,
+      focusLeft: focus.needed && !focus.moved,
       pinned,
       ms: elapsed()
     })

@@ -19,7 +19,8 @@ import {
   selfElevated,
   setForeground,
   showWindowMaximized,
-  showWindowNormal
+  showWindowNormal,
+  windowExists
 } from '../native/windows'
 import { notify } from '../notify'
 import { createHideController } from './hide-runner'
@@ -100,6 +101,8 @@ export function createWorkspaceRuntime(o: {
       const s = isWindowVisible(hwnd) ? readWindowState(hwnd) : null
       return s ? { minimized: s.minimized, maximized: s.maximized, hung: s.hung } : null
     },
+    // 고정한 창이 아직 있는지는 IsWindow로만(트레이로 숨은 창도 풀어야 한다, 검토 I1)
+    exists: windowExists,
     minimize: minimizeWindow,
     unminimize: (hwnd, maximized) => (maximized ? showWindowMaximized(hwnd) : showWindowNormal(hwnd, false)),
     raise: raiseWindow,

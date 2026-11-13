@@ -56,6 +56,8 @@ describe('workspacePaletteItems', () => {
     expect(workspacePaletteItems([saved], FP)[1].subtitle).toBe('창 3개만 남기고 나머지 창은 내려요')
     expect(workspacePaletteItems([saved], monitorFingerprint([P]))[1].subtitle).toBe('창 3개만 남기고 나머지 창은 내려요 · 다른 모니터 구성')
     expect(workspacePaletteItems([saved], FP, { restorable: 7 })[1].subtitle).toBe('다시 누르면 내렸던 창 7개를 되돌려요')
+    // 되돌릴 창이 있으면 다른 모니터 구성은 적지 않는다(누르면 되돌리기만 한다, 검토 M11)
+    expect(workspacePaletteItems([saved], monitorFingerprint([P]), { restorable: 7 })[1].subtitle).toBe('다시 누르면 내렸던 창 7개를 되돌려요')
   })
 
   it('updatedAt 내림차순(최근에 바꾼 것 먼저), 받은 목록은 고치지 않는다', () => {

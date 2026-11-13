@@ -2,7 +2,7 @@ import type { MonitorInfo, Rect, WindowInfo } from '../types'
 import { EXCLUDED_CLASSES } from './capture'
 import { assignWindows, type LiveWindow } from './match'
 import { monitorFingerprint, monitorOfRect } from './monitors'
-import type { FocusTarget, OutcomeResult } from './restore-result'
+import type { OutcomeResult } from './restore-result'
 import type { Workspace } from './types'
 
 // 화면 감추기(기본 워크스페이스, builtin.ts)의 순수 규칙. 창을 내리고 되돌리고 고정하는 일은 main/workspace/hide-runner.ts가 한다.
@@ -26,15 +26,42 @@ export interface HideTarget extends HiddenWindow {
  * 등), 남길 창을 저장해 두었는지. unhide: 되돌린 창·되돌리지 못한 창
  */
 export type HideOutcome =
-  | { kind: 'hide'; minimized: number; elevated: number; skipped: number; saved: boolean }
-  | { kind: 'unhide'; restored: number; skipped: number }
+  | ({ kind: 'hide'; minimized: number } & HideNote)
+  | { kind: 'unhide'; restored: number; skipped: number; earlier?: HideNote }
+
+/**
+ * 감출 때 생긴 문제(2026-11-12 판정: 감추기는 알림을 띄우지 않는다). 설정 창 결과 줄과 다음 되돌리기 알림에만 보인다:
+ * 관리자 권한이라 내리지 못한 창, 그 밖에 내리지 못한 창(응답 없음 등), 남길 창을 저장해 두었는지
+ */
+export interface HideNote {
+  elevated: number
+  skipped: number
+  saved: boolean
+}
 
 /** 감춘 기록(메모리에만): 감춘 시각, 내린 창(감추기 직전 z-순서, 맨 위부터), 감추기 직전 앞 창 */
 export interface HideSession {
   at: number
   hidden: HiddenWindow[]
   front: string | null
+  /** 감출 때 생긴 문제(되돌릴 때 알린다) */
+  note?: HideNote
 }
+
+/**
+ * 내릴 창에서 빼는 셸 화면(검토 M7): 바탕 화면·작업 표시줄(EXCLUDED_CLASSES)과 시작 메뉴·검색·알림 센터(CoreWindow), 작업 전환·
+ * 위젯(XamlExplorerHostIslandWindow·MultitaskingViewFrame·ForegroundStaging), 알림 영역 넘침 창, 입력기 전환 창
+ */
+export const HIDE_EXCLUDED_CLASSES: readonly string[] = [
+  ...EXCLUDED_CLASSES,
+  'Windows.UI.Core.CoreWindow',
+  'XamlExplorerHostIslandWindow',
+  'MultitaskingViewFrame',
+  'ForegroundStaging',
+  'TopLevelWindowForOverflowXamlIsland',
+  'NotifyIconOverflowWindow',
+  'Shell_InputSwitchTopLevelWindow'
+]
 
 /**
  * 그 워크스페이스가 불러올 창: 불러오기(planRestore)와 같은 배치(지금 모니터 구성의 배치, 없으면 첫 배치)의 켜진 규칙을 같은 짝짓기
@@ -66,7 +93,7 @@ export function hideCandidates(o: {
   let elevated = 0
   for (const w of o.windows) {
     if (o.keep.has(w.hwnd) || !w.title || w.cloaked || w.pid === o.selfPid || w.minimized) continue
-    if (EXCLUDED_CLASSES.includes(w.className)) continue
+    if (HIDE_EXCLUDED_CLASSES.includes(w.className)) continue
     if (monitorOfRect(o.toDip(w.frame), [...o.monitors]) < 0) continue
     if (w.elevated === true && o.selfElevated !== true) {
       elevated++
@@ -82,7 +109,7 @@ export function hideCandidates(o: {
  * carry는 다시 감출 때 이어서 기억할 창(changed: 아직 최소화된 내린 창)이다
  */
 export type PressDecision =
-  | { kind: 'restore'; windows: HiddenWindow[]; focus: string | null }
+  | { kind: 'restore'; windows: HiddenWindow[]; focus: string | null; note?: HideNote }
   | { kind: 'hide'; why: 'first' | 'expired' | 'changed' | 'nothing'; carry: HiddenWindow[] }
 
 /**
@@ -100,21 +127,36 @@ export function decidePress(o: { session: HideSession | null; now: number; state
   if (alive.some((x) => !x.st!.minimized)) return { kind: 'hide', why: 'changed', carry: alive.filter((x) => x.st!.minimized).map((x) => x.w) }
   if (alive.length === 0) return { kind: 'hide', why: 'nothing', carry: [] }
   const focus = s.front !== null && o.state(s.front) !== null ? s.front : alive[0].w.hwnd
-  return { kind: 'restore', windows: alive.map((x) => x.w).reverse(), focus }
+  return { kind: 'restore', windows: alive.map((x) => x.w).reverse(), focus, ...(s.note ? { note: s.note } : {}) }
 }
 
 /** 새로 감춘 기록: 이번에 내린 창(z-순서) 다음에 이어서 기억할 창(carry, 이번에 다시 내린 창은 한 번만) */
-export function startSession(o: { now: number; front: string | null; hidden: readonly HiddenWindow[]; carry: readonly HiddenWindow[] }): HideSession {
+export function startSession(o: {
+  now: number
+  front: string | null
+  hidden: readonly HiddenWindow[]
+  carry: readonly HiddenWindow[]
+  note?: HideNote
+}): HideSession {
   const mine = new Set(o.hidden.map((w) => w.hwnd))
-  return { at: o.now, hidden: [...o.hidden, ...o.carry.filter((w) => !mine.has(w.hwnd))], front: o.front }
+  return { at: o.now, hidden: [...o.hidden, ...o.carry.filter((w) => !mine.has(w.hwnd))], front: o.front, ...(o.note ? { note: o.note } : {}) }
 }
 
 /**
- * 감춘 뒤 바탕 화면에 포커스를 줄지: 불러오기가 포커스를 줄 창을 고르지 못했고(저장 전이거나 업무 창을 못 찾음) 감추기 직전 앞 창을
- * 내렸으면 true. 활성화 없이 내린(SW_SHOWMINNOACTIVE) 앞 창은 최소화된 채 포커스를 쥐고 있어 키 입력이 내린 창으로 간다
+ * 감춘 뒤 실제 앞 창 확인(검토 I2): 앞 창의 맨 위 소유 창이 내린 창이거나(다른 이름으로 저장 대화상자·메신저 대화 창도 그 앱 창으로 본다),
+ * 최소화됐거나 숨었거나 사라졌으면(state null) true: 바탕 화면에 포커스를 준다. 활성화 없이 최소화한(SW_SHOWMINNOACTIVE) 앞 창은
+ * 최소화된 채 키 입력을 받고, 고른 창에 포커스를 주지 못하면(SetForegroundWindow 실패) 그 창이 그대로 앞 창으로 남는다.
+ * 앞 창이 없으면 키 입력을 받는 창이 없어 그대로 둔다
  */
-export function needsDesktopFocus(o: { focusTarget: FocusTarget | null | undefined; front: string | null; hidden: ReadonlySet<string> }): boolean {
-  return (o.focusTarget ?? null) === null && o.front !== null && o.hidden.has(o.front)
+export function focusLeftOnHidden(o: {
+  foreground: { hwnd: string; own: boolean } | null
+  hidden: ReadonlySet<string>
+  state(hwnd: string): { minimized: boolean } | null
+}): boolean {
+  if (!o.foreground) return false
+  if (o.hidden.has(o.foreground.hwnd)) return true
+  const s = o.state(o.foreground.hwnd)
+  return s === null || s.minimized
 }
 
 // 감춘 동안 업무 창을 항상 위에 두기(기본 워크스페이스의 옵션 keepOnTop, 기본 끔, 2026-11-12 사용자 결정)
@@ -136,14 +178,14 @@ export function pinTargets(o: {
 }
 
 /**
- * 고정한 동안 약 0.5초마다 살핀다: 감춘 지 10분이 지났으면 expired, 앞 창이 업무 창(keep)도 Sure-Mate 창(팔레트·설정 등)도 아닌
- * 다른 창이면 사용자가 옮긴 것이라 switched(그대로 두면 새로 연 창이 고정한 창 밑에 깔린다). 앞 창을 읽지 못했으면 그대로 둔다.
- * foreground.hwnd는 앞 창의 맨 위 소유 창(대화상자는 그 앱 창으로 본다)
+ * 고정한 동안 약 0.5초마다 살핀다: 감춘 지 10분이 지났거나 시계가 거꾸로 갔으면(검토 M2) expired, 앞 창이 업무 창(keep)이 아니면 사용자가
+ * 옮긴 것이라 switched(그대로 두면 새로 연 창이 고정한 창 밑에 깔린다). Sure-Mate 창(설정·팔레트)도 고정한 창에 덮이므로 switched다
+ * (검토 M6: 옵션을 끄러 연 설정 창). 앞 창을 읽지 못했으면 그대로 둔다. foreground.hwnd는 앞 창의 맨 위 소유 창(대화상자는 그 앱 창)
  */
 export function pinCheck(o: { until: number; now: number; keep: ReadonlySet<string>; foreground: { hwnd: string; own: boolean } | null }): 'expired' | 'switched' | null {
-  if (o.now >= o.until) return 'expired'
+  if (o.now >= o.until || o.now < o.until - HIDE_SESSION_MS) return 'expired'
   const fg = o.foreground
-  if (!fg || fg.own || o.keep.has(fg.hwnd)) return null
+  if (!fg || o.keep.has(fg.hwnd)) return null
   return 'switched'
 }
 
