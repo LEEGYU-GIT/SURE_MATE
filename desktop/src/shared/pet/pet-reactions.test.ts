@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppEvent } from '../app-events'
-import { PET_NUDGE_LINES, petBubbleText } from './pet-copy'
-import { BUBBLE_MS, nudgeReaction, REACTION_MS, reactionFor } from './pet-reactions'
+import { PET_NUDGE_LINES, petAwayLine, petBubbleText } from './pet-copy'
+import { awayReaction, BUBBLE_MS, nudgeReaction, REACTION_MS, reactionFor } from './pet-reactions'
 
 const on = { reactions: true, bubbles: true }
 const noBubbles = { reactions: true, bubbles: false }
@@ -118,5 +118,33 @@ describe('nudgeReaction: 쉬어 가기 말(2026-11-13)', () => {
       holdMs: BUBBLE_MS
     })
     expect(nudgeReaction('x').props).not.toBe(nudgeReaction('x').props)
+  })
+})
+
+describe('awayReaction: Ttree 이석 미리 알림(2026-11-13)', () => {
+  it('경고와 같은 걱정 얼굴·느낌표에 폴짝 한 번, 말풍선은 이석 기준까지(받은 시간)', () => {
+    expect(awayReaction(petAwayLine(2), 120_000)).toEqual({
+      kind: 'away',
+      face: 'worried',
+      props: ['alert'],
+      cue: 'hop',
+      bubble: '2분 뒤 이석으로 잡혀요. 자리에 계시면 마우스를 한 번 움직여 주세요.',
+      holdMs: 120_000
+    })
+    expect(awayReaction('x', 300_000).holdMs).toBe(300_000)
+  })
+
+  it('말풍선은 4초보다 짧게 떠 있지 않는다(숫자가 아니면 4초)', () => {
+    expect(awayReaction('x', BUBBLE_MS).holdMs).toBe(BUBBLE_MS)
+    expect(awayReaction('x', BUBBLE_MS + 1).holdMs).toBe(BUBBLE_MS + 1)
+    for (const holdMs of [1, 0, -5, NaN, Infinity, -Infinity]) {
+      expect(awayReaction('x', holdMs).holdMs, String(holdMs)).toBe(BUBBLE_MS)
+    }
+  })
+
+  it('반응마다 새 소품 배열이다', () => {
+    const a = awayReaction('x', 5000)
+    a.props.push('envelope')
+    expect(awayReaction('x', 5000).props).toEqual(['alert'])
   })
 })

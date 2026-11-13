@@ -121,6 +121,22 @@ export const PET_NUDGE_LINES: readonly string[] = [
   '허리 쭉 펴고 해요!'
 ]
 
+/**
+ * Ttree 이석 미리 알림(2026-11-13) 말풍선과 Windows 알림(펫이 보일 수 없을 때). 자리에 있는 사람이 직접 움직이도록 알릴 뿐
+ * Sure-Mate가 입력을 흉내 내지 않는다. 말풍선 3줄(글 너비 176, 13px) 안에 든다. 문구는 화면에만 쓰고 로그에는 남기지 않는다
+ */
+export function petAwayLine(leadMin: number): string {
+  return `${leadMin}분 뒤 이석으로 잡혀요. 자리에 계시면 마우스를 한 번 움직여 주세요.`
+}
+
+/**
+ * 이석 기준 직전 초 세기(2026-11-13 사용자 요청: 이석 창이 뜰까 걱정하는 사람이 많다). 기준 30초 전부터 1초마다 말풍선 문구만 바꾼다.
+ * 두 번째 문장은 petAwayLine과 같다(말풍선 높이가 그대로라 글자만 바뀐다)
+ */
+export function petAwayCountdownLine(seconds: number): string {
+  return `${seconds}초 뒤 이석으로 잡혀요. 자리에 계시면 마우스를 한 번 움직여 주세요.`
+}
+
 /** 숨긴 펫에 조종 단축키를 눌렀을 때 알림(누를 때마다 한 번). 부르는 곳은 PET_RECALL_HINT와 같은 순서(바의 펫 단추 → 트레이) */
 export const PET_HIDDEN_NOTICE = '말랑 메이트가 숨어 있어요. 바의 펫 단추나 트레이에서 불러 주세요.'
 

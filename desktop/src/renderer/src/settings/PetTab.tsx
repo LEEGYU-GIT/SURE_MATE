@@ -1,7 +1,19 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { withObjectParticle } from '../../../shared/josa'
-import { PET_CONTROL_KEYS, PET_NUDGE_LINES, PET_RECALL_HINT } from '../../../shared/pet/pet-copy'
-import { PET_LIMITS, PET_NUDGE_MINUTES, PET_SIZES, type PetActivity, type PetNudgeMin, type PetSize } from '../../../shared/pet/pet-settings'
+import { PET_CONTROL_KEYS, PET_NUDGE_LINES, PET_RECALL_HINT, petAwayLine } from '../../../shared/pet/pet-copy'
+import {
+  PET_AWAY_LEAD_MINUTES,
+  PET_AWAY_MINUTES,
+  PET_LIMITS,
+  PET_NUDGE_MINUTES,
+  PET_SIZES,
+  type PetActivity,
+  type PetAwayLeadMin,
+  type PetAwayMin,
+  type PetNudgeMin,
+  type PetSettings,
+  type PetSize
+} from '../../../shared/pet/pet-settings'
 import type { PetLook } from '../../../shared/pet/pet-view'
 import { PetSprite } from '../pet/PetSprite'
 import { Button, Row, Section, Segmented, Slider, Toggle } from './controls'
@@ -16,10 +28,24 @@ const ACTIVITIES: { value: PetActivity; label: string }[] = [
   { value: 'lively', label: '활발' }
 ]
 const NUDGE_MINUTES = PET_NUDGE_MINUTES.map((m) => ({ value: String(m) as `${PetNudgeMin}`, label: `${m}분` }))
+const AWAY_MINUTES = PET_AWAY_MINUTES.map((m) => ({ value: String(m) as `${PetAwayMin}`, label: `${m}분` }))
+const AWAY_LEAD_MINUTES = PET_AWAY_LEAD_MINUTES.map((m) => ({ value: String(m) as `${PetAwayLeadMin}`, label: `${m}분 전` }))
+
+/** 이석 미리 알림 말풍선의 첫 문장(끝 마침표 뺌). 설명에 따옴표로 넣는다: "2분 뒤 이석으로 잡혀요" */
+const awayHead = (lead: PetAwayLeadMin): string => petAwayLine(lead).split('. ')[0]
+
+/** 이석 미리 알림을 말풍선으로 보일 수 없는 까닭(숨김을 먼저 본다). 그때는 Windows 알림으로 알린다. 보일 수 있으면 null */
+function awayNoBubble(pet: Pick<PetSettings, 'visible' | 'bubbles'>): string | null {
+  if (!pet.visible) return '말랑 메이트가 숨어 있어'
+  if (!pet.bubbles) return '말풍선이 꺼져 있어'
+  return null
+}
 
 /**
- * 말랑 메이트(설계 문서 §14·§14-2): 보이기와 크기, 움직임, 반응과 말풍선(쉬어 가기 말 포함), 조종 단축키. 캐릭터 고르기(§14-3)는 아직 없다.
+ * 말랑 메이트(설계 문서 §14·§14-2): 보이기와 크기, 움직임, 반응과 말풍선(쉬어 가기 말 포함), Ttree 이석 미리 알림, 조종 단축키.
+ * 캐릭터 고르기(§14-3)는 아직 없다.
  * 쉬어 가기 말 간격은 켜 둔 동안만 보이고, 말풍선을 끄면 쉬어 가기 말 행이 지금은 말을 걸지 않는다고 알린다.
+ * 이석 기준·미리 알림도 켜 둔 동안만 보이고, 펫을 숨기거나 말풍선을 끄면 이석 미리 알림 행이 Windows 알림으로 알린다고 적는다.
  * 바꾼 값은 그 자리에서 저장하고(설정 서비스 → 설정 쓰기 한 줄), 저장 뒤 펫이 바로 다시 판단한다.
  * 조종 단축키는 등록해 보고 실패하면 되돌려야 해서 단축키 탭과 같은 녹화 칸(단축키 바꾸기)으로 바꾼다.
  */
@@ -27,6 +53,7 @@ export function PetTab(): React.JSX.Element {
   const { snapshot, save, revision } = useSettingsCtx()
   const pet = snapshot.settings.pet
   const { min, max } = PET_LIMITS.sleepAfterMin
+  const awayFallback = awayNoBubble(pet)
   return (
     <>
       <Section title="보이기와 크기">
@@ -132,6 +159,84 @@ export function PetTab(): React.JSX.Element {
               />
             )}
           </Row>
+        ) : null}
+      </Section>
+
+      <Section title="Ttree 이석 미리 알림">
+        <Row
+          label="이석 전에 알려 주기"
+          description={
+            <>
+              키보드와 마우스를 안 쓴 채 이석 기준이 다가오면 말랑 메이트가 &apos;{awayHead(pet.awayLeadMin)}&apos;라고 알려 줘요.
+              <br />
+              Ttree가 설치된 PC에서만 알리고, 마우스를 대신 움직이지는 않아요
+              {pet.awayWarn && awayFallback ? (
+                <>
+                  <br />
+                  <span className="text-warn">{awayFallback} 지금은 Windows 알림으로 알려요</span>
+                </>
+              ) : null}
+            </>
+          }
+        >
+          {(ids) => (
+            // 미리 보기는 켬·끔과 상관없이 늘 보인다(입력 없이 기다리지 않고 지금 한 번 알린다). 스위치는 다른 행처럼 오른쪽 끝에 둔다
+            <div className="flex items-center gap-4">
+              <Button
+                label="이석 알림 미리 보기"
+                onClick={() => window.sureMate.settings.awayPreview()}
+              >
+                미리 보기
+              </Button>
+              <Toggle
+                {...ids}
+                checked={pet.awayWarn}
+                onChange={(awayWarn) => void save({ pet: { awayWarn } })}
+              />
+            </div>
+          )}
+        </Row>
+        {pet.awayWarn ? (
+          <>
+            <Row
+              label="Ttree 이석 기준"
+              description={
+                <>
+                  키보드와 마우스를 이만큼 안 쓰면 Ttree가 이석으로 잡아요.
+                  <br />
+                  회사 설정과 같게 맞춰 주세요
+                </>
+              }
+            >
+              {(ids) => (
+                <Segmented
+                  {...ids}
+                  value={String(pet.awayAfterMin) as `${PetAwayMin}`}
+                  options={AWAY_MINUTES}
+                  onChange={(v) => void save({ pet: { awayAfterMin: Number(v) as PetAwayMin } })}
+                />
+              )}
+            </Row>
+            <Row
+              label="미리 알림"
+              description={
+                <>
+                  키보드와 마우스를 {pet.awayAfterMin - pet.awayLeadMin}분 안 쓰면 알려요.
+                  <br />
+                  마지막 30초는 &apos;30초 뒤&apos;부터 1초마다 세어 줘요
+                </>
+              }
+            >
+              {(ids) => (
+                <Segmented
+                  {...ids}
+                  value={String(pet.awayLeadMin) as `${PetAwayLeadMin}`}
+                  options={AWAY_LEAD_MINUTES}
+                  onChange={(v) => void save({ pet: { awayLeadMin: Number(v) as PetAwayLeadMin } })}
+                />
+              )}
+            </Row>
+          </>
         ) : null}
       </Section>
 

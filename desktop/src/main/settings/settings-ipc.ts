@@ -15,6 +15,8 @@ export interface SettingsIpcDeps {
   hotkeys: Omit<HotkeyChanger, 'recording'>
   openFile(which: 'settings' | 'logs'): void
   openOnboarding(): void
+  /** 말랑 메이트 탭 '미리 보기': 이석 미리 알림을 지금 한 번 보인다(알림 켬·끔, Ttree 설치와 상관없이) */
+  awayPreview(): void
   finishOnboarding(): Promise<void>
   /** 첫 실행 안내의 워크스페이스 따라 해 보기: 지금 배치를 이 이름으로 저장(같은 이름이면 다시 저장, 알림 없이) */
   saveOnboardingWorkspace(name: string): Promise<unknown>
@@ -82,6 +84,10 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   })
   ipcMain.on(IPC.settingsOpenOnboarding, (e) => {
     if (fromSettings(e)) d.openOnboarding()
+  })
+  // 받는 값이 없다: 문구와 미리 알림 분은 main이 지금 설정으로 정한다
+  ipcMain.on(IPC.settingsAwayPreview, (e) => {
+    if (fromSettings(e)) d.awayPreview()
   })
   ipcMain.handle(IPC.onboardingCandidates, (e) => (fromSettings(e) ? d.hotkeys.candidates() : []))
   ipcMain.handle(IPC.onboardingFinish, async (e) => {

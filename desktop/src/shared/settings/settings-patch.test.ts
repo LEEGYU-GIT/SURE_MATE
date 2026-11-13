@@ -119,6 +119,16 @@ describe('말랑 메이트(pet, 설계 문서 §14)', () => {
       ['nudgeEveryMin', 45],
       ['nudgeEveryMin', 60],
       ['nudgeEveryMin', 90],
+      ['awayWarn', false],
+      ['awayWarn', true],
+      ['awayAfterMin', 10],
+      ['awayAfterMin', 15],
+      ['awayAfterMin', 20],
+      ['awayAfterMin', 30],
+      ['awayLeadMin', 1],
+      ['awayLeadMin', 2],
+      ['awayLeadMin', 3],
+      ['awayLeadMin', 5],
       ['reduceMotion', true]
     ]
     for (const [k, v] of valid) expect(patchOf({ pet: { [k]: v } }).pet, `${k}=${String(v)}`).toEqual({ [k]: v })
@@ -148,6 +158,21 @@ describe('말랑 메이트(pet, 설계 문서 §14)', () => {
       ['nudgeEveryMin', 60.5, '쉬어 가기 말 간격'],
       ['nudgeEveryMin', '60', '쉬어 가기 말 간격'],
       ['nudgeEveryMin', null, '쉬어 가기 말 간격'],
+      ['awayWarn', 'on', '이석 미리 알림'],
+      ['awayWarn', 0, '이석 미리 알림'],
+      ['awayAfterMin', 25, '이석 기준'],
+      ['awayAfterMin', 60, '이석 기준'],
+      ['awayAfterMin', 0, '이석 기준'],
+      ['awayAfterMin', 20.5, '이석 기준'],
+      ['awayAfterMin', '20', '이석 기준'],
+      ['awayAfterMin', null, '이석 기준'],
+      ['awayLeadMin', 4, '미리 알림'],
+      ['awayLeadMin', 0, '미리 알림'],
+      ['awayLeadMin', 10, '미리 알림'],
+      ['awayLeadMin', 1.5, '미리 알림'],
+      ['awayLeadMin', -2, '미리 알림'],
+      ['awayLeadMin', '2', '미리 알림'],
+      ['awayLeadMin', Number.NaN, '미리 알림'],
       ['reduceMotion', 'on', '움직임 줄이기']
     ]
     for (const [k, v, word] of invalid) {
@@ -155,6 +180,35 @@ describe('말랑 메이트(pet, 설계 문서 §14)', () => {
       expect(r.ok, `${k}=${String(v)}`).toBe(false)
       if (!r.ok) expect(r.errors.join(' / '), `${k}=${String(v)}`).toContain(word)
     }
+  })
+
+  it('Ttree 이석 미리 알림(2026-11-13): 켬·끔과 설정 창 선택지의 분만 받고, 틀리면 고를 수 있는 값을 들어 알린다', () => {
+    expect(patchOf({ pet: { awayWarn: false, awayAfterMin: 30, awayLeadMin: 5 } }).pet).toEqual({ awayWarn: false, awayAfterMin: 30, awayLeadMin: 5 })
+    expect(errorsOf({ pet: { awayWarn: 'yes' } })).toEqual(['말랑 메이트 이석 미리 알림 값은 켬·끔이어야 해요'])
+    expect(errorsOf({ pet: { awayAfterMin: 25 } })).toEqual(['이석 기준은 10·15·20·30분 가운데 하나예요'])
+    expect(errorsOf({ pet: { awayLeadMin: 4 } })).toEqual(['미리 알림은 1·2·3·5분 전 가운데 하나예요'])
+    // 틀린 필드는 모두 알리고, 한 필드라도 틀리면 맞는 필드(awayWarn)도 받지 않는다
+    expect(errorsOf({ pet: { awayWarn: true, awayAfterMin: 45, awayLeadMin: 4 } })).toEqual([
+      '이석 기준은 10·15·20·30분 가운데 하나예요',
+      '미리 알림은 1·2·3·5분 전 가운데 하나예요'
+    ])
+  })
+
+  it('이석 미리 알림 패치는 보낸 필드만 덮고 나머지 펫 필드(쉬어 가기 말·조종 단축키 포함)는 그대로 둔다', () => {
+    const s = cur()
+    s.pet.nudgeEveryMin = 30
+    s.pet.controlHotkey = 'Ctrl+Alt+P'
+    const lead = applySettingsPatch(s, patchOf({ pet: { awayLeadMin: 5 } }, s))
+    expect(lead.pet).toEqual({ ...s.pet, awayLeadMin: 5 })
+    // 기본값(켬, 20분 기준)은 그대로
+    expect(lead.pet.awayWarn).toBe(true)
+    expect(lead.pet.awayAfterMin).toBe(20)
+    const off = applySettingsPatch(lead, patchOf({ pet: { awayWarn: false, awayAfterMin: 10 } }, lead))
+    expect(off.pet).toEqual({ ...s.pet, awayWarn: false, awayAfterMin: 10, awayLeadMin: 5 })
+    expect({ ...off, pet: s.pet }).toEqual(s)
+    // 원래 객체는 바꾸지 않는다
+    expect(s.pet.awayLeadMin).toBe(2)
+    expect(lead.pet.awayWarn).toBe(true)
   })
 
   it('조종 단축키는 이 길로 바꾸지 않는다(등록해 보고 실패하면 되돌려야 하므로 단축키 바꾸기로)', () => {
@@ -210,6 +264,9 @@ describe('applySettingsPatch', () => {
       reactions: false,
       nudges: false,
       nudgeEveryMin: 30,
+      awayWarn: false,
+      awayAfterMin: 30,
+      awayLeadMin: 5,
       controlHotkey: 'Ctrl+Alt+P',
       reduceMotion: true
     }

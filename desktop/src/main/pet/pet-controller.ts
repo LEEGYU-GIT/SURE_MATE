@@ -15,6 +15,7 @@ import {
 import { dropOnLedge, jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
 import type { PetBusy } from '../../shared/pet/pet-nudge'
 import {
+  awayReaction,
   BUBBLE_MS,
   nudgeReaction,
   REACTION_MS,
@@ -80,11 +81,27 @@ export interface PetController {
    * 쌓아 두지 않는다: 숨김·말풍선 끔·busy()이면 아무것도 하지 않고 false. 언제 말할지는 런타임(pet-nudge)이 정한다
    */
   nudge(text: string): boolean
+  /**
+   * Ttree 이석 미리 알림(2026-11-13)을 걱정 얼굴·느낌표·폴짝 한 번과 말풍선으로 holdMs(4초 이상, 이석 기준까지) 동안 보인다.
+   * 졸고 있으면 깨우고 혼자 걷던 중이면 멈춘다. 쉬어 가기 말과 달리 떠 있는 말풍선(앱 반응·쉬어 가기 말)은 막지 않고 이 알림으로 바뀐다.
+   * 쌓아 두지 않는다: 숨김·말풍선 끔·빈 문구·조종·메뉴·누름·들림·움직이는 중이면 아무것도 하지 않고 false(런타임이 Windows 알림으로 알린다).
+   * 언제 알릴지는 런타임(away-watch·pet-away)이 정한다
+   */
+  awayWarn(text: string, holdMs: number): boolean
+  /**
+   * 이석 기준 직전 초 세기(2026-11-13): 떠 있는 이석 알림의 말풍선 글만 바꾼다. 폴짝·새 말풍선(seq)·얼굴·소품·반응 시간
+   * (awayWarn이 잡은 이석 기준까지)은 그대로이고, 렌더러는 같은 말풍선의 글만 바꿔 다시 잰다(들어오는 움직임 없음).
+   * 이석 알림이 떠 있지 않거나(다른 반응·닫힘) 숨김·말풍선 끔·빈 문구·끝낸 뒤면 아무것도 하지 않고 false(런타임이 awayWarn으로 띄운다)
+   */
+  awayUpdate(text: string): boolean
+  /** 입력이 돌아왔거나 알림을 껐다: 떠 있는 이석 알림을 말풍선을 누른 것처럼 닫는다. 다른 반응·숨긴 펫은 그대로 둔다 */
+  awayClear(): void
   /** 말풍선을 눌렀다: 닫고 반응을 끝낸다 */
   bubbleClick(): void
   /**
    * 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 더하고, null이면 뺀다.
-   * 렌더러는 새 말풍선(seq)마다 한 번 보낸다(새 반응이 사각형을 지우므로 같은 문구여도)
+   * 렌더러는 새 말풍선(seq)마다 한 번 보낸다(새 반응이 사각형을 지우므로 같은 문구여도). 같은 말풍선의 글만 바뀌어도
+   * (awayUpdate) 다시 재어 보낸다
    */
   bubbleRect(r: Rect | null): void
   /** 펫 위 오른쪽 클릭: 메뉴를 열고, 열려 있으면 닫는다(설계 §14-2) */
@@ -234,6 +251,7 @@ export function floorMiddle(w: PetWorld, size: number): Point {
  * 그 밖에는 커서 조회 타이머 하나로 클릭 통과만 맞춘다. 숨긴 동안에는 타이머가 없다.
  * 오른쪽 클릭 메뉴의 닫기 확인은 그 조회가 50ms 이하로 겸하고, 조종 모드는 계획·졸기 타이머를 멈춘다(새 타이머 없음).
  * 쉬어 가기 말은 런타임의 1분 확인이 정하고 여기서는 반응 자리(반응 타이머)로 보이기만 한다(새 타이머 없음).
+ * Ttree 이석 미리 알림도 런타임(away-watch)이 정하고 같은 반응 자리로 보인다(새 타이머 없음).
  */
 export function createPetController(d: PetControllerDeps): PetController {
   const T = d.timers
@@ -748,8 +766,9 @@ export function createPetController(d: PetControllerDeps): PetController {
       },
       Math.max(0, r.holdMs)
     )
-    // 쉬어 가기 말은 런타임이 pet.nudge(줄 번호)로 남긴다
-    if (r !== guide && r.kind !== 'nudge') d.log('pet.react', { kind: r.kind, bubble: r.bubble !== null })
+    // 쉬어 가기 말은 런타임이 pet.nudge(줄 번호)로, 이석 미리 알림은 away-watch가 away.warn으로 남긴다
+    if (r !== guide && r.kind !== 'nudge' && r.kind !== 'away')
+      d.log('pet.react', { kind: r.kind, bubble: r.bubble !== null })
   }
 
   /** 앱 반응(또는 조종 안내)을 지금 보인다: 졸고 있으면 깨우고, 혼자 걷던 중이면 멈춘다(조종 중 걷기는 그대로) */
@@ -764,16 +783,26 @@ export function createPetController(d: PetControllerDeps): PetController {
   }
 
   /**
-   * 쉬어 가기 말을 걸 수 없는 까닭(2026-11-13). 쌓아 두지 않으므로 반응을 미루는 자세(공중·뛰어오르기·올라서기·돌아 내려가기)도
-   * 걸 수 없는 것으로 친다. 떠 있는 말풍선(앱 반응·조종 안내)은 덮지 않는다
+   * 하던 일 때문에 말풍선(쉬어 가기 말·이석 미리 알림)을 지금 띄울 수 없는 까닭. 떠 있는 반응은 보지 않는다.
+   * 쌓아 두지 않으므로 반응을 미루는 자세(공중·뛰어오르기·올라서기·돌아 내려가기)도 띄울 수 없는 것으로 친다
    */
-  function nudgeBusy(): PetBusy | null {
+  function motionBusy(): Exclude<PetBusy, 'reacting'> | null {
     if (control) return 'control'
     if (menuOpen) return 'menu'
     if (pressed !== null || mode === 'held') return 'held'
-    if (reacting !== null || pending !== null) return 'reacting'
     if (mode === 'air' || mode === 'leap' || stepUp !== null || stepDown !== null) return 'moving'
     return null
+  }
+
+  /**
+   * 쉬어 가기 말을 걸 수 없는 까닭(2026-11-13): motionBusy에 더해 떠 있는 말풍선(앱 반응·조종 안내·이석 미리 알림)과
+   * 기다리는 반응은 덮지 않는다. 까닭이 여럿이면 조종 → 메뉴 → 누름·들림 → 반응 중 → 움직이는 중
+   */
+  function nudgeBusy(): PetBusy | null {
+    const b = motionBusy()
+    if (b !== null && b !== 'moving') return b
+    if (reacting !== null || pending !== null) return 'reacting'
+    return b
   }
 
   /** 메뉴가 닫힌 뒤: 메뉴 동안 온 마지막 반응을 보인다(가만히·앉기·졸기·걷기에서) */
@@ -1766,10 +1795,14 @@ export function createPetController(d: PetControllerDeps): PetController {
       readInputs()
       if (!started) return
       // 반응을 끄면 보이던 반응도 끝나고, 말풍선을 끄면 떠 있던 말풍선이 닫힌다(저장한 반응도 버린다).
-      // 조종 키 안내와 쉬어 가기 말은 앱 반응이 아니라 반응 끄기와 상관없다(말풍선 끄기는 따른다).
-      // 쉬어 가기 말을 끄면 떠 있던 쉬어 가기 말풍선도 닫힌다
+      // 조종 키 안내·쉬어 가기 말·이석 미리 알림은 앱 반응이 아니라 반응 끄기와 상관없다(말풍선 끄기는 따른다).
+      // 쉬어 가기 말을 끄면 떠 있던 쉬어 가기 말풍선이, 이석 미리 알림을 끄면 떠 있던 알림이 닫힌다
       const appReactionOff = (r: PetReaction): boolean =>
-        r.kind === 'nudge' ? !cfg.nudges : !cfg.reactions && r !== guide
+        r.kind === 'nudge'
+          ? !cfg.nudges
+          : r.kind === 'away'
+            ? !cfg.awayWarn
+            : !cfg.reactions && r !== guide
       if (pending && (appReactionOff(pending) || (!cfg.bubbles && pending.bubble))) pending = null
       if (
         shown &&
@@ -1834,6 +1867,39 @@ export function createPetController(d: PetControllerDeps): PetController {
       showReaction(nudgeReaction(text))
       settle()
       return true
+    },
+    awayWarn(text, holdMs) {
+      if (
+        disposed ||
+        !shown ||
+        !world ||
+        !cfg.bubbles ||
+        text.trim() === '' ||
+        motionBusy() !== null
+      )
+        return false
+      // 쉬어 가기 말과 같은 길(깨우기·걷기 멈춤·말풍선·폴짝, 끝나면 finishReaction). 떠 있던 반응은 이 알림으로 바뀌고,
+      // 기다리던 반응도 버린다(settle이 꺼내 알림을 덮지 않게)
+      pending = null
+      showReaction(awayReaction(text, holdMs))
+      settle()
+      return true
+    },
+    awayUpdate(text) {
+      if (disposed || !shown || !world || !cfg.bubbles || text.trim() === '') return false
+      const cur = reacting
+      if (cur === null || cur.r.kind !== 'away' || cur.r.bubble === null) return false
+      if (cur.r.bubble === text) return true
+      // 글만 바꾼다: seq·cue·얼굴·반응 타이머·클릭 판정 사각형은 그대로 둔다. 렌더러가 바뀐 글을 다시 재어 사각형을 알린다
+      // (그 사이에는 옛 사각형으로 판정한다. 같은 말풍선이라 자리는 거의 같다)
+      reacting = { ...cur, r: { ...cur.r, bubble: text } }
+      settle()
+      return true
+    },
+    awayClear() {
+      if (disposed || !shown || reacting?.r.kind !== 'away') return
+      // 말풍선을 누른 것과 같다: 하던 일(새 계획·남은 쉼·다시 오르기)을 이어 가고 클릭 판정을 맞춘다
+      finishReaction()
     },
     bubbleClick() {
       if (disposed || !shown || !reacting || reacting.r.bubble === null) return

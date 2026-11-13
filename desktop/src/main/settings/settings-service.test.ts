@@ -113,7 +113,21 @@ it('changed()는 구독한 화면에 새 스냅숏을 보내고, 구독을 풀�
 it('설정 창 저장(서비스 → 설정 저장 줄 → settings.json)은 펫 설정을 그대로 두고, 같은 줄의 펫 보이기 바꾸기와 섞이지 않는다', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'sure-mate-service-'))
   try {
-    const pet: PetSettings = { visible: false, size: 72, activity: 'lively', sleepAfterMin: 10, bubbles: false, reactions: true, nudges: false, nudgeEveryMin: 90, controlHotkey: 'Ctrl+Alt+P', reduceMotion: true }
+    const pet: PetSettings = {
+      visible: false,
+      size: 72,
+      activity: 'lively',
+      sleepAfterMin: 10,
+      bubbles: false,
+      reactions: true,
+      nudges: false,
+      nudgeEveryMin: 90,
+      awayWarn: false,
+      awayAfterMin: 30,
+      awayLeadMin: 5,
+      controlHotkey: 'Ctrl+Alt+P',
+      reduceMotion: true
+    }
     await writeFile(join(dir, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, pet }))
     // 앱 시작과 같이 파일을 읽고, index.ts처럼 설정 서비스의 change를 M5 설정 저장 줄(settings-writer)에 잇는다
     let settings = await loadSettings(dir)
