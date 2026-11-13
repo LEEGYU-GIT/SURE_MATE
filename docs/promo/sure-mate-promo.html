@@ -260,6 +260,22 @@ p { margin: 0; }
 .snippet { font-size: 13px; line-height: 1.75; background: var(--paper); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; color: var(--ink); white-space: pre-wrap; }
 
 /* 7. 말랑 메이트 */
+/* 사내 프로그램 칸: 팔레트에 친 말 → 열리는 명령, 이석 미리 알림 말풍선과 초 세기 */
+.opens { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.opens li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--fs-small); }
+.opens .typed { font-weight: 600; color: var(--jelly-text); background: var(--jelly-wash); border-radius: 8px; padding: 5px 11px; }
+.opens .to { color: var(--mute); }
+.opens .to::before { content: "→ "; font-family: var(--mono); color: var(--jelly-text); }
+.away { display: grid; justify-items: center; gap: 12px; }
+.away .bubble { justify-self: stretch; text-align: left; }
+.away .bubble b { font-weight: 700; }
+.away .bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 14px; height: 14px; background: var(--card); border-right: 2px solid var(--mate-ink); border-bottom: 2px solid var(--mate-ink); transform: translateX(-50%) rotate(45deg); }
+.away .pet { position: relative; width: 72px; height: 72px; }
+.away .pet .mate { width: 72px; height: 72px; }
+.away .alert { position: absolute; top: -4px; right: -10px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--sun); color: var(--sun-ink); border: 2px solid var(--mate-ink); font-weight: 700; font-size: 14px; line-height: 1; }
+.countdown { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.countdown li { font-family: var(--mono); font-size: var(--fs-cap); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--mute); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+.countdown li:first-child { color: var(--sun-ink); background: var(--sun); border-color: transparent; }
 .pet-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .pet-card { border: 1px solid var(--night-line); border-radius: 14px; padding: 16px 12px; display: grid; justify-items: center; gap: 10px; text-align: center; align-content: start; }
 .pet-card .mate { width: 64px; height: 64px; }
@@ -417,7 +433,7 @@ p { margin: 0; }
       <div class="hero-grid">
         <div>
           <h1>단축키 한 번이면<br>일이 <em>제자리로.</em></h1>
-          <p class="hero-lead">창 배치, AI 프롬프트, 가명 처리, 사내 용어까지. 손에 익은 단축키 하나로 불러오는 작은 비서, Sure-Mate예요.</p>
+          <p class="hero-lead">창 배치, AI 프롬프트, 가명 처리, 사내 용어에 Ttree까지. 손에 익은 단축키 하나로 불러오는 작은 비서, Sure-Mate예요.</p>
           <div class="hero-keys" aria-label="기본 단축키 Ctrl Alt Space">
             <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">Space</kbd>
           </div>
@@ -429,7 +445,7 @@ p { margin: 0; }
         </div>
       </div>
       <div class="hero-cta">
-        <span class="cta">첨부 파일 <span class="file">Sure-Mate-Setup-0.1.0.exe · 약 108MB</span></span>
+        <span class="cta">첨부 파일 <span class="file">Sure-Mate-Setup-0.1.0.exe · 약 110MB</span></span>
         <span class="note">관리자 권한 없이 1분이면 설치돼요</span>
       </div>
     </div>
@@ -447,6 +463,8 @@ p { margin: 0; }
         <li><b>AI에 붙여넣다가 고객사 이름에서 손이 멈출 때</b><span>지우고, 바꾸고, AI가 쓴 글에서 다시 고치고</span></li>
         <li><b>“MC/DC가 뭐였더라” 사내 위키를 또 열 때</b><span>약어 하나 찾느라 흐름이 끊겨요</span></li>
         <li><b>누가 뒤에 서면 창을 하나씩 내릴 때</b><span>메신저, 다른 고객사 문서까지 하나하나</span></li>
+        <li><b>휴가 신청하려고 트레이에서 Ttree를 찾을 때</b><span>메신저도 작업 표시줄 끝 작은 아이콘 사이에 숨어 있어요</span></li>
+        <li><b>서류를 읽다 고개를 드니 이석 창이 떠 있을 때</b><span>자리에 있었는데 사유를 쓰고 결재를 기다려요</span></li>
       </ul>
     </div>
   </section>
@@ -629,8 +647,43 @@ p { margin: 0; }
     </div>
   </section>
 
+  <!-- 7-1. 사내 프로그램과 이석 미리 알림 -->
+  <section class="band wash" data-slice="05-ttree">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>Ttree도 메신저도, 팔레트에 한마디</h2>
+        <p>하고 싶은 일을 치면 사내 프로그램 창을 앞으로 가져와요. 꺼져 있거나 트레이에 숨어 있으면 켜서 보여 줘요.</p>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <h3>‘휴가 신청’ 치고 Enter</h3>
+          <ul class="opens" aria-label="팔레트에 친 말과 열리는 프로그램">
+            <li><span class="typed">출근</span><span class="to">Ttree 열기 (근무·휴가)</span></li>
+            <li><span class="typed">휴가 신청</span><span class="to">Ttree 열기 (근무·휴가)</span></li>
+            <li><span class="typed">메신저 열어줘</span><span class="to">사내 메신저 열기</span></li>
+          </ul>
+          <p>이 PC에 설치된 프로그램만 보여요. 창을 앞으로 가져오기만 하고, 창 제목이나 대화 내용은 읽지 않아요.</p>
+        </div>
+        <div class="panel">
+          <h3>이석 2분 전에 말랑 메이트가 깨워요</h3>
+          <div class="away" aria-label="이석 미리 알림 예시">
+            <div class="bubble"><b>2분 뒤 이석으로 잡혀요.</b> 자리에 계시면 마우스를 한 번 움직여 주세요.</div>
+            <div class="pet"><svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-worried"/></svg><span class="alert" aria-hidden="true">!</span></div>
+            <ol class="countdown" aria-label="마지막 30초는 1초마다 세어요"><li>30초 뒤</li><li>29초 뒤</li><li>…</li><li>1초 뒤</li></ol>
+          </div>
+          <p>Ttree는 키보드·마우스를 20분 안 쓰면 이석으로 잡아요. 서류를 읽느라 손을 놓고 있으면 18분에 알려 주고, 마지막 30초는 1초마다 세어 줘요.</p>
+          <span class="note">마우스를 대신 움직이지 않아요. 기준(20분)과 미리 알림(2분 전)은 설정 → 말랑 메이트에서 바꿔요</span>
+        </div>
+      </div>
+      <div class="callout">
+        <b>Ttree 근무 기록도 주간보고로</b>
+        <p>Ttree에서 복사한 근무 기록을 날짜별 근무 표, 근무 시간 합계, 주간보고에 옮길 일로 정리하는 프롬프트가 기본으로 들어 있어요.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- 8. AI를 어떻게 -->
-  <section class="band" data-slice="05-how">
+  <section class="band" data-slice="06-how">
     <div class="wrap">
       <div class="band-head">
         <h2>AI를 이렇게 써요</h2>
@@ -660,7 +713,7 @@ p { margin: 0; }
   </section>
 
   <!-- 11. 한눈에 보기 -->
-  <section class="band" data-slice="06-info">
+  <section class="band" data-slice="07-info">
     <div class="wrap">
       <div class="band-head">
         <h2>한눈에 보는 Sure-Mate</h2>
@@ -669,12 +722,13 @@ p { margin: 0; }
         <table class="spec">
           <tr><th>이름</th><td>Sure-Mate 0.1.0</td></tr>
           <tr><th>출품 부문</th><td>업무 비서와 반복 작업 자동화</td></tr>
-          <tr><th>설치 파일</th><td>Sure-Mate-Setup-0.1.0.exe, 약 108MB</td></tr>
+          <tr><th>설치 파일</th><td>Sure-Mate-Setup-0.1.0.exe, 약 110MB</td></tr>
           <tr><th>동작 환경</th><td>Windows 64비트, 관리자 권한 필요 없음</td></tr>
           <tr><th>인터넷 연결</th><td>앱은 접속하지 않아요. AI 사이트는 기본 브라우저로 열어요</td></tr>
           <tr><th>저장 위치</th><td>설정·용어·가명 사전 모두 이 PC에만 있어요</td></tr>
-          <tr><th>메모리·CPU</th><td>사용 메모리 약 290MB, 가만히 있을 때 CPU 0.1% 안팎</td></tr>
+          <tr><th>메모리·CPU</th><td>사용 메모리 약 310MB, 가만히 있을 때 CPU 0.2% 안팎</td></tr>
           <tr><th>기본 단축키</th><td><kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">Space</kbd> 팔레트 · <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">W</kbd> 용어 카드 · <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">H</kbd> 화면 감추기</td></tr>
+          <tr><th>사내 프로그램</th><td>사내 메신저·Ttree 열기, Ttree 이석 2분 전 알림(설치된 PC에서만)</td></tr>
           <tr><th>함께 들어 있는 것</th><td>말랑 메이트 한 마리</td></tr>
           <tr><th>문의</th><td>이 게시글 댓글로 남겨 주세요</td></tr>
           <tr><th>지우는 법</th><td>설정 → 앱 → Sure-Mate → 제거</td></tr>
@@ -694,6 +748,8 @@ p { margin: 0; }
         <div class="qa"><dt>화면 감추기를 누르면 창이 닫히나요?</dt><dd>닫지 않고 내리기만 해요. 한 번 더 누르면 그대로 돌아와요. 처음에는 모든 창을 내리고, 지금 배치를 화면 감추기에 저장해 두면 그 창들은 남겨요.</dd></div>
         <div class="qa"><dt>단축키를 눌러도 아무 일이 없어요.</dt><dd>다른 프로그램이 같은 조합을 쓰고 있을 수 있어요. 설정 → 단축키에서 빨간 안내를 확인하고 다른 조합으로 바꿔 주세요.</dd></div>
         <div class="qa"><dt>보안 프로그램이 창 제어를 막아요.</dt><dd>그래도 팔레트와 프롬프트, 가명 처리는 클립보드 글로 동작해요. 선택한 글 가져오기와 창 배치만 쓸 수 없다고 알려 드려요.</dd></div>
+        <div class="qa"><dt>이석을 막으려고 마우스를 대신 움직이나요?</dt><dd>아니요. 키보드·마우스를 안 쓴 시간을 보고 알려 주기만 해요. 자리에 있는 사람이 직접 움직여야 하고, 자리를 비우면 Ttree가 평소대로 이석을 잡아요.</dd></div>
+        <div class="qa"><dt>Ttree나 메신저 내용을 읽나요?</dt><dd>읽지 않아요. 창을 앞으로 가져오기만 해요. 휴가 신청과 근무 기록은 Ttree에서 직접 해요.</dd></div>
         <div class="qa"><dt>말랑 메이트가 신경 쓰여요.</dt><dd>오른쪽 클릭하고 숨기기를 고르세요. 바의 펫 단추로 다시 불러요. 쉬어 가기 말은 설정 → 말랑 메이트에서 끌 수 있어요.</dd></div>
         <div class="qa"><dt>다시 연습해 보고 싶어요.</dt><dd>트레이 메뉴의 ‘따라 해 보기’나 팔레트의 ‘따라 해 보기 (30초)’로 언제든 다시 해 볼 수 있어요.</dd></div>
       </dl>
@@ -705,7 +761,7 @@ p { margin: 0; }
     <div class="wrap">
       <div class="band-head">
         <h2>함께 출품한 프롬프트도 있어요</h2>
-        <p>설치 없이 프롬프트만 복사해서 바로 써 볼 수 있어요. Sure-Mate 기본 프롬프트에도 들어 있어요.</p>
+        <p>각 부문에 따로 출품한 글이에요. 두 프롬프트 모두 Sure-Mate 기본 프롬프트에도 들어 있어요.</p>
       </div>
       <div class="together">
         <div><span class="note">개발과 검증 부문</span><b>정적분석 위반 분석·소명 초안</b><span>위반 목록을 붙이면 원인 분석과 소명 초안을 정리해요</span></div>
@@ -735,7 +791,7 @@ p { margin: 0; }
         <table class="map">
           <thead><tr><th>필수 항목·심사 기준</th><th>맡는 칸</th><th>보여 줄 것</th></tr></thead>
           <tbody>
-            <tr><td>어떤 업무에</td><td>이런 순간, 하루에도 몇 번씩</td><td>창 배치, AI에 붙여넣기, 용어 찾기, 창 감추기</td></tr>
+            <tr><td>어떤 업무에</td><td>이런 순간, 하루에도 몇 번씩</td><td>창 배치, AI에 붙여넣기, 용어 찾기, 창 감추기, Ttree·이석</td></tr>
             <tr><td>무엇이 좋아졌는지 · 업무 개선 효과</td><td>이런 순간, 기능 칸, 시연 영상</td><td>손으로 하던 일이 단축키 한 번으로 바뀌는 장면</td></tr>
             <tr><td>AI를 어떻게 · 업무 적합성</td><td>AI를 이렇게 써요, 가명 처리</td><td>프롬프트 조립, 용어 자동 첨부, 보내기 전 가명 처리</td></tr>
             <tr><td>사용법</td><td>설치는 1분, 첫 실행 안내</td><td>SmartScreen 화면 캡처, 세 화면 안내, 30초 따라 해 보기</td></tr>
@@ -748,14 +804,15 @@ p { margin: 0; }
 
     <section>
       <h2>게시판에 올릴 이미지</h2>
-      <p>게시글 시안을 760px 폭으로 여섯 장에 나눠 뽑았어요. 순서대로 올리고, 이미지 사이에 아래 본문 텍스트를 나눠 넣으면 돼요. 설치 파일 크기·메모리 숫자를 고치면 다시 뽑아요(docs/promo/README.md).</p>
+      <p>게시글 시안을 760px 폭으로 일곱 장에 나눠 뽑았어요. 순서대로 올리고, 이미지 사이에 아래 본문 텍스트를 나눠 넣으면 돼요. 설치 파일 크기·메모리 숫자를 고치면 다시 뽑아요(docs/promo/README.md).</p>
       <div class="files">
         <div><b>01-intro.png</b><span>첫 화면, 이런 순간</span></div>
         <div><b>02-workspace.png</b><span>창 배치, 화면 감추기</span></div>
         <div><b>03-ai.png</b><span>프롬프트 팔레트, 가명 처리</span></div>
         <div><b>04-wiki-mate.png</b><span>용어 카드·상용구, 말랑 메이트</span></div>
-        <div><b>05-how.png</b><span>AI를 이렇게, 설치</span></div>
-        <div><b>06-info.png</b><span>한눈에 보기, 궁금한 것, 함께 출품</span></div>
+        <div><b>05-ttree.png</b><span>Ttree·메신저 열기, 이석 미리 알림</span></div>
+        <div><b>06-how.png</b><span>AI를 이렇게, 설치</span></div>
+        <div><b>07-info.png</b><span>한눈에 보기, 궁금한 것, 함께 출품</span></div>
       </div>
     </section>
 
@@ -799,8 +856,8 @@ p { margin: 0; }
     <section>
       <h2>게시 전 확인</h2>
       <ul class="checks">
-        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>11/13 빌드 설치 파일은 110.5MB예요(게시글은 아직 108MB). 메모리·CPU는 11/10 설치본 측정값이에요</small></span></li>
-        <li><span>첨부 파일 용량 확인<small>설치 파일(약 111MB)과 영상(15MB)이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
+        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>11/13 게시용 빌드(main 7746542)로 고쳤어요: 설치 파일 약 110MB, 사용 메모리 약 310MB, 가만히 있을 때 CPU 0.2% 안팎</small></span></li>
+        <li><span>첨부 파일 용량 확인<small>설치 파일(약 110MB)과 영상(15MB)이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
         <li><span>SHA-256 해시를 본문에 적기<small>받은 파일이 바뀌지 않았는지 동료가 확인할 수 있어요</small></span></li>
         <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음. 영상 속 Ttree 화면은 가상 인물(김가상)로 바꿔 그렸어요</small></span></li>
         <li><span>함께 출품한 두 글 링크 연결<small>세 글이 서로를 소개해요</small></span></li>
@@ -826,7 +883,7 @@ p { margin: 0; }
         <div><b>최종 설치 파일</b><span>게시할 코드로 설치 파일을 만들고, 설치본으로 메모리·CPU를 다시 재서 숫자와 해시를 고쳐요</span></div>
         <div><b>30초 티저</b><span>완성 영상에서 지나가는 동료·이석 미리 알림·회의록 장면을 골라 좋아요용 짧은 영상을 잘라요</span></div>
         <div><b>장면별 GIF</b><span>게시판이 영상을 못 붙일 때 쓸 6~8초 GIF를 영상에서 뽑아요</span></div>
-        <div><b>새 기능 칸</b><span>사내 메신저·Ttree 열기와 이석 미리 알림을 게시글(첫째 탭)과 게시판 이미지에 더해요</span></div>
+        <div><b>최종 숫자 다시 재기</b><span>게시할 설치본으로 메모리·CPU를 다시 재서 한눈에 보기 표와 이미지를 고쳐요</span></div>
       </div>
     </section>
   </div>
