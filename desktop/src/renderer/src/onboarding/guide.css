@@ -1,0 +1,38 @@
+/*
+ * 첫 실행 안내·따라 해 보기 화면의 움직임(설계 §14-4: 펼침 200ms ease-out). 한 번에 한 가지만 움직인다.
+ * 움직임 줄이기(Windows 애니메이션 효과 끔 = prefers-reduced-motion)면 모두 끈다.
+ */
+
+/* 화면이 바뀔 때 내용이 4 DIP 아래에서 올라오며 나타난다(M5 펼침 메뉴와 같은 거리·시간) */
+.guide-screen-in {
+  animation: guide-screen-in var(--dur-open) var(--ease-out) both;
+}
+
+@keyframes guide-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* 결과 줄·성공 표시가 나타날 때(같은 거리·시간) */
+.guide-reveal {
+  animation: guide-screen-in var(--dur-open) var(--ease-out) both;
+}
+
+/* 말랑 메이트가 걷는 길: 위치만 일정한 속도로 옮긴다(시간은 화면이 거리 ÷ 60 DIP/초로 정한다, 설계 §14-2 보통 활발함) */
+.guide-walk {
+  transition-property: transform;
+  transition-timing-function: linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-screen-in,
+  .guide-reveal {
+    animation: none;
+  }
+
+  .guide-walk {
+    transition: none;
+  }
+}

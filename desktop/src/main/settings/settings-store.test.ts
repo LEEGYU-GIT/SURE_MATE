@@ -239,6 +239,19 @@ it('바 설정을 바꿔 저장하면 읽을 때 유지된다', async () => {
   expect(back.bar.positions).toEqual([{ display: '1', ratio: 0.4 }])
 })
 
+it('처음 한 번 보이는 안내(tips): 없거나(옛 설정 파일) 틀린 값이면 안 봄, 본 것은 저장하고 읽어도 유지된다', async () => {
+  expect(mergeSettings({}).tips).toEqual({ maskingExampleSeen: false })
+  expect(mergeSettings({ tips: { maskingExampleSeen: 'yes' } }).tips).toEqual({
+    maskingExampleSeen: false
+  })
+  expect(mergeSettings({ tips: 'seen' }).tips).toEqual({ maskingExampleSeen: false })
+  expect(mergeSettings({ tips: { maskingExampleSeen: true, otherTip: true } }).tips).toEqual({
+    maskingExampleSeen: true
+  })
+  await updateSettings(dir, (cur) => ({ ...cur, tips: { ...cur.tips, maskingExampleSeen: true } }))
+  expect((await loadSettings(dir)).tips).toEqual({ maskingExampleSeen: true })
+})
+
 it('펫 설정을 바꿔 저장하면 읽을 때 유지된다', async () => {
   await updateSettings(dir, (cur) => ({ ...cur, pet: { ...cur.pet, size: 72, activity: 'lively', controlHotkey: 'Ctrl+Alt+P' } }))
   const back = await loadSettings(dir)

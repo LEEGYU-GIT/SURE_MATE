@@ -1,69 +1,132 @@
-import { expect, it } from 'vitest'
-import { canContinue, canSkip, initialOnboarding, ONBOARDING_STEPS, onboardingReducer, STEP, type OnboardingAction, type OnboardingState } from './onboarding-state'
+import { describe, expect, it } from 'vitest'
+import {
+  canContinue,
+  canStart,
+  hotkeyPickerForced,
+  initialOnboarding,
+  ONBOARDING_FLOW,
+  onboardingReducer,
+  stepNumber,
+  workspaceDone,
+  type OnboardingAction,
+  type OnboardingState,
+  type OnboardingStepId
+} from './onboarding-state'
 
-const start = (): OnboardingState => initialOnboarding({ aiTarget: 'claude', maskingMode: 'restore', launchAtLogin: true })
-const run = (s: OnboardingState, ...actions: OnboardingAction[]): OnboardingState => actions.reduce(onboardingReducer, s)
+/** 그 화면으로 바로 간 상태(미리 보기 장면과 같은 방법) */
+const at = (step: OnboardingStepId, patch: Partial<OnboardingState> = {}): OnboardingState => ({
+  ...initialOnboarding(),
+  step,
+  ...patch
+})
+const run = (s: OnboardingState, ...actions: OnboardingAction[]): OnboardingState =>
+  actions.reduce(onboardingReducer, s)
 const WS = { id: 'ws-1', name: '업무 배치', windows: 4 }
 
-it('워크스페이스 따라 해 보기가 첫 단계이고, 불러오기 전에는 다음이 아니라 건너뛰기만 된다', () => {
-  const s = start()
-  expect(s.step).toBe(STEP.workspace)
-  expect(canContinue(s)).toBe(false)
-  expect(canSkip(s)).toBe(true)
-  expect(onboardingReducer(s, { type: 'next' }).step).toBe(STEP.workspace)
-  expect(onboardingReducer(s, { type: 'skip' }).step).toBe(STEP.hotkey)
+describe('첫 실행 안내 세 화면(2026-11-12 사용자 확인): 소개 → 워크스페이스 체험 → 준비 완료', () => {
+  it('세 화면이고 소개에서 시작한다. 머리의 "n / 3"은 순서에서 센다', () => {
+    expect(ONBOARDING_FLOW).toEqual(['intro', 'workspace', 'ready'])
+    const s = initialOnboarding()
+    expect(s).toEqual({ step: 'intro', hotkey: null, workspace: null, restored: false })
+    expect(stepNumber(s)).toEqual({ n: 1, total: 3 })
+    expect(stepNumber(at('workspace'))).toEqual({ n: 2, total: 3 })
+    expect(stepNumber(at('ready'))).toEqual({ n: 3, total: 3 })
+  })
+
+  it('다음·뒤로는 한 칸씩 움직이고, 첫 화면에서 뒤로·마지막 화면에서 다음은 움직이지 않는다', () => {
+    let s = run(initialOnboarding({ hotkey: 'Alt+`' }), { type: 'back' })
+    expect(s.step).toBe('intro')
+    s = run(s, { type: 'next' }, { type: 'next' })
+    expect(s.step).toBe('ready')
+    expect(run(s, { type: 'next' }).step).toBe('ready')
+    expect(run(s, { type: 'back' }).step).toBe('workspace')
+  })
+
+  it('소개와 워크스페이스 체험은 언제나 다음으로 간다(체험은 나중에 해도 된다)', () => {
+    expect(canContinue(at('intro'))).toBe(true)
+    expect(canContinue(at('workspace'))).toBe(true)
+    expect(run(at('workspace'), { type: 'next' }).step).toBe('ready')
+  })
+
+  it('뒤로 갔다 와도 팔레트 단축키와 저장한 워크스페이스·불러오기 결과는 남는다', () => {
+    const s = run(
+      initialOnboarding({ hotkey: 'Ctrl+Alt+Space' }),
+      { type: 'next' },
+      { type: 'workspace-saved', workspace: WS },
+      { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } },
+      { type: 'next' },
+      { type: 'back' },
+      { type: 'back' },
+      { type: 'next' }
+    )
+    expect(s).toEqual({
+      step: 'workspace',
+      hotkey: 'Ctrl+Alt+Space',
+      workspace: WS,
+      restored: true
+    })
+  })
 })
 
-it('저장한 워크스페이스를 불러오면(어디서든 같은 id) 해냄, 다른 워크스페이스나 다시 저장하면 아직이다', () => {
-  let s = run(start(), { type: 'workspace-saved', workspace: WS })
-  expect(s.restored).toBe(false)
-  s = onboardingReducer(s, { type: 'progress', progress: { kind: 'workspace', id: 'other' } })
-  expect(s.restored).toBe(false)
-  s = onboardingReducer(s, { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } })
-  expect(s.restored).toBe(true)
-  expect(canContinue(s)).toBe(true)
-  expect(canSkip(s)).toBe(false)
-  // 다시 저장하면 새 배치를 불러와 봐야 한다
-  expect(onboardingReducer(s, { type: 'workspace-saved', workspace: { ...WS, windows: 5 } })).toMatchObject({ restored: false, workspace: { windows: 5 } })
-  expect(onboardingReducer(s, { type: 'next' }).step).toBe(STEP.hotkey)
+describe('준비 완료: 등록된 팔레트 단축키가 있어야 시작할 수 있다(없으면 팔레트를 열 수 없다)', () => {
+  it('시작할 때 이미 등록된 팔레트 단축키를 받으면 그대로 시작할 수 있고 단축키 고르기를 펼쳐 두지 않는다', () => {
+    const s = at('ready', { hotkey: 'Ctrl+Alt+Space' })
+    expect(canStart(s)).toBe(true)
+    expect(canContinue(s)).toBe(true)
+    expect(hotkeyPickerForced(s)).toBe(false)
+  })
+
+  it('등록된 단축키가 없으면 시작할 수 없고 단축키 고르기를 펼쳐 둔다. 고른 조합이 등록되면 시작할 수 있다', () => {
+    const s = at('ready')
+    expect(canStart(s)).toBe(false)
+    expect(canContinue(s)).toBe(false)
+    expect(hotkeyPickerForced(s)).toBe(true)
+    const picked = run(s, { type: 'hotkey', acc: 'Alt+`' })
+    expect(canStart(picked)).toBe(true)
+    expect(hotkeyPickerForced(picked)).toBe(false)
+  })
+
+  it('등록이 풀렸다는 알림(설정 바뀜, acc null)을 받으면 다시 시작할 수 없다', () => {
+    const s = run(at('ready', { hotkey: 'Alt+`' }), { type: 'hotkey', acc: null })
+    expect(s.hotkey).toBeNull()
+    expect(canStart(s)).toBe(false)
+  })
+
+  it('시작은 준비 완료 화면에서만(단축키가 있어도 소개·체험 화면에서는 시작하지 않는다)', () => {
+    expect(canStart(at('intro', { hotkey: 'Alt+`' }))).toBe(false)
+    expect(canStart(at('workspace', { hotkey: 'Alt+`' }))).toBe(false)
+  })
 })
 
-it('저장 전에 온 불러오기 알림, 다른 단계에서 온 불러오기 알림은 무시한다', () => {
-  expect(onboardingReducer(start(), { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } }).restored).toBe(false)
-  const later = run(start(), { type: 'workspace-saved', workspace: WS }, { type: 'skip' })
-  expect(onboardingReducer(later, { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } }).restored).toBe(false)
-})
+describe('워크스페이스 체험(main의 ① 그대로): 저장 → 흐트러뜨리기 → 불러오기', () => {
+  it('저장한 워크스페이스를 불러오면(어디서든 같은 id) 해냄, 다른 워크스페이스나 다시 저장하면 아직이다', () => {
+    let s = run(at('workspace'), { type: 'workspace-saved', workspace: WS })
+    expect(workspaceDone(s)).toBe(false)
+    s = onboardingReducer(s, { type: 'progress', progress: { kind: 'workspace', id: 'other' } })
+    expect(workspaceDone(s)).toBe(false)
+    s = onboardingReducer(s, { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } })
+    expect(workspaceDone(s)).toBe(true)
+    // 다시 저장하면 새 배치를 불러와 봐야 한다
+    expect(
+      onboardingReducer(s, { type: 'workspace-saved', workspace: { ...WS, windows: 5 } })
+    ).toMatchObject({ restored: false, workspace: { windows: 5 } })
+  })
 
-it('단축키 단계는 등록한 단축키가 있어야 다음으로 간다', () => {
-  let s = run(start(), { type: 'skip' })
-  expect(s.step).toBe(STEP.hotkey)
-  expect(canContinue(s)).toBe(false)
-  expect(canSkip(s)).toBe(false)
-  s = run(s, { type: 'hotkey', acc: 'Ctrl+Alt+Space' }, { type: 'next' })
-  expect(s.step).toBe(STEP.choices)
-})
-
-it('AI·가명 처리 단계에서 고친 값은 뒤로 갔다 와도 남는다', () => {
-  let s = run(start(), { type: 'skip' }, { type: 'hotkey', acc: 'Alt+`' }, { type: 'next' })
-  expect(s).toMatchObject({ step: STEP.choices, aiTarget: 'claude', maskingMode: 'restore', launchAtLogin: true })
-  s = run(s, { type: 'choose', aiTarget: 'copy', maskingMode: 'remove', launchAtLogin: false }, { type: 'back' }, { type: 'next' })
-  expect(s).toMatchObject({ step: STEP.choices, aiTarget: 'copy', maskingMode: 'remove', launchAtLogin: false, hotkey: 'Alt+`' })
-})
-
-it('프롬프트 따라 해 보기는 실행되면 해냄, 그 단계에서만 받고 건너뛸 수 있다', () => {
-  const at = run(start(), { type: 'skip' }, { type: 'hotkey', acc: 'Alt+`' }, { type: 'next' }, { type: 'next' })
-  expect(at).toMatchObject({ step: STEP.prompt, tried: false })
-  expect(canSkip(at)).toBe(true)
-  expect(onboardingReducer(at, { type: 'progress', progress: { kind: 'prompt' } })).toMatchObject({ tried: true })
-  expect(onboardingReducer(start(), { type: 'progress', progress: { kind: 'prompt' } }).tried).toBe(false)
-  expect(onboardingReducer(at, { type: 'skip' }).step).toBe(STEP.pet)
-})
-
-it('마지막 단계(말랑 메이트)에서는 다음·건너뛰기가 없다(시작하기는 화면이 main에 알림)', () => {
-  const last = run(start(), { type: 'skip' }, { type: 'hotkey', acc: 'Alt+`' }, { type: 'next' }, { type: 'next' }, { type: 'skip' })
-  expect(last.step).toBe(ONBOARDING_STEPS)
-  expect(canContinue(last)).toBe(false)
-  expect(canSkip(last)).toBe(false)
-  expect(onboardingReducer(last, { type: 'next' }).step).toBe(ONBOARDING_STEPS)
-  expect(onboardingReducer(last, { type: 'back' }).step).toBe(STEP.prompt)
+  it('저장 전에 온 불러오기 알림, 다른 화면에서 온 알림, 프롬프트 실행 알림은 무시한다', () => {
+    expect(
+      onboardingReducer(at('workspace'), {
+        type: 'progress',
+        progress: { kind: 'workspace', id: 'ws-1' }
+      }).restored
+    ).toBe(false)
+    const ready = at('ready', { workspace: WS })
+    expect(
+      onboardingReducer(ready, { type: 'progress', progress: { kind: 'workspace', id: 'ws-1' } })
+        .restored
+    ).toBe(false)
+    const saved = at('workspace', { workspace: WS })
+    expect(onboardingReducer(saved, { type: 'progress', progress: { kind: 'prompt' } })).toEqual(
+      saved
+    )
+  })
 })

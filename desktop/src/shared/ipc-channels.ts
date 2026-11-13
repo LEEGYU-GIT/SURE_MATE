@@ -31,7 +31,14 @@ export interface PromptDraft {
   target: string
   /** 시작 가명 처리 모드(템플릿 기본값, 없으면 전체 기본값) */
   masking: MaskingMode
+  /** 가명 처리 첫 안내(예시)를 아직 보지 않았다(설정 tips.maskingExampleSeen의 반대). 끔·직접 입력이면 화면이 숨긴다 */
+  maskingTip: boolean
 }
+
+/** 가명 처리 첫 안내를 다 봤다고 정한 까닭: [알겠어요]로 닫음, 안내가 보이는 채로 프롬프트를 복사함 */
+export type MaskingTipSeen = 'dismissed' | 'copied'
+export const parseMaskingTipSeen = (v: unknown): MaskingTipSeen | null =>
+  v === 'dismissed' || v === 'copied' ? v : null
 
 export interface PromptRequest {
   source: PromptSource
@@ -78,6 +85,8 @@ export const IPC = {
   promptPreview: 'prompt:preview',
   promptRun: 'prompt:run',
   promptCancel: 'prompt:cancel',
+  /** 팔레트 → main(send): 확인 화면의 가명 처리 첫 안내를 다 봤다(MaskingTipSeen). main이 설정에 남겨 다시 보이지 않는다 */
+  maskingTipSeen: 'prompt:masking-tip-seen',
   appGetStatus: 'app:get-status',
   wikiGet: 'wiki:get',
   wikiCopy: 'wiki:copy',
@@ -225,6 +234,8 @@ export interface SureMateApi {
   runPrompt(req: PromptRequest): Promise<PromptRunResult>
   /** 확인 화면을 벗어날 때 세션을 버린다 */
   cancelPrompt(): void
+  /** 확인 화면의 가명 처리 첫 안내를 다 봤다(다시 보이지 않게 main이 설정에 남긴다) */
+  maskingTipSeen(reason: MaskingTipSeen): void
   getStatus(): Promise<AppStatus>
   /** 용어 하나(없으면 null) */
   getWikiEntry(id: string): Promise<GlossaryEntry | null>

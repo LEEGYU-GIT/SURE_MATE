@@ -1,5 +1,43 @@
 import { expect, it } from 'vitest'
-import { isSettingsTabId, routeOfHash, SETTINGS_TAB_IDS, settingsHash, tabFromHash, workspaceFromHash } from './settings-route'
+import {
+  isSettingsRoute,
+  isSettingsTabId,
+  routeOfHash,
+  SETTINGS_ROUTES,
+  SETTINGS_TAB_IDS,
+  settingsHash,
+  tabFromHash,
+  workspaceFromHash
+} from './settings-route'
+
+it('설정 창 경로: 설정, 첫 실행 안내, 30초 따라 해 보기(트레이·팔레트에서 언제든 여는 화면). 다른 값은 경로가 아니다', () => {
+  expect(SETTINGS_ROUTES).toEqual(['/settings', '/onboarding', '/try'])
+  for (const route of SETTINGS_ROUTES) expect(isSettingsRoute(route)).toBe(true)
+  for (const bad of [
+    '/Try',
+    'try',
+    '/try?x=1',
+    '#/try',
+    '/try/',
+    '',
+    null,
+    undefined,
+    3,
+    '/pet',
+    '/settings?tab=pet'
+  ])
+    expect(isSettingsRoute(bad), String(bad)).toBe(false)
+})
+
+it('따라 해 보기 주소는 #/try 하나뿐이다: 탭·워크스페이스 id를 붙이지 않고, 탭으로 읽히지 않는다', () => {
+  expect(settingsHash('/try')).toBe('/try')
+  expect(settingsHash('/try', 'pet')).toBe('/try')
+  expect(settingsHash('/try', 'workspace', 'ws-qa')).toBe('/try')
+  expect(routeOfHash('#/try')).toBe('/try')
+  expect(tabFromHash('#/try')).toBeNull()
+  expect(tabFromHash('#/try?tab=pet')).toBeNull()
+  expect(workspaceFromHash('#/try')).toBeNull()
+})
 
 it('탭 id: 설계 §14 순서(용어 사전 다음 워크스페이스, 그다음 바, 펫 다음 마지막이 말하듯 입력), 겹치지 않는다', () => {
   expect(SETTINGS_TAB_IDS).toEqual(['general', 'hotkeys', 'ai', 'prompts', 'masking', 'glossary', 'workspace', 'bar', 'pet', 'natural'])

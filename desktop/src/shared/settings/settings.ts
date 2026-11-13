@@ -28,6 +28,11 @@ export interface Settings {
   bar: BarSettings
   /** 말랑 메이트(설계 문서 §14) */
   pet: PetSettings
+  /**
+   * 처음 한 번만 보이는 안내를 봤는지(2026-11-12). maskingExampleSeen: 확인 화면의 가명 처리 첫 안내(예시)를
+   * [알겠어요]로 닫았거나, 안내가 보이는 채로 프롬프트를 복사했다
+   */
+  tips: { maskingExampleSeen: boolean }
 }
 
 export type PaletteDisplay = 'cursor' | 'primary' | 'active'
@@ -58,8 +63,13 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   ai: { defaultTarget: FALLBACK_AI_TARGET, custom: [] },
   onboardingDone: false,
-  bar: { ...DEFAULT_BAR_SETTINGS, positions: [], pinnedPrompts: [...DEFAULT_BAR_SETTINGS.pinnedPrompts] },
-  pet: { ...DEFAULT_PET_SETTINGS }
+  bar: {
+    ...DEFAULT_BAR_SETTINGS,
+    positions: [],
+    pinnedPrompts: [...DEFAULT_BAR_SETTINGS.pinnedPrompts]
+  },
+  pet: { ...DEFAULT_PET_SETTINGS },
+  tips: { maskingExampleSeen: false }
 }
 
 /** 사내 도메인 이름(호스트 이름만: 주소·경로·한 단어는 아님). 받기 전에 앞뒤 공백을 떼고 소문자로 바꾼다 */

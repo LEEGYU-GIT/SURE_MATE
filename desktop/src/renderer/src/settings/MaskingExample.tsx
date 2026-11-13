@@ -40,12 +40,22 @@ function linesOf(mode: MaskingMode): Line[] {
 }
 
 /**
- * 가명 처리가 실제로 하는 일을 한 문장으로 보여 준다(첫 실행 안내·설정 창 가명 처리 탭). 보낼 글 → AI에 가는 글 → AI가 쓴 글
- * (→ 되돌린 글). 글은 shared/masking/example.ts가 실제 가명 처리 함수로 만든다. 움직임 없이 모드가 바뀌면 바로 다시 그린다.
+ * 가명 처리가 실제로 하는 일을 한 문장으로 보여 준다(설정 창 가명 처리 탭, 확인 화면의 처음 한 번 안내). 보낼 글 → AI에 가는 글 →
+ * AI가 쓴 글(→ 되돌린 글). 글은 shared/masking/example.ts가 실제 가명 처리 함수로 만든다. 움직임 없이 모드가 바뀌면 바로 다시 그린다.
+ * compact: 좁은 자리(확인 화면 안내)용으로 줄 사이·안쪽 여백을 줄인다
  */
-export function MaskingExample({ mode }: { mode: MaskingMode }): React.JSX.Element {
+export function MaskingExample({
+  mode,
+  compact = false
+}: {
+  mode: MaskingMode
+  compact?: boolean
+}): React.JSX.Element {
   return (
-    <dl aria-label="가명 처리 예시" className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-window border border-line bg-surface-inset px-4 py-3">
+    <dl
+      aria-label="가명 처리 예시"
+      className={`grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 rounded-window border border-line bg-surface-inset ${compact ? 'gap-y-1 px-3 py-2' : 'gap-y-2 px-4 py-3'}`}
+    >
       {linesOf(mode).map((line) => (
         <div key={line.label} className="contents">
           <dt className="pt-px text-caption leading-5 text-fg-3">{line.label}</dt>

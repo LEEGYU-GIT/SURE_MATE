@@ -4,7 +4,8 @@ import { MASKING_MODES } from '../../../shared/masking/modes'
 import { ALL_CATEGORIES, type MaskItem } from '../../../shared/masking/types'
 import type { MaskingMode } from '../../../shared/types'
 
-export type ConfirmFocus = 'source' | 'masking' | 'items' | 'target' | 'input'
+/** tip: 가명 처리 첫 안내의 [알겠어요] */
+export type ConfirmFocus = 'source' | 'masking' | 'items' | 'target' | 'input' | 'tip'
 
 export interface ConfirmState {
   source: PromptSource
@@ -22,6 +23,8 @@ export interface ConfirmState {
   itemKeys: string[]
   /** 항목 초점에서 고른 항목 자리 */
   itemIndex: number
+  /** 가명 처리 첫 안내를 아직 닫지 않았다(처음에는 draft.maskingTip). 보일지는 maskingTipVisible */
+  tip: boolean
 }
 
 export type ConfirmAction =
@@ -40,6 +43,8 @@ export type ConfirmAction =
   | { type: 'toggle-item'; key?: string }
   | { type: 'run' }
   | { type: 'back' }
+  /** 가명 처리 첫 안내의 [알겠어요] */
+  | { type: 'dismiss-tip' }
 
 /** 키 판단에 필요한 값만(KeyboardEvent에서 뽑는다) */
 export interface KeyInfo {
@@ -71,12 +76,24 @@ export function initialConfirmState(draft: PromptDraft): ConfirmState {
     masking: draft.masking,
     disabledKeys: [],
     itemKeys: [],
-    itemIndex: 0
+    itemIndex: 0,
+    tip: draft.maskingTip === true
   }
 }
 
-/** Tab 순서: 출처 → 가명 처리 → (찾은 항목이 있고 끔이 아니면 항목) → 대상 → (직접 입력이면 입력칸) */
+/**
+ * 가명 처리 첫 안내(2026-11-12)를 보일지: 아직 보지 않았고(닫지 않았고), 이번 모드가 끔이 아니고(가명 처리한 프롬프트일 때만),
+ * 직접 입력이 아닐 때. 안내는 가명 처리 칩 아래(찾은 항목·대상·미리 보기 자리)를 잠시 덮으므로 입력칸을 쓸 때는 숨긴다
+ */
+export const maskingTipVisible = (s: Pick<ConfirmState, 'tip' | 'masking' | 'source'>): boolean =>
+  s.tip && s.masking !== 'off' && s.source !== 'input'
+
+/**
+ * Tab 순서: 출처 → 가명 처리 → (찾은 항목이 있고 끔이 아니면 항목) → 대상 → (직접 입력이면 입력칸).
+ * 가명 처리 첫 안내가 보이는 동안은 출처 → 가명 처리 → 안내([알겠어요]): 안내가 덮은 항목·대상으로는 가지 않는다
+ */
 function focusOrder(s: ConfirmState): ConfirmFocus[] {
+  if (maskingTipVisible(s)) return ['source', 'masking', 'tip']
   const order: ConfirmFocus[] = ['source', 'masking']
   if (s.masking !== 'off' && s.itemKeys.length > 0) order.push('items')
   order.push('target')
@@ -138,6 +155,8 @@ export function confirmReducer(s: ConfirmState, a: ConfirmAction): ConfirmState 
       return { ...s, input: a.input }
     case 'focus':
       return focusOrder(s).includes(a.focus) ? { ...s, focus: a.focus } : s
+    case 'dismiss-tip':
+      return settleFocus({ ...s, tip: false })
     default:
       return s
   }
@@ -152,14 +171,18 @@ export const isRepeatedEnter = (k: Pick<KeyInfo, 'code' | 'key' | 'repeat'>): bo
  * 확인 화면의 키를 동작으로 바꾼다. 한글 조합 중이면 아무것도 하지 않는다(설계 문서 §6).
  * 입력칸에서는 Enter가 줄바꿈, 화살표가 커서 이동이라 넘기고 Ctrl+Enter로 실행한다.
  * Alt+M은 어디서든 가명 처리 모드를 바꾸고, 항목 초점에서 Space는 고른 항목을 끄고 켠다.
+ * 가명 처리 첫 안내의 [알겠어요]에 초점이 있으면 Enter·Space가 안내를 닫는다(다른 초점의 Enter는 그대로 실행).
  */
 export function keyToAction(k: KeyInfo, s: ConfirmState): ConfirmAction | null {
   if (k.isComposing) return null
   if (k.code === 'Escape' || k.key === 'Escape') return { type: 'back' }
+  // 첫 안내의 [알겠어요]에 초점이 있으면 Enter·Space는 안내를 닫는다(복사하지 않는다)
+  if (s.focus === 'tip' && (isEnter(k) || k.code === 'Space'))
+    return k.repeat ? null : { type: 'dismiss-tip' }
   if (isEnter(k)) return !k.repeat && (k.ctrlKey || s.focus !== 'input') ? { type: 'run' } : null
   if (k.code === 'KeyM' && k.altKey && !k.ctrlKey) return { type: 'cycle-masking' }
   if (k.code === 'Tab') return { type: k.shiftKey ? 'focus-prev' : 'focus-next' }
-  if (s.focus === 'input') return null
+  if (s.focus === 'input' || s.focus === 'tip') return null
   if (k.code === 'Space' && s.focus === 'items') return { type: 'toggle-item' }
   if (k.code === 'ArrowRight' || k.code === 'ArrowDown') return { type: 'next-value' }
   if (k.code === 'ArrowLeft' || k.code === 'ArrowUp') return { type: 'prev-value' }

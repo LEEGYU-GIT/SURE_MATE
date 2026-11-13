@@ -59,6 +59,7 @@ function paletteFake() {
     previewPrompt: vi.fn(async () => ({ text: '미리 보기' })),
     runPrompt: vi.fn(async () => ({ ok: true, message: '복사했어요' })),
     cancelPrompt: vi.fn(),
+    maskingTipSeen: vi.fn(),
     getStatus: vi.fn(() => status),
     wiki: {
       get: vi.fn(async () => ({ id: 'mcdc' })),
@@ -234,6 +235,22 @@ describe('팔레트 IPC는 팔레트 창이 보낸 것만 받는다(바·펼침 
     paletteId = null
     await sendAllPalette(PALETTE)
     for (const fn of paletteHandlers()) expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+describe('가명 처리 첫 안내를 봤다(확인 화면, 2026-11-12): 팔레트 창이 보낸 정해진 까닭만', () => {
+  it('팔레트 창이 보낸 dismissed·copied는 그대로 넘긴다', () => {
+    send(IPC.maskingTipSeen, PALETTE, 'dismissed')
+    send(IPC.maskingTipSeen, PALETTE, 'copied')
+    expect(palette.maskingTipSeen.mock.calls).toEqual([['dismissed'], ['copied']])
+  })
+
+  it('다른 창이 보냈거나 까닭이 틀리면 넘기지 않는다', () => {
+    for (const e of [BAR, FLYOUT, PET, SETTINGS, IME_LOGGER, OTHER])
+      send(IPC.maskingTipSeen, e, 'dismissed')
+    for (const bad of [undefined, null, '', 'seen', 'Dismissed', 1, {}])
+      send(IPC.maskingTipSeen, PALETTE, bad)
+    expect(palette.maskingTipSeen).not.toHaveBeenCalled()
   })
 })
 

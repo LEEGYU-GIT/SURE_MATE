@@ -8,19 +8,56 @@ export type { SettingsRoute }
 const SURFACE = '#1E212A'
 const SYMBOL = '#C9D0DD'
 
+const TITLES: Record<SettingsRoute, string> = {
+  '/settings': 'Sure-Mate 설정',
+  '/onboarding': 'Sure-Mate 시작하기',
+  '/try': 'Sure-Mate 따라 해 보기'
+}
+
+/**
+ * 첫 실행 안내·따라 해 보기 창 크기(DIP). 720×520은 1280×720 125%의 작업 영역(약 1024×536)에 들어간다. 작업 영역이 더 작으면
+ * (1280×720 150%: 약 853×448) 좌우 16·위아래 합쳐 16을 남기고 줄인다: 크기를 바꿀 수 없는 창이 작업 표시줄 밑으로 내려가
+ * 아래 단추 줄이 가려지지 않게(내용은 화면 안에서 스크롤). 아주 작아도 560×400 아래로는 줄이지 않는다
+ */
+const GUIDE_SIZE = { width: 720, height: 520 } as const
+const GUIDE_MIN = { width: 560, height: 400 } as const
+const GUIDE_MARGIN = 16
+
+export function guideWindowSize(workArea?: { width: number; height: number }): {
+  width: number
+  height: number
+} {
+  if (!workArea) return { ...GUIDE_SIZE }
+  return {
+    width: Math.max(
+      GUIDE_MIN.width,
+      Math.min(GUIDE_SIZE.width, Math.floor(workArea.width - 2 * GUIDE_MARGIN))
+    ),
+    height: Math.max(
+      GUIDE_MIN.height,
+      Math.min(GUIDE_SIZE.height, Math.floor(workArea.height - GUIDE_MARGIN))
+    )
+  }
+}
+
 /**
  * 설정 창 옵션(설계 문서 §5 "settings: 일반 창"). 포커스를 받고 작업 표시줄에 나오며, 제목 줄은 화면이 그리고
- * Windows 창 단추만 겹쳐 그린다(titleBarOverlay). 온보딩은 같은 창 모양에 작은 고정 크기.
- * 일렉트론 런타임을 불러오지 않는 순수 모듈이라 시험에서 바로 쓴다.
+ * Windows 창 단추만 겹쳐 그린다(titleBarOverlay). 첫 실행 안내·따라 해 보기는 같은 창 모양에 작은 고정 크기(guideWindowSize,
+ * workArea는 창을 띄울 모니터의 작업 영역). 일렉트론 런타임을 불러오지 않는 순수 모듈이라 시험에서 바로 쓴다.
  */
-export function settingsWindowOptions(preload: string, route: SettingsRoute): BrowserWindowConstructorOptions {
-  const onboarding = route === '/onboarding'
+export function settingsWindowOptions(
+  preload: string,
+  route: SettingsRoute,
+  workArea?: { width: number; height: number }
+): BrowserWindowConstructorOptions {
+  const fixed = route !== '/settings'
   return {
     show: false,
-    title: onboarding ? 'Sure-Mate 시작하기' : 'Sure-Mate 설정',
-    width: onboarding ? 640 : 880,
-    height: onboarding ? 560 : 640,
-    ...(onboarding ? { resizable: false, maximizable: false } : { minWidth: 720, minHeight: 520, resizable: true }),
+    title: TITLES[route],
+    ...(fixed ? guideWindowSize(workArea) : { width: 880, height: 640 }),
+    ...(fixed
+      ? { resizable: false, maximizable: false }
+      : { minWidth: 720, minHeight: 520, resizable: true }),
     skipTaskbar: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',

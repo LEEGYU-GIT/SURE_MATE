@@ -112,6 +112,7 @@ const settingsCommands = createSettingsCommands({
   waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   openSettings: () => openSettings('/settings'),
+  openTry: () => openSettings('/try'),
   log
 })
 let packCommands: { run(id: string): Promise<boolean> } | null = null
@@ -575,6 +576,7 @@ async function startShell(): Promise<void> {
     maskingMode: () => settings.masking.mode,
     onOpenPalette: () => openPalette({ mode: 'search' }),
     onOpenSettings: () => openSettings('/settings'),
+    onOpenTry: () => openSettings('/try'),
     barShape: () => settings.bar.shape,
     onBarShape: (shape) =>
       void setBarShape(shape).catch((e) => {
@@ -875,11 +877,22 @@ if (!app.requestSingleInstanceLock()) {
         const result = await session.run(req)
         // 복사만이면 팔레트가 남아 있으니 숨기고 원래 창으로 돌아간다(AI를 열었으면 이미 숨김)
         if (result.ok) hidePalette({ restoreFocus: true })
-        // 첫 실행 안내의 따라 해 보기(회의록 정리)를 마쳤다고 안내 창에 알린다
-        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE) sendToSettings(IPC.onboardingProgress, { kind: 'prompt' } satisfies OnboardingProgress)
+        // 30초 따라 해 보기(설정 창의 #/try, 회의록 정리)를 마쳤다고 그 창에 알린다
+        if (result.ok && lastPreparedTemplate === ONBOARDING_TEMPLATE)
+          sendToSettings(IPC.onboardingProgress, { kind: 'prompt' } satisfies OnboardingProgress)
         return result
       },
       cancelPrompt: () => session.cancel(),
+      // 확인 화면의 가명 처리 첫 안내를 다 봤다: 설정에 남겨 다시 보이지 않게 한다(이미 봤으면 쓰지 않는다)
+      maskingTipSeen: (reason) => {
+        if (settings.tips.maskingExampleSeen) return
+        log('masking.tipSeen', { reason })
+        void changeSettings((cur) =>
+          cur.tips.maskingExampleSeen
+            ? cur
+            : { ...cur, tips: { ...cur.tips, maskingExampleSeen: true } }
+        ).catch((e) => log('masking.tipSeenError', { error: errorText(e) }))
+      },
       wiki,
       // 검색 문맥·선택 기록은 팔레트 창, 보기·지우기·단어 목록 파일 열기는 설정 창이 보낸 것만 받는다
       natural: naturalService,

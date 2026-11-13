@@ -52,3 +52,13 @@ it('범위 없이 한 글자만 치면 위키 용어가 목록을 덮지 않고,
 it('설정·settings·ㅅㅈ을 치면 설정 열기 명령이 맨 위', () => {
   for (const q of ['설정', 'settings', 'ㅅㅈ']) expect(top(q), q).toBe('cmd.open-settings')
 })
+
+it('따라 해 보기·튜토리얼·연습·사용법·tutorial을 치면 30초 따라 해 보기 명령이 맨 위', () => {
+  for (const q of ['따라 해 보기', '따라', '튜토리얼', '연습', '사용법', 'tutorial'])
+    expect(top(q), q).toBe('cmd.open-try')
+})
+
+it('따라 해 보기 명령은 회의록·프롬프트 검색의 맨 위를 가져가지 않는다(부제에 회의록을 쓰지 않는다)', () => {
+  for (const q of ['회', '회의록', '회의록 정리', '프롬프트'])
+    expect(top(q), q).not.toBe('cmd.open-try')
+})

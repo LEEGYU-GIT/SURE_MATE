@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { PromptDraft } from '../../../shared/ipc-channels'
 import type { MaskItem } from '../../../shared/masking/types'
 import {
@@ -7,6 +7,7 @@ import {
   isRepeatedEnter,
   keyToAction,
   maskingSummary,
+  maskingTipVisible,
   selectionNote,
   splitPreview,
   type ConfirmState,
@@ -27,6 +28,7 @@ const draft = (over: Partial<PromptDraft> = {}): PromptDraft => ({
   ],
   target: 'claude',
   masking: 'restore',
+  maskingTip: false,
   ...over
 })
 
@@ -170,6 +172,107 @@ it('항목에 초점이 있을 때 끔으로 바꾸거나 찾은 항목이 없�
   expect(confirmReducer(s, { type: 'set-items', keys: [] }).focus).toBe('masking')
   // 항목이 줄면 고른 자리도 범위 안으로
   expect(confirmReducer(s, { type: 'set-items', keys: ['client:a'] }).itemIndex).toBe(0)
+})
+
+describe('가명 처리 첫 안내(2026-11-12): 아직 보지 않았고, 이번 모드가 끔이 아니고, 직접 입력이 아닐 때 보인다', () => {
+  const tipDraft = (over: Partial<PromptDraft> = {}): PromptDraft =>
+    draft({ maskingTip: true, ...over })
+
+  it('이미 봤으면(draft.maskingTip false) 어떤 모드에서도 보이지 않는다', () => {
+    for (const masking of ['off', 'restore', 'remove'] as const)
+      expect(maskingTipVisible(initialConfirmState(draft({ masking })))).toBe(false)
+  })
+
+  it('바꾸고 되돌리기·바꾸기만이면 보이고, 끔이면 숨는다(끔에서 다시 켜면 다시 보인다)', () => {
+    expect(maskingTipVisible(initialConfirmState(tipDraft({ masking: 'restore' })))).toBe(true)
+    expect(maskingTipVisible(initialConfirmState(tipDraft({ masking: 'remove' })))).toBe(true)
+    const off = initialConfirmState(tipDraft({ masking: 'off' }))
+    expect(maskingTipVisible(off)).toBe(false)
+    expect(maskingTipVisible(confirmReducer(off, { type: 'set-masking', mode: 'restore' }))).toBe(
+      true
+    )
+  })
+
+  it('직접 입력이면 숨는다(입력칸을 덮지 않게). 선택 글로 돌아오면 다시 보인다', () => {
+    const input = initialConfirmState(
+      tipDraft({
+        selection: { length: 0, skipped: 'nothing-selected' },
+        clipboardLength: 0,
+        defaultSource: 'input'
+      })
+    )
+    expect(input.source).toBe('input')
+    expect(maskingTipVisible(input)).toBe(false)
+    const s = initialConfirmState(tipDraft())
+    const typed = confirmReducer(s, { type: 'set-source', source: 'input' })
+    expect(maskingTipVisible(typed)).toBe(false)
+    expect(
+      maskingTipVisible(confirmReducer(typed, { type: 'set-source', source: 'selection' }))
+    ).toBe(true)
+  })
+
+  it('[알겠어요](dismiss-tip)를 누르면 이 확인 화면에서는 모드를 바꿔도 다시 보이지 않는다', () => {
+    let s = confirmReducer(initialConfirmState(tipDraft()), { type: 'dismiss-tip' })
+    expect(maskingTipVisible(s)).toBe(false)
+    s = confirmReducer(confirmReducer(s, { type: 'set-masking', mode: 'off' }), {
+      type: 'set-masking',
+      mode: 'remove'
+    })
+    expect(maskingTipVisible(s)).toBe(false)
+  })
+
+  it('안내가 보이는 동안 Tab은 출처 → 가명 처리 → 안내(안내가 덮은 항목·대상은 건너뛴다). 닫으면 원래 순서', () => {
+    let s = confirmReducer(initialConfirmState(tipDraft()), {
+      type: 'set-items',
+      keys: ['ip:10.0.3.15']
+    })
+    s = tab(s)
+    expect(s.focus).toBe('masking')
+    s = tab(s)
+    expect(s.focus).toBe('tip')
+    s = tab(s)
+    expect(s.focus).toBe('source')
+    expect(tab(s, true).focus).toBe('tip')
+    const closed = confirmReducer({ ...s, focus: 'masking' }, { type: 'dismiss-tip' })
+    expect(tab(closed).focus).toBe('items')
+  })
+
+  it('안내에 초점이 있으면 Enter·Space는 안내를 닫고(복사하지 않는다) 초점은 가명 처리 칩으로 간다. 자동 반복 Enter는 무시', () => {
+    const s: ConfirmState = { ...initialConfirmState(tipDraft()), focus: 'tip' }
+    expect(keyToAction(key('Enter'), s)).toEqual({ type: 'dismiss-tip' })
+    expect(keyToAction(key('NumpadEnter'), s)).toEqual({ type: 'dismiss-tip' })
+    expect(keyToAction(key('Space', { key: ' ' }), s)).toEqual({ type: 'dismiss-tip' })
+    expect(keyToAction(key('Enter', { repeat: true }), s)).toBeNull()
+    expect(keyToAction(key('ArrowRight'), s)).toBeNull()
+    expect(keyToAction(key('Escape'), s)).toEqual({ type: 'back' })
+    const closed = confirmReducer(s, { type: 'dismiss-tip' })
+    expect(closed.focus).toBe('masking')
+  })
+
+  it('안내가 보여도 다른 곳에 초점이 있으면 Enter는 그대로 실행(복사)이다', () => {
+    const s = initialConfirmState(tipDraft())
+    expect(s.focus).toBe('source')
+    expect(keyToAction(key('Enter'), s)).toEqual({ type: 'run' })
+    expect(keyToAction(key('Enter'), { ...s, focus: 'masking' })).toEqual({ type: 'run' })
+  })
+
+  it('안내에 초점이 있을 때 끔으로 바꾸거나(Alt+M) 직접 입력으로 바꿔 안내가 숨으면 초점이 갈 곳으로 옮긴다', () => {
+    const s: ConfirmState = { ...initialConfirmState(tipDraft()), focus: 'tip' }
+    expect(confirmReducer(s, { type: 'set-masking', mode: 'off' }).focus).toBe('masking')
+    const altM = key('KeyM', { key: 'm', altKey: true })
+    const cycled = confirmReducer(
+      { ...s, masking: 'remove' },
+      keyToAction(altM, { ...s, masking: 'remove' })!
+    )
+    expect(cycled.masking).toBe('off')
+    expect(cycled.focus).toBe('masking')
+    expect(confirmReducer(s, { type: 'set-source', source: 'input' }).focus).toBe('input')
+    // 숨은 안내로는 초점을 옮길 수 없다
+    expect(
+      confirmReducer({ ...s, focus: 'masking', masking: 'off' }, { type: 'focus', focus: 'tip' })
+        .focus
+    ).toBe('masking')
+  })
 })
 
 it('찾은 항목을 분류별 개수로 요약한다', () => {

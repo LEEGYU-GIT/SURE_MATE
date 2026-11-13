@@ -70,6 +70,7 @@ const api: SureMateApi = {
   previewPrompt: (req) => ipcRenderer.invoke(IPC.promptPreview, req),
   runPrompt: (req) => ipcRenderer.invoke(IPC.promptRun, req),
   cancelPrompt: () => ipcRenderer.send(IPC.promptCancel),
+  maskingTipSeen: (reason) => ipcRenderer.send(IPC.maskingTipSeen, reason),
   getStatus: () => ipcRenderer.invoke(IPC.appGetStatus),
   getWikiEntry: (id) => ipcRenderer.invoke(IPC.wikiGet, id),
   copyWikiDefinition: (id) => ipcRenderer.invoke(IPC.wikiCopy, id),

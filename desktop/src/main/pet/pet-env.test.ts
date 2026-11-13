@@ -15,6 +15,8 @@ const m = vi.hoisted(() => ({
   isWindowVisible: vi.fn<(hwnd: string) => boolean>(() => true),
   paletteHwnd: vi.fn((): string | null => '500'),
   getPreviousHwnd: vi.fn((): string | null => '1001'),
+  // 설정 창(첫 실행 안내·따라 해 보기 포함): 열려 있으면 그 핸들
+  settingsHwnd: vi.fn((): string | null => '700'),
   mouseButtonDown: vi.fn((): boolean | null => false),
   getMonitors: vi.fn(() => []),
   createPetWindow: vi.fn()
@@ -26,7 +28,11 @@ vi.mock('../native/windows', () => ({
   isOwnWindow: m.isOwnWindow,
   isWindowVisible: m.isWindowVisible
 }))
-vi.mock('../windows/palette-window', () => ({ paletteHwnd: m.paletteHwnd, getPreviousHwnd: m.getPreviousHwnd }))
+vi.mock('../windows/palette-window', () => ({
+  paletteHwnd: m.paletteHwnd,
+  getPreviousHwnd: m.getPreviousHwnd
+}))
+vi.mock('../windows/settings-window', () => ({ settingsHwnd: m.settingsHwnd }))
 vi.mock('../native/input', () => ({ mouseButtonDown: m.mouseButtonDown }))
 vi.mock('../native/coords', () => ({ getMonitors: m.getMonitors }))
 vi.mock('../windows/pet-window', () => ({ createPetWindow: m.createPetWindow }))
@@ -88,14 +94,19 @@ describe('electronPetEnv: 펫 런타임의 바깥 세계(Electron·Win32·시계
     expect(env.restoreFocus('1001')).toBe(false)
   })
 
-  it('(I1) foreground: Sure-Mate 창은 돌아갈 창으로 주지 않는다(팔레트면 팔레트가 돌아갈 창, 그 밖의 Sure-Mate 창이면 null)', () => {
+  it('(I1) foreground: 설정 창이 아닌 Sure-Mate 창은 돌아갈 창으로 주지 않는다(팔레트면 팔레트가 돌아갈 창, 그 밖이면 null)', () => {
     const env = electronPetEnv()
     m.getForegroundWindow.mockReturnValueOnce('500')
     expect(env.foreground()).toBe('1001')
     m.getForegroundWindow.mockReturnValueOnce('500')
     m.getPreviousHwnd.mockReturnValueOnce(null)
     expect(env.foreground()).toBeNull()
+    // 설정 창(첫 실행 안내·따라 해 보기 포함)은 보이고 포커스를 받는 보통 창이라 돌아갈 창으로 준다
     m.getForegroundWindow.mockReturnValueOnce('700')
+    expect(env.foreground()).toBe('700')
+    // 설정 창이 닫혀 있으면 그 핸들도 Sure-Mate 창으로 본다
+    m.getForegroundWindow.mockReturnValueOnce('700')
+    m.settingsHwnd.mockReturnValueOnce(null)
     expect(env.foreground()).toBeNull()
     m.getForegroundWindow.mockReturnValueOnce('4242')
     expect(env.foreground()).toBe('4242')

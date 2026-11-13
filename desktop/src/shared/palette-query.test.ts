@@ -39,7 +39,8 @@ it('shownView: 팔레트를 보일 때 시작 검색어(바의 용어 사전 단
         defaultSource: 'input',
         targets: [],
         target: 'copy',
-        masking: 'restore'
+        masking: 'restore',
+        maskingTip: false
       }
     })
   ).toEqual({ query: '', wikiId: null })

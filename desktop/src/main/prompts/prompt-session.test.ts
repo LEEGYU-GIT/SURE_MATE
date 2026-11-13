@@ -38,6 +38,8 @@ function fake(
     mask?: (text: string, o: MaskCall) => Promise<PromptMaskResult>
     paletteVisible?: boolean
     captureGate?: Promise<void>
+    /** 가명 처리 첫 안내를 아직 보지 않았는지(설정 tips.maskingExampleSeen의 반대) */
+    maskingTipDue?: boolean
   } = {}
 ) {
   const calls = {
@@ -81,6 +83,7 @@ function fake(
       return (over.mask ?? identityMask)(text, o)
     },
     defaultMasking: () => over.defaultMasking ?? 'restore',
+    maskingTipDue: () => over.maskingTipDue ?? false,
     writeClipboard: async (text, o) => {
       calls.flow.push('write')
       calls.writes.push({ text, excludeFromHistory: o.excludeFromHistory })
@@ -119,6 +122,22 @@ it('선택 글을 가져오면 기본 출처는 선택 글이고, 확인 화면�
   expect(d).toMatchObject({ templateId: 'meeting-notes', name: '회의록 정리', group: '회의', defaultSource: 'selection', selection: { length: 9 }, target: 'claude', masking: 'restore' })
   expect(d.targets.map((t) => t.id)).toEqual(['claude', 'chatgpt', 'gemini', 'copy'])
   expect(JSON.stringify(d)).not.toContain(SELECTED)
+})
+
+it('확인 화면 초안에 가명 처리 첫 안내를 보일지 싣는다(아직 안 봤으면 true, 모드와 상관없이: 끔이면 화면이 숨긴다)', async () => {
+  const due = fake({ maskingTipDue: true, defaultMasking: 'off' })
+  await createPromptSession(due.deps).prepare('meeting-notes')
+  expect(due.calls.drafts[0]).toMatchObject({ masking: 'off', maskingTip: true })
+  const seen = fake({ maskingTipDue: false })
+  await createPromptSession(seen.deps).prepare('meeting-notes')
+  expect(seen.calls.drafts[0].maskingTip).toBe(false)
+  // 바의 고정 프롬프트가 확인 화면을 열 때(선택 글 없음)도 같다
+  const bar = fake({
+    maskingTipDue: true,
+    capture: { text: null, method: 'none', elapsedMs: 800, restored: false }
+  })
+  await createPromptSession(bar.deps).runFromBar('meeting-notes')
+  expect(bar.calls.drafts[0].maskingTip).toBe(true)
 })
 
 it('직전 창이 없으면 가져오기를 부르지 않고, 클립보드가 있으면 기본 출처는 클립보드', async () => {

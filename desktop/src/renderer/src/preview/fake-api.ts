@@ -1,7 +1,13 @@
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from '../../../shared/flyout/flyout-content'
 import { allAiTargets } from '../../../shared/ai-targets'
-import type { AppStatus, SettingsApi, ShownPayload, SureMateApi } from '../../../shared/ipc-channels'
+import type {
+  AppStatus,
+  PromptPreview,
+  SettingsApi,
+  ShownPayload,
+  SureMateApi
+} from '../../../shared/ipc-channels'
 import type { PetView } from '../../../shared/pet/pet-view'
 import { applySettingsPatch, validateSettingsPatch } from '../../../shared/settings/settings-patch'
 import type { HotkeyCandidate, SettingsSnapshot } from '../../../shared/settings/settings-snapshot'
@@ -53,6 +59,8 @@ export interface FakeFixtures {
   workspaces: WorkspaceListView | null
   /** 설정 창 말하듯 입력 탭이 받는 보기. 지우기는 이 값을 바꾸고 듣는 화면에 알린다. null이면 읽지 못한 것처럼 */
   natural: NaturalView | null
+  /** 확인 화면 미리 보기(previewPrompt). null이면 빈 미리 보기 */
+  preview: PromptPreview | null
 }
 
 const DEFAULT_FIXTURES: FakeFixtures = {
@@ -69,7 +77,8 @@ const DEFAULT_FIXTURES: FakeFixtures = {
   searchContext: { learned: [], usage: [] },
   shown: null,
   workspaces: null,
-  natural: null
+  natural: null,
+  preview: null
 }
 
 /** 지정하지 않은 메서드는 빈 결과를 돌려주고 아무것도 하지 않는다. SureMateApi 전체 구현은 타입 검사가 강제한다. */
@@ -83,18 +92,31 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     listItems: async () => fx.items,
     getSearchContext: async () => ({ pack: parseIntentPack(builtinIntents).pack, learned: fx.searchContext.learned, usage: fx.searchContext.usage, now: Date.now() }),
     recordPick: () => {},
-    previewPrompt: async () => ({
-      text: '',
-      truncated: false,
-      inputLength: 0,
-      warnings: [],
-      notes: [],
-      highlights: [],
-      masking: { mode: fx.status.maskingMode, items: [] },
-      maskRanges: []
-    }),
+    // 장면이 준 미리 보기는 화면이 고른 모드를 그대로 싣는다(끔이면 찾은 것만 보이고 바꾸지 않는다)
+    previewPrompt: async (req) =>
+      fx.preview
+        ? {
+            ...fx.preview,
+            masking: {
+              mode: req.masking ?? fx.preview.masking.mode,
+              items: fx.preview.masking.items.map((i) =>
+                req.masking === 'off' ? { ...i, replacement: null, enabled: false } : i
+              )
+            }
+          }
+        : {
+            text: '',
+            truncated: false,
+            inputLength: 0,
+            warnings: [],
+            notes: [],
+            highlights: [],
+            masking: { mode: fx.status.maskingMode, items: [] },
+            maskRanges: []
+          },
     runPrompt: async () => ({ ok: true, message: '' }),
     cancelPrompt: () => {},
+    maskingTipSeen: () => {},
     getStatus: async () => fx.status,
     getWikiEntry: async () => null,
     copyWikiDefinition: async () => false,

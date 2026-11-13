@@ -2,6 +2,7 @@ import { Bar } from './bar/Bar'
 import { Flyout } from './flyout/Flyout'
 import { ImeLogger } from './ime-logger/ImeLogger'
 import { Onboarding } from './onboarding/Onboarding'
+import { TryScreen } from './onboarding/TryScreen'
 import { Palette } from './palette/Palette'
 import { Pet } from './pet/Pet'
 import { routeOfHash } from '../../shared/settings/settings-route'
@@ -25,6 +26,8 @@ function App(): React.JSX.Element {
       return <Pet />
     case '#/onboarding':
       return <Onboarding />
+    case '#/try':
+      return <TryScreen />
     default:
       return <Palette />
   }

@@ -7,16 +7,20 @@
  * 조종을 끝낼 때(Esc·단축키·팔레트·선택 글 가져오기) 포커스를 돌려줄 창. Sure-Mate 창은 기억하지 않는다:
  * 팔레트가 앞에 있으면(팔레트를 연 채 조종 단축키) 팔레트가 돌아갈 창을 쓴다. 팔레트는 펫이 포커스를 가져가면 숨으므로
  * 숨은 팔레트로 포커스를 돌리면 보이지 않는 창이 키 입력을 받는다(Enter가 강조된 항목을 실행할 수 있다).
- * 그 밖의 Sure-Mate 창(설정 창 등)이면 null(포커스를 돌리지 않는다). 앞 창이 없으면(Win32 없음) null
+ * 설정 창(첫 실행 안내·따라 해 보기 포함, isReturnable)은 보이고 포커스를 받는 보통 창이라 사용자 창처럼 그 창을 쓴다(팔레트의
+ * paletteReturnTarget과 같은 규칙, 2026-11-12). 그 밖의 Sure-Mate 창이면 null(포커스를 돌리지 않는다). 앞 창이 없으면(Win32 없음) null
  */
 export function controlReturnTarget(o: {
   foreground: string | null
   palette: { hwnd: string | null; returnTo: string | null }
   isOwn(hwnd: string): boolean
+  /** Sure-Mate 창이지만 돌아갈 수 있는 창(열린 설정 창). 없으면 모든 Sure-Mate 창을 기억하지 않는다 */
+  isReturnable?(hwnd: string): boolean
 }): string | null {
   const fg = o.foreground
   if (!fg) return null
   if (fg === o.palette.hwnd) return o.palette.returnTo
+  if (o.isReturnable?.(fg)) return fg
   return o.isOwn(fg) ? null : fg
 }
 

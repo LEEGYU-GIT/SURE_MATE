@@ -1,17 +1,15 @@
 import type { OnboardingProgress } from '../../../shared/ipc-channels'
-import type { MaskingMode } from '../../../shared/types'
 
 /**
- * 첫 실행 안내(설계 문서 §6, 2026-11-12 개편): 1 워크스페이스 따라 해 보기 → 2 팔레트 단축키 → 3 AI·가명 처리 →
- * 4 프롬프트 따라 해 보기 → 5 말랑 메이트 소개. 핵심 기능인 창 배치를 가장 먼저 해 보고, 펫은 마지막에 소개한다(사용자 의견).
- * 따라 해 보기 두 단계는 해 본 뒤에 '다음', 해 보지 않았으면 '건너뛰기'로 넘어간다.
+ * 첫 실행 안내(설계 문서 §6, 2026-11-12 사용자 확인으로 세 화면): 소개 → 워크스페이스 체험 → 준비 완료.
+ * 설치하고 1분 안에 "자주 쓰겠는데?"에 닿게 한다. 기본값이 좋은 설정(AI·가명 처리·자동 실행)은 미리 묻지 않고 준비 완료 화면에
+ * 한 줄씩 요약해 그 자리에서 바꾼다(바꾸면 바로 저장하므로 이 상태에 두지 않는다: 설정 스냅숏이 원본).
+ * 30초 따라 해 보기는 따로 여는 화면(#/try)이고, 가명 처리 설명은 확인 화면의 처음 한 번 안내로 옮겼다.
  */
-export const ONBOARDING_STEPS = 5
-export type OnboardingStep = 1 | 2 | 3 | 4 | 5
+export const ONBOARDING_FLOW = ['intro', 'workspace', 'ready'] as const
+export type OnboardingStepId = (typeof ONBOARDING_FLOW)[number]
 
-export const STEP = { workspace: 1, hotkey: 2, choices: 3, prompt: 4, pet: 5 } as const satisfies Record<string, OnboardingStep>
-
-/** 워크스페이스 따라 해 보기에서 저장한 워크스페이스 */
+/** 워크스페이스 체험에서 저장한 워크스페이스 */
 export interface TryWorkspace {
   id: string
   name: string
@@ -19,69 +17,68 @@ export interface TryWorkspace {
 }
 
 export interface OnboardingState {
-  step: OnboardingStep
-  /** 등록에 성공한 팔레트 단축키(없으면 null) */
+  step: OnboardingStepId
+  /** 등록에 성공한 팔레트 단축키(없으면 null). 없으면 시작할 수 없다 */
   hotkey: string | null
-  aiTarget: string
-  maskingMode: MaskingMode
-  launchAtLogin: boolean
-  /** 따라 해 보기에서 저장한 워크스페이스(다시 저장하면 바뀐다) */
+  /** 체험에서 저장한 워크스페이스(다시 저장하면 바뀐다) */
   workspace: TryWorkspace | null
   /** 저장한 워크스페이스를 불러왔다(팔레트·단축키·바·안내 창 어디서든) */
   restored: boolean
-  /** 따라 해 보기에서 회의록 정리 프롬프트를 실행했다 */
-  tried: boolean
 }
 
 export type OnboardingAction =
-  | { type: 'hotkey'; acc: string }
-  | { type: 'choose'; aiTarget?: string; maskingMode?: MaskingMode; launchAtLogin?: boolean }
+  /** 팔레트 단축키가 등록됐다(acc null: 등록이 풀렸다는 설정 알림) */
+  | { type: 'hotkey'; acc: string | null }
   | { type: 'next' }
-  | { type: 'skip' }
   | { type: 'back' }
   | { type: 'workspace-saved'; workspace: TryWorkspace }
   | { type: 'progress'; progress: OnboardingProgress }
 
-export function initialOnboarding(d: { aiTarget: string; maskingMode: MaskingMode; launchAtLogin: boolean }): OnboardingState {
-  return { step: STEP.workspace, hotkey: null, workspace: null, restored: false, tried: false, ...d }
+/** hotkey: 시작할 때 이미 등록돼 있는 팔레트 단축키(설정 스냅숏) */
+export function initialOnboarding(o: { hotkey?: string | null } = {}): OnboardingState {
+  return { step: ONBOARDING_FLOW[0], hotkey: o.hotkey ?? null, workspace: null, restored: false }
 }
 
-/** '다음'으로 갈 수 있는지: 단축키는 등록한 뒤, 따라 해 보기는 해 본 뒤. 마지막 단계는 '시작하기'(화면이 main에 알림) */
-export function canContinue(s: OnboardingState): boolean {
-  if (s.step === STEP.hotkey) return s.hotkey !== null
-  if (s.step === STEP.workspace) return s.restored
-  if (s.step === STEP.prompt) return s.tried
-  return s.step !== ONBOARDING_STEPS
+/** 머리에 보일 "n / 전체"(1부터) */
+export function stepNumber(s: Pick<OnboardingState, 'step'>): { n: number; total: number } {
+  return { n: ONBOARDING_FLOW.indexOf(s.step) + 1, total: ONBOARDING_FLOW.length }
 }
 
-/** '건너뛰기'를 보일지: 따라 해 보기를 아직 해 보지 않았을 때만 */
-export const canSkip = (s: OnboardingState): boolean => (s.step === STEP.workspace && !s.restored) || (s.step === STEP.prompt && !s.tried)
+/** 시작하기를 누를 수 있는지: 준비 완료 화면에서, 등록된 팔레트 단축키가 있을 때(없으면 팔레트를 열 수 없어 앱을 쓸 수 없다) */
+export const canStart = (s: OnboardingState): boolean => s.step === 'ready' && s.hotkey !== null
 
-const forward = (s: OnboardingState): OnboardingState => (s.step === ONBOARDING_STEPS ? s : { ...s, step: (s.step + 1) as OnboardingStep })
+/** 아래 단추 줄의 주 단추를 누를 수 있는지. 소개·체험은 언제나(체험은 나중에 해도 된다), 준비 완료는 시작할 수 있을 때 */
+export const canContinue = (s: OnboardingState): boolean =>
+  s.step === 'ready' ? canStart(s) : true
+
+/** 준비 완료에서 팔레트 단축키 고르기를 펼쳐 둘지(접을 수 없게): 등록된 팔레트 단축키가 없을 때 */
+export const hotkeyPickerForced = (s: Pick<OnboardingState, 'hotkey'>): boolean => s.hotkey === null
+
+/** 체험을 해냈는지(아래 단추가 '나중에 하기' 대신 '다음') */
+export const workspaceDone = (s: Pick<OnboardingState, 'restored'>): boolean => s.restored
+
+/** 순서에서 한 칸 옮긴 단계. 순서 밖이면 그대로 */
+function moved(s: OnboardingState, by: 1 | -1): OnboardingStepId {
+  const i = ONBOARDING_FLOW.indexOf(s.step) + by
+  return i >= 0 && i < ONBOARDING_FLOW.length ? ONBOARDING_FLOW[i] : s.step
+}
 
 export function onboardingReducer(s: OnboardingState, a: OnboardingAction): OnboardingState {
   switch (a.type) {
     case 'hotkey':
       return { ...s, hotkey: a.acc }
-    case 'choose':
-      return {
-        ...s,
-        ...(a.aiTarget !== undefined ? { aiTarget: a.aiTarget } : {}),
-        ...(a.maskingMode !== undefined ? { maskingMode: a.maskingMode } : {}),
-        ...(a.launchAtLogin !== undefined ? { launchAtLogin: a.launchAtLogin } : {})
-      }
     case 'next':
-      return canContinue(s) ? forward(s) : s
-    case 'skip':
-      return canSkip(s) ? forward(s) : s
+      return canContinue(s) ? { ...s, step: moved(s, 1) } : s
     case 'back':
-      return s.step === 1 ? s : { ...s, step: (s.step - 1) as OnboardingStep }
+      return { ...s, step: moved(s, -1) }
     case 'workspace-saved':
       // 다시 저장하면 새 배치를 불러와 봐야 한다
       return { ...s, workspace: a.workspace, restored: false }
     case 'progress':
-      // 그 단계에서 일어난 일만 받는다(다른 단계에서 프롬프트를 실행하거나 다른 워크스페이스를 불러온 것은 무시)
-      if (a.progress.kind === 'prompt') return s.step === STEP.prompt ? { ...s, tried: true } : s
-      return s.step === STEP.workspace && s.workspace?.id === a.progress.id ? { ...s, restored: true } : s
+      // 체험 화면에서 저장한 그 워크스페이스를 불러온 것만 받는다(프롬프트 실행은 따로 여는 따라 해 보기 화면의 일)
+      if (a.progress.kind !== 'workspace') return s
+      return s.step === 'workspace' && s.workspace?.id === a.progress.id
+        ? { ...s, restored: true }
+        : s
   }
 }
