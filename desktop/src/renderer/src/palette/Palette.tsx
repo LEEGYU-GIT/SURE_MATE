@@ -26,7 +26,7 @@ import {
 } from './filter-items'
 import { laggingEnterAction, listKeyAction } from './list-keys'
 import { rememberHint, tipFor } from './palette-hints'
-import { nextSelection } from './selection'
+import { selectionUpdater } from './selection'
 import { StatusBar } from './StatusBar'
 import { WikiDetail } from './WikiDetail'
 import { WikiEdit } from './WikiEdit'
@@ -107,10 +107,11 @@ export function Palette(): React.JSX.Element {
   // 위키 카드가 연 용어 상세를 받는 중(그동안 빈 검색어 목록이 잠깐 비치지 않게 빈 바탕만 그린다)
   const [wikiLoading, setWikiLoading] = useState(false)
 
-  // 선택은 직접 관리한다(cmdk 자동 선택은 지연 렌더링된 목록과 어긋남)
+  // 선택은 직접 관리한다(cmdk 자동 선택은 지연 렌더링된 목록과 어긋남). 지난 검색어는 갱신 함수를 만들 때 붙잡는다(selectionUpdater)
   useEffect(() => {
-    setSelected((prev) => nextSelection({ selected: prev, prevQuery: lastQuery.current, query: deferredQuery, items }))
+    const update = selectionUpdater({ prevQuery: lastQuery.current, query: deferredQuery, items })
     lastQuery.current = deferredQuery
+    setSelected(update)
   }, [deferredQuery, items])
 
   /** 항목과 검색 문맥을 함께 받아 한 번에 바꾼다(문맥을 받지 못하면 말하듯 입력 없이 M4 검색) */

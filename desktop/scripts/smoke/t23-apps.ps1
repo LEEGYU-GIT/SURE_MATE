@@ -149,7 +149,10 @@ function LearnPalette($show) {
   $rc = New-Object 'W+RECT'
   if (-not [W]::GetWindowRect($fg.hwnd, [ref]$rc)) { return $false }
   $s = [double]$show.scale; $b = $show.bounds
-  $ok = ([Math]::Abs(($rc.Right - $rc.Left) - $b.width * $s) -le 4 -and [Math]::Abs(($rc.Bottom - $rc.Top) - $b.height * $s) -le 4)
+  $w = $rc.Right - $rc.Left; $h = $rc.Bottom - $rc.Top
+  $r.info_palette_rect = '{0}x{1} (palette.show {2:N0}x{3:N0})' -f $w, $h, ($b.width * $s), ($b.height * $s)
+  # 창 사각형에는 보이지 않는 테두리(acrylic 창의 크기 조절 테두리)가 더해질 수 있어 48px까지 본다. 바·펫·펼침 창은 크기가 훨씬 달라 섞이지 않는다
+  $ok = ([Math]::Abs($w - $b.width * $s) -le 48 -and [Math]::Abs($h - $b.height * $s) -le 48)
   if ($ok) { $script:paletteHwnd = $fg.hwnd }
   return $ok
 }
@@ -225,7 +228,23 @@ function Ask([string]$text) {
   if (-not (TypeText $text)) { $script:why = 'the palette left the foreground while typing'; return $null }
   $script:typed++
   Pump 900
+  CapturePalette ('t23-before-enter-{0}' -f $script:typed)
   return $o
+}
+# 팔레트 창만 찍는다(판정이 틀렸을 때 입력칸과 목록을 보려고, %TEMP%\sure-mate-smoke). 다른 창·화면 전체는 찍지 않는다
+function CapturePalette([string]$name) {
+  if ($script:paletteHwnd -eq [IntPtr]::Zero) { return }
+  $rc = New-Object 'W+RECT'
+  if (-not [W]::GetWindowRect($script:paletteHwnd, [ref]$rc)) { return }
+  Add-Type -AssemblyName System.Drawing
+  $bmp = New-Object System.Drawing.Bitmap ($rc.Right - $rc.Left), ($rc.Bottom - $rc.Top)
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  try {
+    $g.CopyFromScreen($rc.Left, $rc.Top, 0, 0, $bmp.Size)
+    $dir = Join-Path $env:TEMP 'sure-mate-smoke'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $bmp.Save((Join-Path $dir "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $g.Dispose(); $bmp.Dispose() }
 }
 # 맨 위 행을 Enter로 실행한다. 이번 팔레트가 검색 화면 그대로일 때만(확인 화면에서는 누르지 않는다). Enter는 0.12초 뒤 뗀다
 # (앱은 Enter·보조키를 뗄 때까지 팔레트를 그대로 두므로 뗄 때도 팔레트가 앞에 있다)
