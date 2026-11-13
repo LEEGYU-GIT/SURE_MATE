@@ -151,6 +151,7 @@ p { margin: 0; }
 .hero-cta { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .cta { display: inline-flex; align-items: center; gap: 10px; padding: 13px 20px; border-radius: 12px; background: var(--ink); color: var(--paper); font-weight: 600; font-size: var(--fs-small); }
 .cta .file { font-family: var(--mono); font-weight: 500; opacity: 0.8; }
+.cta.ghost { background: var(--card); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 /* 화면 오른쪽 가장자리의 Sure-Mate 바와 그 위에 앉은 펫(실제 앱과 같은 자리) */
 .edge { display: grid; justify-items: center; }
 .edge .bubble { margin-bottom: 10px; justify-self: stretch; text-align: left; }
@@ -313,12 +314,7 @@ p { margin: 0; }
 .qa dd { margin: 0; color: var(--mute); font-size: var(--fs-small); }
 .qa dd::before { content: "A. "; font-family: var(--mono); color: var(--ink); font-weight: 600; }
 
-/* 13. 함께 출품 · 마무리 */
-.together { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.together div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
-.together .note { color: var(--jelly-text); }
-.together b { font-size: 16px; }
-.together span { font-size: var(--fs-small); color: var(--mute); }
+/* 13. 마무리 */
 .closing { text-align: center; display: grid; justify-items: center; gap: 16px; }
 .closing .mate { width: 110px; height: 110px; animation: hop 900ms ease-in-out 2 both; }
 .closing h2 { font-family: var(--display); font-size: var(--fs-h2); line-height: 1.3; }
@@ -363,7 +359,7 @@ p { margin: 0; }
 @media (max-width: 640px) {
   .hero-grid { grid-template-columns: minmax(0, 1fr); }
   .edge { justify-self: end; width: 150px; }
-  .fit-list, .split, .two, .together, .modes, .steps, .offers, .files { grid-template-columns: minmax(0, 1fr); }
+  .fit-list, .split, .two, .modes, .steps, .offers, .files { grid-template-columns: minmax(0, 1fr); }
   .desk, .hide { grid-template-columns: minmax(0, 1fr); }
   .facts { grid-template-columns: minmax(0, 1fr); }
   .pet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -446,6 +442,7 @@ p { margin: 0; }
       </div>
       <div class="hero-cta">
         <span class="cta">첨부 파일 <span class="file">Sure-Mate-Setup-0.1.0.exe · 약 110MB</span></span>
+        <span class="cta ghost">소개 영상 <span class="file">sure-mate-promo.mp4 · 87초</span></span>
         <span class="note">관리자 권한 없이 1분이면 설치돼요</span>
       </div>
     </div>
@@ -756,21 +753,7 @@ p { margin: 0; }
     </div>
   </section>
 
-  <!-- 13. 함께 출품 -->
-  <section class="band">
-    <div class="wrap">
-      <div class="band-head">
-        <h2>함께 출품한 프롬프트도 있어요</h2>
-        <p>각 부문에 따로 출품한 글이에요. 두 프롬프트 모두 Sure-Mate 기본 프롬프트에도 들어 있어요.</p>
-      </div>
-      <div class="together">
-        <div><span class="note">개발과 검증 부문</span><b>정적분석 위반 분석·소명 초안</b><span>위반 목록을 붙이면 원인 분석과 소명 초안을 정리해요</span></div>
-        <div><span class="note">자료 조사와 지식 검색 부문</span><b>표준·규격 조항 찾기</b><span>ISO 26262 같은 규격에서 관련 조항을 찾아 정리해요</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 14. 마무리 -->
+  <!-- 13. 마무리 -->
   <section class="band wash">
     <div class="wrap closing">
       <svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-happy"/></svg>
@@ -795,7 +778,7 @@ p { margin: 0; }
             <tr><td>무엇이 좋아졌는지 · 업무 개선 효과</td><td>이런 순간, 기능 칸, 시연 영상</td><td>손으로 하던 일이 단축키 한 번으로 바뀌는 장면</td></tr>
             <tr><td>AI를 어떻게 · 업무 적합성</td><td>AI를 이렇게 써요, 가명 처리</td><td>프롬프트 조립, 용어 자동 첨부, 보내기 전 가명 처리</td></tr>
             <tr><td>사용법</td><td>설치는 1분, 첫 실행 안내</td><td>SmartScreen 화면 캡처, 세 화면 안내, 30초 따라 해 보기</td></tr>
-            <tr><td>확산 가치</td><td>한눈에 보는 Sure-Mate, 함께 출품</td><td>관리자 권한 없이 설치, 프롬프트·용어 팩을 파일로 나눠 쓰기</td></tr>
+            <tr><td>확산 가치</td><td>한눈에 보는 Sure-Mate</td><td>관리자 권한 없이 설치, 프롬프트·용어 팩을 파일로 나눠 쓰기</td></tr>
             <tr><td>좋아요·댓글</td><td>맨 위 영상, 마무리</td><td>87초 영상(이석 미리 알림·지나가는 동료 장면), 말랑 메이트, 댓글 부탁</td></tr>
           </tbody>
         </table>
@@ -812,7 +795,7 @@ p { margin: 0; }
         <div><b>04-wiki-mate.png</b><span>용어 카드·상용구, 말랑 메이트</span></div>
         <div><b>05-ttree.png</b><span>Ttree·메신저 열기, 이석 미리 알림</span></div>
         <div><b>06-how.png</b><span>AI를 이렇게, 설치</span></div>
-        <div><b>07-info.png</b><span>한눈에 보기, 궁금한 것, 함께 출품</span></div>
+        <div><b>07-info.png</b><span>한눈에 보기, 궁금한 것, 마무리</span></div>
       </div>
     </section>
 
@@ -840,7 +823,7 @@ p { margin: 0; }
       <h3>화면은 어디서 왔나</h3>
       <p class="lead-sm">팔레트·확인 화면·바·용어 카드·말랑 메이트는 실제 앱 화면을 캡처했고, 바탕화면과 다른 앱 창은 영상용으로 그렸어요. Ttree는 동료가 바로 알아보도록 실제 화면을 쓰되, 이름·직급·팀·날짜·근무 기록은 가상 인물 김가상에 맞춰 바꿔 그렸어요. 사무실 장면은 얼굴 없는 평면 그림이고, 인물·고객사·문서 이름은 모두 가상이에요.</p>
       <h3>게시판에 올리는 법</h3>
-      <p class="lead-sm">영상 파일을 게시글 맨 위에 첨부하고 대표 이미지를 썸네일로 써요. 게시판이 영상을 못 붙이면 장면을 6~8초 GIF로 잘라(이석 미리 알림 0:58–1:08, 지나가는 동료 1:08–1:16처럼) 이미지 사이에 넣어요.</p>
+      <p class="lead-sm">영상 파일을 게시글에 첨부하고 대표 이미지를 썸네일로 써요. 본문 맨 위에 영상을 띄우려면 첨부한 영상의 링크를 넣어 게시판용 HTML을 다시 만들어요(node docs/promo/board/inline.mjs --video 링크). 게시판이 영상을 못 붙이면 장면을 6~8초 GIF로 잘라(이석 미리 알림 0:58–1:08, 지나가는 동료 1:08–1:16처럼) 이미지 사이에 넣어요.</p>
     </section>
 
     <section>
@@ -859,8 +842,7 @@ p { margin: 0; }
         <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>11/13 게시용 빌드(main 7746542)로 고쳤어요: 설치 파일 약 110MB, 사용 메모리 약 310MB, 가만히 있을 때 CPU 0.2% 안팎</small></span></li>
         <li><span>첨부 파일 용량 확인<small>설치 파일(약 110MB)과 영상(15MB)이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
         <li><span>SHA-256 해시를 본문에 적기<small>받은 파일이 바뀌지 않았는지 동료가 확인할 수 있어요</small></span></li>
-        <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음. 영상 속 Ttree 화면은 가상 인물(김가상)로 바꿔 그렸어요</small></span></li>
-        <li><span>함께 출품한 두 글 링크 연결<small>세 글이 서로를 소개해요</small></span></li>
+        <li><span>익명 점검<small>캡처·영상·파일 속성에 실명·사번·메일 주소 없음. 영상 속 Ttree 화면은 가상 인물(김가상)로 바꿔 그렸어요</small></span></li>
       </ul>
     </section>
 
