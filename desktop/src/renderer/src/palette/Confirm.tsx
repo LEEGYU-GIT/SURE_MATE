@@ -82,7 +82,7 @@ function ItemChip(props: { item: MaskItem; focused: boolean; onClick: () => void
 
 /**
  * 가명 처리 첫 안내(2026-11-12): 처음으로 가명 처리한 프롬프트의 확인 화면에서 한 번만, 가명 처리 칩 아래(찾은 항목·대상·미리 보기 자리)를
- * 잠시 덮는다. 설정 창 가명 처리 탭과 같은 실제 예시(MaskingExample)와, 처음 설치하면 비어 있는 가명 사전 이야기(고객사 이름은 적은 것만
+ * 잠시 덮는다. 넓은 창(2026-11-13 두 칸 배치)에서는 오른쪽 칸(미리 보기 자리)을 덮고 왼쪽의 바뀌는 이름·AI는 흐리게 둔다. 설정 창 가명 처리 탭과 같은 실제 예시(MaskingExample)와, 처음 설치하면 비어 있는 가명 사전 이야기(고객사 이름은 적은 것만
  * 바뀐다: 실제로 일어날 일만 약속한다). [알겠어요]로 닫거나 안내가 보이는 채로 복사하면 다시 보이지 않는다(main이 설정에 남긴다)
  */
 function MaskingTip({
@@ -100,14 +100,14 @@ function MaskingTip({
     <div
       role="note"
       aria-labelledby="masking-tip-title"
-      className="absolute inset-0 z-10 rounded-window border border-brand/40 bg-surface-solid"
+      className="absolute inset-0 z-10 rounded-window border border-brand/40 bg-surface-solid min-[880px]:bottom-auto min-[880px]:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
     >
-      {/* 가명 처리 칩을 가리키는 꼬리(바깥 두 변만 외곽선) */}
+      {/* 가명 처리 칩을 가리키는 꼬리(바깥 두 변만 외곽선): 좁은 창은 위쪽, 넓은 창은 왼쪽 칸의 가명 처리 줄 높이에서 왼쪽을 가리킨다 */}
       <span
         aria-hidden="true"
-        className="absolute -top-1.5 left-24 size-2.5 rotate-45 border-t border-l border-brand/40 bg-surface-solid"
+        className="absolute -top-1.5 left-24 size-2.5 rotate-45 border-t border-l border-brand/40 bg-surface-solid min-[880px]:top-[111px] min-[880px]:-left-1.5 min-[880px]:border-t-0 min-[880px]:border-b"
       />
-      <div className="flex h-full flex-col gap-2 overflow-y-auto px-4 py-3">
+      <div className="flex h-full flex-col gap-2 overflow-y-auto px-4 py-3 min-[880px]:h-auto">
         <div className="flex items-center gap-2">
           <ShieldIcon size={14} className="shrink-0 text-brand" />
           <p id="masking-tip-title" className="text-small leading-5 font-semibold text-fg">
@@ -263,85 +263,100 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
         <span className="ml-auto text-caption text-fg-3">Esc 목록으로</span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <span className="w-14 shrink-0 text-caption text-fg-3">넣을 글</span>
-          <Chip
-            active={state.source === 'selection'}
-            disabled={!state.sources.includes('selection')}
-            focused={state.focus === 'source'}
-            title={note ?? undefined}
-            onClick={() => pickSource('selection')}
-          >
-            선택한 글{draft.selection.length > 0 ? ` ${count(draft.selection.length)}` : ''}
-          </Chip>
-          <Chip active={state.source === 'clipboard'} disabled={!state.sources.includes('clipboard')} focused={state.focus === 'source'} onClick={() => pickSource('clipboard')}>
-            클립보드{draft.clipboardLength > 0 ? ` ${count(draft.clipboardLength)}` : ''}
-          </Chip>
-          <Chip active={state.source === 'input'} focused={state.focus === 'source'} onClick={() => pickSource('input')}>
-            직접 입력
-          </Chip>
-          {note && <span className="ml-1 min-w-0 truncate text-caption text-fg-3">{note}</span>}
+      {/*
+        몸통(2026-11-13): 창 너비 880 이상이면 왼쪽 320 칸(넣을 글·가명 처리 / 바뀌는 이름·AI)과 오른쪽 칸(직접 입력·미리 보기),
+        좁으면 한 줄로 쌓되 미리 보기에 최소 높이를 두고 넘치면 스크롤한다. 칸 자리는 격자 칸으로 정해 첫 안내가 덮을 자리를 같은 요소로 지정한다
+      */}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-3 overflow-y-auto px-5 py-4 min-[880px]:grid-cols-[320px_minmax(0,1fr)] min-[880px]:grid-rows-[auto_minmax(0,1fr)] min-[880px]:gap-x-0 min-[880px]:gap-y-5 min-[880px]:overflow-hidden">
+        <div className="col-start-1 row-start-1 flex flex-col gap-3 min-[880px]:gap-5 min-[880px]:pr-5">
+          <div className="flex items-center gap-2 min-[880px]:flex-col min-[880px]:items-stretch">
+            <span className="w-14 shrink-0 text-caption text-fg-3 min-[880px]:w-auto">넣을 글</span>
+            <div className="flex min-w-0 flex-1 items-center gap-2 min-[880px]:flex-wrap">
+              <Chip
+                active={state.source === 'selection'}
+                disabled={!state.sources.includes('selection')}
+                focused={state.focus === 'source'}
+                title={note ?? undefined}
+                onClick={() => pickSource('selection')}
+              >
+                선택한 글{draft.selection.length > 0 ? ` ${count(draft.selection.length)}` : ''}
+              </Chip>
+              <Chip active={state.source === 'clipboard'} disabled={!state.sources.includes('clipboard')} focused={state.focus === 'source'} onClick={() => pickSource('clipboard')}>
+                클립보드{draft.clipboardLength > 0 ? ` ${count(draft.clipboardLength)}` : ''}
+              </Chip>
+              <Chip active={state.source === 'input'} focused={state.focus === 'source'} onClick={() => pickSource('input')}>
+                직접 입력
+              </Chip>
+              {note && <span className="ml-1 min-w-0 truncate text-caption text-fg-3 min-[880px]:ml-0 min-[880px]:basis-full min-[880px]:whitespace-normal">{note}</span>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 min-[880px]:flex-col min-[880px]:items-stretch">
+            <span className="flex w-14 shrink-0 items-center gap-1 text-caption text-fg-3 min-[880px]:w-auto">
+              <ShieldIcon size={13} className={state.masking === 'off' ? 'text-warn' : 'text-brand'} />
+              가명<span className="hidden min-[880px]:inline"> 처리</span>
+              <span className="ml-auto hidden shrink-0 min-[880px]:inline">Alt+M</span>
+            </span>
+            <div className="flex min-w-0 flex-1 items-center gap-2 min-[880px]:flex-wrap">
+              {MASKING_MODES.map((mode) => (
+                <Chip
+                  key={mode}
+                  active={state.masking === mode}
+                  focused={state.focus === 'masking'}
+                  tone={mode === 'off' ? 'warn' : 'brand'}
+                  title={MODE_TITLES[mode]}
+                  onClick={() => {
+                    dispatch({ type: 'set-masking', mode })
+                    focusGroup('masking')
+                  }}
+                >
+                  {maskingModeLabel(mode)}
+                </Chip>
+              ))}
+              <span className="ml-1 min-w-0 truncate text-caption text-fg-3 min-[880px]:ml-0 min-[880px]:basis-full">
+                {summary ? (state.masking === 'off' ? `찾음 ${summary}` : summary) : state.masking === 'off' ? '' : '가릴 것을 찾지 못했어요'}
+              </span>
+              <span className="ml-auto shrink-0 text-caption text-fg-3 min-[880px]:hidden">Alt+M</span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="flex w-14 shrink-0 items-center gap-1 text-caption text-fg-3">
-            <ShieldIcon size={13} className={state.masking === 'off' ? 'text-warn' : 'text-brand'} />
-            가명
-          </span>
-          {MASKING_MODES.map((mode) => (
-            <Chip
-              key={mode}
-              active={state.masking === mode}
-              focused={state.focus === 'masking'}
-              tone={mode === 'off' ? 'warn' : 'brand'}
-              title={MODE_TITLES[mode]}
-              onClick={() => {
-                dispatch({ type: 'set-masking', mode })
-                focusGroup('masking')
-              }}
-            >
-              {maskingModeLabel(mode)}
-            </Chip>
-          ))}
-          <span className="ml-1 min-w-0 truncate text-caption text-fg-3">
-            {summary ? (state.masking === 'off' ? `찾음 ${summary}` : summary) : state.masking === 'off' ? '' : '가릴 것을 찾지 못했어요'}
-          </span>
-          <span className="ml-auto shrink-0 text-caption text-fg-3">Alt+M</span>
-        </div>
-
-        {/* 가명 처리 칩 아래: 첫 안내가 보이는 동안은 안내가 이 자리를 덮고, 덮인 것은 화면 읽기 프로그램·마우스에서도 뺀다(inert) */}
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <div inert={tipVisible} className="flex min-h-0 flex-1 flex-col gap-3">
-            {state.masking === 'off' ? (
-              <div className="flex shrink-0 items-center gap-2 rounded-control border border-warn/40 bg-warn/10 px-3 py-1.5 text-small text-warn">
-                <ShieldOffIcon size={14} className="shrink-0" />
-                가명 처리 꺼짐 — 원문 그대로 복사됩니다
-              </div>
-            ) : (
-              items.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="w-14 shrink-0" />
-                  {/* 초점 테두리(2px)가 스크롤 상자에 잘리지 않게 안쪽 여백을 두고 바깥으로 되돌린다 */}
-                  <div className="-m-0.5 flex max-h-16 min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto p-0.5">
-                    {items.map((item, i) => (
-                      <ItemChip
-                        key={item.key}
-                        item={item}
-                        focused={state.focus === 'items' && state.itemIndex === i}
-                        onClick={() => {
-                          dispatch({ type: 'toggle-item', key: item.key })
-                          focusGroup('items')
-                        }}
-                      />
-                    ))}
-                  </div>
+        {/* 첫 안내가 보이는 동안 안내가 덮는 자리(좁은 창: 아래 전부, 넓은 창: 오른쪽 칸)와 왼쪽의 바뀌는 이름·AI는 화면 읽기 프로그램·마우스에서도 뺀다(inert) */}
+        <div
+          inert={tipVisible}
+          className={`col-start-1 row-start-2 flex flex-col gap-3 min-[880px]:min-h-0 min-[880px]:gap-5 min-[880px]:overflow-y-auto min-[880px]:-mx-1.5 min-[880px]:-my-1.5 min-[880px]:py-1.5 min-[880px]:pr-6.5 min-[880px]:pl-1.5 ${tipVisible ? 'opacity-40' : ''}`}
+        >
+          {state.masking === 'off' ? (
+            <div className="flex shrink-0 items-center gap-2 rounded-control border border-warn/40 bg-warn/10 px-3 py-1.5 text-small text-warn">
+              <ShieldOffIcon size={14} className="shrink-0" />
+              가명 처리 꺼짐 — 원문 그대로 복사됩니다
+            </div>
+          ) : (
+            items.length > 0 && (
+              <div className="flex min-h-0 items-start gap-2 min-[880px]:flex-col min-[880px]:items-stretch min-[880px]:gap-2">
+                <span className="w-14 shrink-0 min-[880px]:hidden" />
+                <span className="hidden text-caption text-fg-3 min-[880px]:block">바뀌는 이름 · 누르면 이번만 그대로 보내요</span>
+                {/* 초점 테두리(2px)가 스크롤 상자에 잘리지 않게 안쪽 여백을 두고 바깥으로 되돌린다 */}
+                <div className="-m-0.5 flex max-h-16 min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto p-0.5 min-[880px]:max-h-none min-[880px]:flex-none min-[880px]:flex-col min-[880px]:flex-nowrap min-[880px]:items-start">
+                  {items.map((item, i) => (
+                    <ItemChip
+                      key={item.key}
+                      item={item}
+                      focused={state.focus === 'items' && state.itemIndex === i}
+                      onClick={() => {
+                        dispatch({ type: 'toggle-item', key: item.key })
+                        focusGroup('items')
+                      }}
+                    />
+                  ))}
                 </div>
-              )
-            )}
+              </div>
+            )
+          )}
 
-            <div className="flex items-center gap-2">
-              <span className="w-14 shrink-0 text-caption text-fg-3">AI</span>
+          <div className="flex items-center gap-2 min-[880px]:flex-col min-[880px]:items-stretch">
+            <span className="w-14 shrink-0 text-caption text-fg-3 min-[880px]:w-auto">AI</span>
+            <div className="flex min-w-0 flex-1 items-center gap-2 min-[880px]:flex-wrap">
               {draft.targets.map((t) => (
                 <Chip
                   key={t.id}
@@ -356,8 +371,16 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
                 </Chip>
               ))}
             </div>
+          </div>
+        </div>
 
-            {state.source === 'input' && (
+        <div
+          inert={tipVisible}
+          className={`col-start-1 row-start-3 flex flex-col gap-3 min-[880px]:min-h-0 min-[880px]:col-start-2 min-[880px]:row-span-2 min-[880px]:row-start-1 min-[880px]:border-l min-[880px]:border-line min-[880px]:pl-5 ${tipVisible ? 'opacity-40' : ''}`}
+        >
+          {state.source === 'input' && (
+            <div className="flex shrink-0 flex-col gap-1.5 min-[880px]:min-h-36 min-[880px]:basis-[36%]">
+              <span className="hidden text-caption text-fg-3 min-[880px]:block">직접 입력</span>
               <textarea
                 ref={inputRef}
                 value={state.input}
@@ -365,69 +388,72 @@ export function Confirm(props: { draft: PromptDraft; onBack: () => void; onDone:
                 onChange={(e) => dispatch({ type: 'set-input', input: e.target.value })}
                 onFocus={() => focusGroup('input')}
                 placeholder="여기에 글을 붙여넣거나 입력하세요. Ctrl+Enter로 실행해요."
-                className="h-24 shrink-0 resize-none rounded-window border border-line bg-surface-inset p-3 text-body text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70"
+                className="h-24 shrink-0 resize-none rounded-window border border-line bg-surface-inset p-3 text-body leading-relaxed text-fg outline-none select-text placeholder:text-fg-3 focus:border-brand/70 min-[880px]:h-auto min-[880px]:min-h-0 min-[880px]:flex-1"
               />
-            )}
+            </div>
+          )}
 
-            <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-              <div className="flex items-center text-caption text-fg-3">
-                <span>미리 보기</span>
-                {preview && <span className="ml-auto">넣을 글 {count(preview.inputLength)}</span>}
-              </div>
-              <div
-                ref={previewRef}
-                className="relative min-h-0 flex-1 overflow-auto rounded-window border border-line bg-surface-inset px-3 py-2.5 text-small leading-relaxed break-all whitespace-pre-wrap text-fg-3 select-text"
-              >
-                {preview &&
-                  splitPreview(preview.text, preview.highlights, preview.maskRanges).map(
-                    (part, i) => {
-                      // 글자색 클래스는 하나만 둔다(둘이면 CSS 순서로 정해져 청록이 안 보일 수 있다)
-                      const masked = 'font-semibold text-brand'
-                      return part.mark ? (
-                        <mark
-                          key={i}
-                          className={`rounded-[2px] bg-highlight/20 [box-decoration-break:clone] ${part.masked ? masked : 'text-fg'}`}
-                        >
-                          {part.text}
-                        </mark>
-                      ) : (
-                        <span key={i} className={part.masked ? masked : undefined}>
-                          {part.text}
-                        </span>
-                      )
-                    }
-                  )}
-                {preview?.truncated && (
-                  <div className="mt-2 text-caption text-fg-3">
-                    … 앞 4,000자만 보여요. 복사할 때는 전체가 들어가요.
-                  </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+            <div className="flex items-center text-caption text-fg-3">
+              <span>미리 보기</span>
+              {preview && <span className="ml-auto">넣을 글 {count(preview.inputLength)}</span>}
+            </div>
+            <div
+              ref={previewRef}
+              className="relative min-h-24 flex-1 overflow-auto rounded-window border border-line bg-surface-inset px-3.5 py-3 min-[880px]:min-h-0 text-body leading-relaxed break-all whitespace-pre-wrap text-fg-2 select-text"
+            >
+              {preview &&
+                splitPreview(preview.text, preview.highlights, preview.maskRanges).map(
+                  (part, i) => {
+                    // 글자색 클래스는 하나만 둔다(둘이면 CSS 순서로 정해져 청록이 안 보일 수 있다)
+                    const masked = 'font-semibold text-brand'
+                    return part.mark ? (
+                      <mark
+                        key={i}
+                        className={`rounded-[2px] bg-highlight/20 [box-decoration-break:clone] ${part.masked ? masked : 'text-fg'}`}
+                      >
+                        {part.text}
+                      </mark>
+                    ) : (
+                      <span key={i} className={part.masked ? masked : undefined}>
+                        {part.text}
+                      </span>
+                    )
+                  }
                 )}
-              </div>
-              {preview && (preview.warnings.length > 0 || preview.notes.length > 0) && (
-                <ul className="flex flex-col gap-0.5 text-caption">
-                  {preview.warnings.map((w) => (
-                    <li key={w} className="text-warn">
-                      ! {w}
-                    </li>
-                  ))}
-                  {preview.notes.map((n) => (
-                    <li key={n} className="text-fg-3">
-                      {n}
-                    </li>
-                  ))}
-                </ul>
+              {preview?.truncated && (
+                <div className="mt-2 text-caption text-fg-3">
+                  … 앞 4,000자만 보여요. 복사할 때는 전체가 들어가요.
+                </div>
               )}
             </div>
+            {preview && (preview.warnings.length > 0 || preview.notes.length > 0) && (
+              <ul className="flex flex-col gap-0.5 text-caption">
+                {preview.warnings.map((w) => (
+                  <li key={w} className="text-warn">
+                    ! {w}
+                  </li>
+                ))}
+                {preview.notes.map((n) => (
+                  <li key={n} className="text-fg-3">
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {tipVisible ? (
+        </div>
+
+        {tipVisible ? (
+          <div className="relative z-10 col-start-1 row-span-2 row-start-2 min-h-40 min-[880px]:col-start-2 min-[880px]:row-span-2 min-[880px]:row-start-1 min-[880px]:ml-5">
             <MaskingTip
               mode={state.masking}
               focused={state.focus === 'tip'}
               buttonRef={tipButtonRef}
               onDismiss={dismissTip}
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex h-11 shrink-0 items-center gap-3 border-t border-line px-4 text-caption text-fg-3">

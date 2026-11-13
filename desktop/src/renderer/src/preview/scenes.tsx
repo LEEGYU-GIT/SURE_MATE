@@ -1427,11 +1427,14 @@ function tryPreview(): PromptPreview {
   }
 }
 
-/** 확인 화면 장면: 팔레트 창(720×460, SCENE_W=720 SCENE_H=460으로 찍는다)에 회의록 정리의 확인 화면 */
+/**
+ * 확인 화면 장면: 팔레트 창에 회의록 정리의 확인 화면. 기본은 좁은 창 720×460(SCENE_W=720 SCENE_H=460으로 찍는다),
+ * wide면 캡처 창 크기 그대로(기본 SCENE_W=1040 SCENE_H=760, 두 칸 배치). input이면 직접 입력(선택한 글 없음)
+ */
 function confirmScene(
   id: string,
   title: string,
-  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[] }
+  o: { maskingTip: boolean; masking?: MaskingMode; keys?: string[]; wide?: boolean; input?: boolean }
 ): Scene {
   return {
     id,
@@ -1450,9 +1453,9 @@ function confirmScene(
           templateId: 'meeting-notes',
           name: '회의록 정리',
           group: '회의',
-          selection: { length: TRY_MEMO.length },
+          selection: { length: o.input ? 0 : TRY_MEMO.length },
           clipboardLength: 0,
-          defaultSource: 'selection',
+          defaultSource: o.input ? 'input' : 'selection',
           targets: allAiTargets([]).map((t) => ({ id: t.id, name: t.name })),
           target: 'claude',
           masking: o.masking ?? 'restore',
@@ -1460,12 +1463,16 @@ function confirmScene(
         }
       }
     },
-    render: () => <ConfirmStage keys={o.keys} />
+    render: () => <ConfirmStage keys={o.keys} size={o.wide ? CONFIRM_WIDE : CONFIRM_NARROW} />
   }
 }
 
+const CONFIRM_NARROW = { width: 720, height: 460 }
+/** 넓은 장면은 캡처 창 크기를 그대로 쓴다(기본 1040×760으로 찍고, 작은 노트북은 992×504처럼 창 크기를 바꿔 찍는다) */
+const CONFIRM_WIDE = { width: '100vw', height: '100vh' }
+
 /** 팔레트 창에 확인 화면을 띄우고, keys가 있으면 그린 뒤 화면에 키를 보낸다(사람이 Tab을 누른 것처럼) */
-function ConfirmStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
+function ConfirmStage({ keys = [], size }: { keys?: string[]; size: { width: number | string; height: number | string } }): React.JSX.Element {
   useEffect(() => {
     const timers = keys.map((code, i) =>
       setTimeout(
@@ -1481,8 +1488,8 @@ function ConfirmStage({ keys = [] }: { keys?: string[] }): React.JSX.Element {
   return (
     <div
       style={{
-        width: 720,
-        height: 460,
+        width: size.width,
+        height: size.height,
         background: 'linear-gradient(135deg, #22355E 0%, #3B4F86 55%, #6A5B9A 100%)'
       }}
     >
@@ -1504,7 +1511,11 @@ const CONFIRM_SCENES: Scene[] = [
     maskingTip: true,
     masking: 'remove'
   }),
-  confirmScene('confirm-seen', '확인 화면: 안내를 이미 봄(미리 보기 그대로)', { maskingTip: false })
+  confirmScene('confirm-seen', '확인 화면: 안내를 이미 봄(미리 보기 그대로)', { maskingTip: false }),
+  confirmScene('confirm-wide', '확인 화면 넓은 창 1040×760: 왼쪽 설정 칸, 오른쪽 미리 보기(선택한 글)', { maskingTip: false, wide: true }),
+  confirmScene('confirm-wide-input', '확인 화면 넓은 창 1040×760: 직접 입력(위 약 1/3)과 미리 보기', { maskingTip: false, wide: true, input: true }),
+  confirmScene('confirm-wide-tip', '확인 화면 넓은 창 1040×760: 가명 처리 첫 안내가 오른쪽 칸을 덮음', { maskingTip: true, wide: true }),
+  confirmScene('confirm-narrow-input', '확인 화면 좁은 창 720×460: 직접 입력과 미리 보기(미리 보기 최소 높이)', { maskingTip: false, input: true })
 ]
 
 export const SCENES: Scene[] = [
