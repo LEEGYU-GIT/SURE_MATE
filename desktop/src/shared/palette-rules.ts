@@ -1,6 +1,37 @@
 import type { Rect } from './types'
 
-type Size = { width: number; height: number }
+export type Size = { width: number; height: number }
+
+/** 확인 화면 창(2026-11-13): 처음 크기, 끌어서 줄일 수 있는 최소 크기(검색 목록과 같은 720×460), 작업 영역 가장자리 여백 */
+export const CONFIRM_SIZE: Size = { width: 1040, height: 760 }
+export const CONFIRM_MIN: Size = { width: 720, height: 460 }
+const CONFIRM_MARGIN = 16
+
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
+
+/**
+ * 확인 화면 창 자리: 지난번 크기(없으면 1040×760)를 최소 720×460 이상, 작업 영역에서 여백 16을 뺀 크기 이하로 맞춘다.
+ * 작업 영역이 최소보다 작으면 작업 영역에 맞춘다(1280×720 150%). 검색 목록처럼 가로 가운데·위 22%에 두고, 아래 여백을 넘으면 위로 당긴다
+ */
+export function confirmBounds(workArea: Rect, saved: Size | null): Rect {
+  const want = saved ?? CONFIRM_SIZE
+  const maxW = workArea.width - 2 * CONFIRM_MARGIN
+  const maxH = workArea.height - 2 * CONFIRM_MARGIN
+  const width = clamp(want.width, Math.min(CONFIRM_MIN.width, maxW), maxW)
+  const height = clamp(want.height, Math.min(CONFIRM_MIN.height, maxH), maxH)
+  const top = Math.max(CONFIRM_MARGIN, Math.min(Math.round(workArea.height * 0.22), workArea.height - CONFIRM_MARGIN - height))
+  return { x: workArea.x + Math.round((workArea.width - width) / 2), y: workArea.y + top, width, height }
+}
+
+/** 설정 파일의 확인 화면 크기. 숫자가 아니거나 너비 320~8000·높이 240~8000 밖이면 null(기본 크기로 연다) */
+export function parseConfirmSize(raw: unknown): Size | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const { width, height } = raw as Record<string, unknown>
+  if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height)) return null
+  const w = Math.round(width)
+  const h = Math.round(height)
+  return w >= 320 && w <= 8000 && h >= 240 && h <= 8000 ? { width: w, height: h } : null
+}
 
 /** 표시 직후 이 시간 안의 blur는 무시한다(포커스 전환 중 생기는 blur). */
 export const BLUR_GRACE_MS = 150
