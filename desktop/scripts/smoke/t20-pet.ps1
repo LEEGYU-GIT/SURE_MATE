@@ -291,7 +291,10 @@ try {
     while ((ElapsedMs $tRel) -lt 80) { Pump 10 }
     $before = [int]$btn.Tag
     if ($dropWin -and (ButtonInsidePetWindow)) {
+      # 누름은 놓은 지 0.2초 안에 보내고, 단추가 받은 횟수는 시험 창 메시지를 처리한 뒤 센다(ClickAt은 뗌을 보내고 바로 돌아온다.
+      # 바로 세면 아직 처리하지 않은 뗌을 놓쳐 2026-11-13 Windows 첫 실행에서 통과한 클릭을 False로 셌다)
       ClickButton
+      Pump 300
       $r.click_through_after_drag = ([int]$btn.Tag -eq ($before + 1))
     } else { $r.click_through_after_drag = 'skipped (button outside the pet window at click time)' }
     $sit2 = WaitLog $mark 'pet.state' { $_.mode -eq 'sit' } 1500
@@ -345,12 +348,18 @@ try {
     }
     FocusForm
 
-    # 조종 두 번째: Alt+Space는 시스템 메뉴 없이 조종이 이어지고(캡처로 확인), Alt+F4는 펫 창을 남기고 조종만 끝낸다
+    # 조종 두 번째: Alt+Space는 시스템 메뉴 없이 조종이 이어지고(캡처로 확인), Alt+F4는 펫 창을 남기고 조종만 끝낸다.
+    # 이 PC의 팔레트 단축키가 Alt+Space이면 Alt+Space가 팔레트를 열며 조종을 끝내는 것이 맞으므로(handoff) 보내지 않는다
+    $altSpaceIsPalette = ($Combo -replace '\s', '') -ieq 'alt+space'
     if (StartControl) {
-      $mark = LogMark
-      HoldCombo 'alt+space' 300; Pump 700
-      PetShot 'm6-pet-alt-space'
-      $r.alt_space_keeps_control = (@(LogsAfter $mark 'pet.control' | Where-Object { $_.phase -eq 'end' }).Count -eq 0)
+      if ($altSpaceIsPalette) {
+        $r.alt_space_keeps_control = 'skipped (Alt+Space is the palette hotkey on this PC: it opens the palette and ends control on purpose)'
+      } else {
+        $mark = LogMark
+        HoldCombo 'alt+space' 300; Pump 700
+        PetShot 'm6-pet-alt-space'
+        $r.alt_space_keeps_control = (@(LogsAfter $mark 'pet.control' | Where-Object { $_.phase -eq 'end' }).Count -eq 0)
+      }
       $r.info_foreground_before_alt_f4 = (Fg).Process
       if (ForegroundIsPetWindow $scale) {
         $mark = LogMark

@@ -1,0 +1,33 @@
+# 공모전 게시글 시안
+
+`sure-mate-promo.html`은 사내 공모전 게시글 시안이다. 첫째 탭은 게시글, 둘째 탭은 영상 콘티·촬영 준비물·게시 전 확인·본문 텍스트 초안이다. 같은 파일을 Artifact로 게시해 브라우저에서 보고, `export.cjs`로 게시판에 올릴 이미지를 뽑는다.
+
+## 게시판용 이미지
+
+`images/`에 760px 폭 PNG 여섯 장이 있다. 순서대로 올린다.
+
+| 파일 | 내용 |
+|---|---|
+| `01-intro.png` | 첫 화면, 이런 순간 |
+| `02-workspace.png` | 창 배치, 화면 감추기 |
+| `03-ai.png` | 프롬프트 팔레트, 가명 처리 |
+| `04-wiki-mate.png` | 용어 카드·상용구, 말랑 메이트 |
+| `05-effect.png` | 실측, AI를 이렇게, 설치 |
+| `06-info.png` | 한눈에 보기, 궁금한 것, 함께 출품, 마무리 |
+
+`@2x`가 붙은 파일은 같은 그림을 두 배 해상도(1520px)로 뽑은 것이다. 게시판 편집기에서 이미지 너비를 760으로 지정할 수 있으면 `@2x`를 쓰면 배율 125·150% 화면에서도 글자가 흐리지 않다. 너비를 지정할 수 없으면 `@2x` 없는 파일을 쓴다.
+
+## 다시 뽑기
+
+실측 숫자(`data-fill`이 붙은 `__분 → __분` 세 칸), 설치 파일 크기·메모리 숫자를 고친 뒤 Windows에서 다시 뽑는다. 저장소 루트에서, `ELECTRON_RUN_AS_NODE`를 지운 셸로 실행한다(Claude Code에서 띄운 셸에는 이 변수가 들어 있다).
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+.\desktop\node_modules\electron\dist\electron.exe .\docs\promo\export.cjs
+```
+
+- 글꼴(Jua, IBM Plex Sans KR, IBM Plex Mono)을 Google Fonts에서 받으므로 인터넷이 필요하다. 진행 기록 `%TEMP%\sure-mate-promo-export.log`의 `fonts:` 줄에 세 글꼴이 모두 있어야 하고, `written:` 아래에 뽑은 파일과 크기가 나온다. 90초 안에 끝나지 않으면 멈춘 단계를 남기고 끝낸다.
+- 화면에 창을 띄우지 않고(offscreen) 그리므로 다른 작업을 방해하지 않는다.
+- `data-slice`가 붙은 칸에서 다음 `data-slice` 칸 앞까지가 한 장이다. 칸을 더하거나 나누면 `data-slice`를 옮긴다.
+- `--theme dark`는 어두운 테마로 뽑아 파일 이름에 `-dark`를 붙인다(색 확인용).
+- 탭 줄, 둘째 탭, 워크스페이스 데모 단추는 이미지에서 뺀다(`.export` 규칙).

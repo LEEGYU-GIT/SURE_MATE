@@ -24,6 +24,9 @@ function WaitSetting([scriptblock]$ok, [int]$timeoutMs) {
   return $false
 }
 $scr = [System.Windows.Forms.Screen]::PrimaryScreen
+# 크기·자리가 DIP로 거의 같은지. 배율이 소수가 되는 화면(2560px·150% = 1706.67 DIP)에서는 Electron이 작업 영역을 정수 DIP로
+# 반올림하고 창 사각형을 물리 픽셀에서 다시 DIP로 바꿔 읽어 1 DIP쯤 어긋난다(2026-11-12 회사 PC: 띠 너비 56 → 57)
+function NearDip([double]$a, [double]$b, [double]$tol = 1) { [Math]::Abs($a - $b) -le $tol }
 # 커서를 바·펼침 창에서 치워 둘 곳(화면 왼쪽 40%, 가운데 높이)
 $away = [pscustomobject]@{ x = [int]($scr.Bounds.Width * 0.4); y = [int]($scr.Bounds.Height * 0.5) }
 function Away { MoveTo $away.x $away.y }
@@ -66,7 +69,8 @@ try {
     $col = LastBarPlace
     $waRight = $scr.WorkingArea.Right / $scale
     # 손잡이 6 DIP는 배율에 따라 물리 픽셀로 반올림되어 5~7로 읽힐 수 있다(1.25배: 7.5px)
-    $r.autohide_collapsed = ([Math]::Abs($col.bounds.width - 6) -le 1 -and [Math]::Abs(($col.bounds.x + $col.bounds.width) - $waRight) -le 1)
+    # 오른쪽 끝은 1.5까지 허용한다(150%: 작업 영역 1706.67을 Electron이 1707로 반올림하고, 손잡이를 1701..1708로 다시 읽는다)
+    $r.autohide_collapsed = ((NearDip $col.bounds.width 6) -and (NearDip ($col.bounds.x + $col.bounds.width) $waRight 1.5))
     $r.info_handle = 'x={0} w={1} work_area_right={2}' -f $col.bounds.x, $col.bounds.width, $waRight
     ShotRect 'm5-bar-handle' (AroundBar $col 24) $scale
     $hx = [int][Math]::Round(($col.bounds.x + 3) * $scale); $hy = [int][Math]::Round(($col.bounds.y + $col.bounds.height / 2) * $scale)
@@ -80,7 +84,7 @@ try {
     $mark = LogMark
     $th = HoverEnter $hx $hy
     while ((ElapsedMs $th) -lt 400) { Pump 10 }
-    $open = WaitLog $mark 'bar.place' { $_.bounds.width -eq 56 } 1000
+    $open = WaitLog $mark 'bar.place' { NearDip $_.bounds.width 56 } 1000
     $r.autohide_hover_opens = ($null -ne $open)
     $r.info_hover_open_ms = ElapsedMs $th
     Away
@@ -93,7 +97,7 @@ try {
     return
   }
 
-  $r.bar_width_56 = ($place.bounds.width -eq 56 -and $place.shape -eq 'edge' -and $place.edge -eq 'right')
+  $r.bar_width_56 = ((NearDip $place.bounds.width 56) -and $place.shape -eq 'edge' -and $place.edge -eq 'right')
   # 시험이 계산한 항목 위치의 높이가 실제 바 높이와 같은지(다르면 아래 클릭이 엉뚱한 곳을 누른다)
   $r.layout_height_matches = ((BarLayout $place.items $place.shape)['_height'] -eq [int]$place.bounds.height)
   ShotRect 'm5-bar-edge' (AroundBar $place) $scale
@@ -112,7 +116,14 @@ try {
   function FocusTest { Key 0x12; [void][W]::SetForegroundWindow($form.Handle); Key 0x12 -Up; $form.Activate(); $tb.Focus(); Pump 300 }
 
   # 2. 일부 선택 → 첫 고정 프롬프트 → 확인 화면 없이 실행(복사만), 선택·앞 창 그대로
-  $selStart = $tb.Text.IndexOf($line); $tb.Select($selStart, $line.Length); Pump 200
+  $selStart = $tb.Text.IndexOf($line)
+  if ($selStart -lt 0) {
+    # 글상자 글이 바뀌었다(다른 입력이 들어옴). 글자 수와 앞 12글자의 코드만 남기고(내용은 남기지 않음) 글을 다시 넣는다
+    $r.info_textbox_changed = 'len={0} head={1}' -f $tb.Text.Length, (($tb.Text.ToCharArray() | Select-Object -First 12 | ForEach-Object { '{0:X4}' -f [int]$_ }) -join ' ')
+    $tb.Text = "주간 회의 메모`r`n$line`r`n정적분석 결과에서 MC/DC 커버리지가 부족한 함수를 다시 본다"; Pump 200
+    $selStart = $tb.Text.IndexOf($line)
+  }
+  $tb.Select($selStart, $line.Length); Pump 200
   $mark = LogMark
   $pt = BarPointPx $place 'prompt1'
   ClickAt $pt.x $pt.y
@@ -234,7 +245,7 @@ try {
     ClickMenuRow $barMenu 80 $scale
     $cap = WaitLog $mark 'bar.place' { $_.shape -eq 'capsule' } 3000
     $r.capsule_placed = ($null -ne $cap)
-    $r.capsule_width_44 = ($null -ne $cap -and $cap.bounds.width -eq 44)
+    $r.capsule_width_44 = ($null -ne $cap -and (NearDip $cap.bounds.width 44))
     if ($cap) {
       Away; Pump 800
       ShotRect 'm5-bar-capsule' (AroundBar $cap 24) $scale
@@ -245,7 +256,7 @@ try {
       if ($barMenu2) { Pump 300; ClickMenuRow $barMenu2 48 $scale }
       $ep = WaitLog $mark 'bar.place' { $_.shape -eq 'edge' } 3000
       $r.back_to_edge = ($null -ne $ep)
-      $r.edge_again_width_56 = ($null -ne $ep -and $ep.bounds.width -eq 56)
+      $r.edge_again_width_56 = ($null -ne $ep -and (NearDip $ep.bounds.width 56))
     }
   }
   $r.bar_shape_saved_edge = WaitSetting { param($s) $s.bar.shape -eq 'edge' } 2000

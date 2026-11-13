@@ -25,6 +25,8 @@ function WriteSettings([bool]$autoHide) {
   $masking = if ($s.masking) { $s.masking } else { New-Object psobject }
   $masking | Add-Member -Force -NotePropertyName mode -NotePropertyValue 'restore'
   $s | Add-Member -Force -NotePropertyName masking -NotePropertyValue $masking
+  # 팔레트를 주 모니터에 고정한다(기본은 마우스가 있는 모니터라 모니터가 둘이면 시험이 다른 모니터의 팔레트를 놓친다)
+  $s | Add-Member -Force -NotePropertyName palette -NotePropertyValue ([pscustomobject]@{ display = 'primary' })
   New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null
   $s | ConvertTo-Json -Depth 8 | Set-Content -Path $settings -Encoding utf8
 }
