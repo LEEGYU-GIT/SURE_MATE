@@ -268,14 +268,7 @@ p { margin: 0; }
 .pet-card .tag { font-size: 11px; font-weight: 600; color: var(--sun); }
 .pet-note { margin-top: 18px; font-size: var(--fs-small); color: var(--night-mute); }
 
-/* 8. 실측 자리 */
-.slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.slot { border: 2px dashed var(--line); border-radius: 16px; padding: 18px 16px; display: grid; gap: 6px; align-content: start; }
-.slot b { font-family: var(--display); font-size: 28px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.slot span { font-size: var(--fs-small); color: var(--mute); }
-.slot .note { color: var(--warn); }
-
-/* 9. AI를 어떻게 */
+/* 8. AI를 어떻게 */
 .how { display: grid; gap: 12px; }
 .how-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
 .how-row:first-child { border-top: 0; padding-top: 0; }
@@ -354,7 +347,7 @@ p { margin: 0; }
 @media (max-width: 640px) {
   .hero-grid { grid-template-columns: minmax(0, 1fr); }
   .edge { justify-self: end; width: 150px; }
-  .fit-list, .split, .two, .together, .modes, .slots, .steps, .offers, .files { grid-template-columns: minmax(0, 1fr); }
+  .fit-list, .split, .two, .together, .modes, .steps, .offers, .files { grid-template-columns: minmax(0, 1fr); }
   .desk, .hide { grid-template-columns: minmax(0, 1fr); }
   .facts { grid-template-columns: minmax(0, 1fr); }
   .pet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -636,23 +629,8 @@ p { margin: 0; }
     </div>
   </section>
 
-  <!-- 8. 실측 -->
-  <section class="band" data-slice="05-effect">
-    <div class="wrap">
-      <div class="band-head">
-        <h2>써 본 동료들의 시간이 이만큼 줄었어요</h2>
-        <p>시범 사용자들이 같은 일을 Sure-Mate 없이 한 번, 있이 한 번 해서 잰 시간이에요.</p>
-      </div>
-      <div class="slots">
-        <div class="slot"><span class="note">실측 자리</span><b data-fill="meeting">__분 → __분</b><span>회의 메모를 정리해 AI에 붙이기</span></div>
-        <div class="slot"><span class="note">실측 자리</span><b data-fill="workspace">__초 → __초</b><span>회의 화면에서 보고서 화면으로 바꾸기</span></div>
-        <div class="slot"><span class="note">실측 자리</span><b data-fill="wiki">__초 → __초</b><span>모르는 사내 용어 뜻 찾기</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 9. AI를 어떻게 -->
-  <section class="band">
+  <!-- 8. AI를 어떻게 -->
+  <section class="band" data-slice="05-how">
     <div class="wrap">
       <div class="band-head">
         <h2>AI를 이렇게 써요</h2>
@@ -758,7 +736,7 @@ p { margin: 0; }
           <thead><tr><th>필수 항목·심사 기준</th><th>맡는 칸</th><th>보여 줄 것</th></tr></thead>
           <tbody>
             <tr><td>어떤 업무에</td><td>이런 순간, 하루에도 몇 번씩</td><td>창 배치, AI에 붙여넣기, 용어 찾기, 창 감추기</td></tr>
-            <tr><td>무엇이 좋아졌는지 · 업무 개선 효과</td><td>실측 칸, 시연 영상</td><td>시범 사용자 전후 시간 3개(실측값만)</td></tr>
+            <tr><td>무엇이 좋아졌는지 · 업무 개선 효과</td><td>이런 순간, 기능 칸, 시연 영상</td><td>손으로 하던 일이 단축키 한 번으로 바뀌는 장면</td></tr>
             <tr><td>AI를 어떻게 · 업무 적합성</td><td>AI를 이렇게 써요, 가명 처리</td><td>프롬프트 조립, 용어 자동 첨부, 보내기 전 가명 처리</td></tr>
             <tr><td>사용법</td><td>설치는 1분, 첫 실행 안내</td><td>SmartScreen 화면 캡처, 세 화면 안내, 30초 따라 해 보기</td></tr>
             <tr><td>확산 가치</td><td>한눈에 보는 Sure-Mate, 함께 출품</td><td>관리자 권한 없이 설치, 프롬프트·용어 팩을 파일로 나눠 쓰기</td></tr>
@@ -770,13 +748,13 @@ p { margin: 0; }
 
     <section>
       <h2>게시판에 올릴 이미지</h2>
-      <p>게시글 시안을 760px 폭으로 여섯 장에 나눠 뽑았어요. 순서대로 올리고, 이미지 사이에 아래 본문 텍스트를 나눠 넣으면 돼요. 실측 숫자를 채우면 다시 뽑아요(docs/promo/README.md).</p>
+      <p>게시글 시안을 760px 폭으로 여섯 장에 나눠 뽑았어요. 순서대로 올리고, 이미지 사이에 아래 본문 텍스트를 나눠 넣으면 돼요. 설치 파일 크기·메모리 숫자를 고치면 다시 뽑아요(docs/promo/README.md).</p>
       <div class="files">
         <div><b>01-intro.png</b><span>첫 화면, 이런 순간</span></div>
         <div><b>02-workspace.png</b><span>창 배치, 화면 감추기</span></div>
         <div><b>03-ai.png</b><span>프롬프트 팔레트, 가명 처리</span></div>
         <div><b>04-wiki-mate.png</b><span>용어 카드·상용구, 말랑 메이트</span></div>
-        <div><b>05-effect.png</b><span>실측, AI를 이렇게, 설치</span></div>
+        <div><b>05-how.png</b><span>AI를 이렇게, 설치</span></div>
         <div><b>06-info.png</b><span>한눈에 보기, 궁금한 것, 함께 출품</span></div>
       </div>
     </section>
@@ -835,8 +813,7 @@ p { margin: 0; }
     <section>
       <h2>게시 전 확인</h2>
       <ul class="checks">
-        <li><span>실측 자리 세 칸을 시범 사용자 측정값으로 채우고 이미지 다시 뽑기<small>측정하지 않은 숫자는 넣지 않아요</small></span></li>
-        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치기<small>지금 숫자는 11/10 설치본 측정값이에요</small></span></li>
+        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>지금 숫자는 11/10 설치본 측정값이에요</small></span></li>
         <li><span>첨부 파일 용량 확인<small>설치 파일이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
         <li><span>SHA-256 해시를 본문에 적기<small>받은 파일이 바뀌지 않았는지 동료가 확인할 수 있어요</small></span></li>
         <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음</small></span></li>
@@ -849,7 +826,7 @@ p { margin: 0; }
       <p>이미지 위아래에 붙이는 글이에요. 이미지가 안 보여도 필수 항목 네 가지가 다 읽히게 했어요.</p>
       <div class="post-text">[어떤 업무에] 창 배치 전환, 회의록·보고서를 AI로 정리하기, 사내 용어 찾기, 결함 리포트 같은 양식 붙이기, 자리에 누가 왔을 때 화면 가리기처럼 하루에도 여러 번 반복하는 일에 써요.
 
-[무엇이 좋아졌는지] 시범 사용자 __명이 같은 일을 전후로 재 보니 회의록 정리 __분 → __분, 화면 전환 __초 → __초, 용어 찾기 __초 → __초였어요.
+[무엇이 좋아졌는지] 회의가 끝날 때마다 창을 다시 늘어놓던 일은 단축키 한 번으로, AI에 붙여넣기 전에 고객사 이름을 손으로 지우던 일은 자동 가명 처리로, 사내 위키를 열어 약어를 찾던 일은 글을 고르고 Ctrl+Alt+W 한 번으로 바뀌었어요.
 
 [AI를 어떻게] 앱이 AI를 직접 부르지 않고, 우리 업무에 맞춘 프롬프트 8종에 선택한 글과 사내 용어 설명을 채워 클립보드에 넣어요. 보내기 전에 고객사·IP·경로를 다른 이름(CLIENT_A)으로 바꾸고, AI가 쓴 글은 ‘가명 되돌리기’로 원래 이름으로 돌려요. 회사가 허용한 AI라면 무엇이든 쓸 수 있어요.
 
@@ -860,7 +837,7 @@ p { margin: 0; }
       <h2>이어서 만들 수 있는 것</h2>
       <p>원하는 것을 말씀해 주시면 바로 이어서 할게요.</p>
       <div class="offers">
-        <div><b>최종 설치 파일과 실측</b><span>게시할 코드로 설치 파일을 만들고, 설치본으로 메모리·CPU를 다시 재서 숫자와 해시를 고쳐요</span></div>
+        <div><b>최종 설치 파일</b><span>게시할 코드로 설치 파일을 만들고, 설치본으로 메모리·CPU를 다시 재서 숫자와 해시를 고쳐요</span></div>
         <div><b>시연 자동 재생</b><span>스모크 시험처럼 사람 손 타이밍으로 영상 B의 장면을 매번 똑같이 재생해, 녹화를 몇 번이고 다시 찍을 수 있게 해요</span></div>
         <div><b>실제 화면 캡처</b><span>가짜 자료로 앱 화면을 찍어 시안의 그림 자리를 실제 화면으로 바꿔요</span></div>
       </div>

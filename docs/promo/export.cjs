@@ -79,10 +79,11 @@ app.whenReady().then(async () => {
       wc.executeJavaScript(`(() => {
         const starts = [...document.querySelectorAll('#panel-page [data-slice]')]
         const end = Math.ceil(document.getElementById('panel-page').getBoundingClientRect().bottom + scrollY)
+        // 칸 경계가 소수 픽셀이면 경계 줄은 두 칸 색이 섞여 그려진다. 그 줄은 어느 장에도 넣지 않는다(위는 올림, 아래는 내림)
         return { end, slices: starts.map((el, i) => ({
           name: el.dataset.slice,
-          top: Math.floor(el.getBoundingClientRect().top + scrollY),
-          bottom: i + 1 < starts.length ? Math.floor(starts[i + 1].getBoundingClientRect().top + scrollY) : end
+          top: Math.ceil(el.getBoundingClientRect().top + scrollY),
+          bottom: i + 1 < starts.length ? Math.floor(starts[i + 1].getBoundingClientRect().top + scrollY) : Math.floor(document.getElementById('panel-page').getBoundingClientRect().bottom + scrollY)
         })) }
       })()`)
     const settle = () => new Promise((r) => setTimeout(r, 300))

@@ -12,14 +12,14 @@
 | `02-workspace.png` | 창 배치, 화면 감추기 |
 | `03-ai.png` | 프롬프트 팔레트, 가명 처리 |
 | `04-wiki-mate.png` | 용어 카드·상용구, 말랑 메이트 |
-| `05-effect.png` | 실측, AI를 이렇게, 설치 |
+| `05-how.png` | AI를 이렇게, 설치 |
 | `06-info.png` | 한눈에 보기, 궁금한 것, 함께 출품, 마무리 |
 
 `@2x`가 붙은 파일은 같은 그림을 두 배 해상도(1520px)로 뽑은 것이다. 게시판 편집기에서 이미지 너비를 760으로 지정할 수 있으면 `@2x`를 쓰면 배율 125·150% 화면에서도 글자가 흐리지 않다. 너비를 지정할 수 없으면 `@2x` 없는 파일을 쓴다.
 
 ## 다시 뽑기
 
-실측 숫자(`data-fill`이 붙은 `__분 → __분` 세 칸), 설치 파일 크기·메모리 숫자를 고친 뒤 Windows에서 다시 뽑는다. 저장소 루트에서, `ELECTRON_RUN_AS_NODE`를 지운 셸로 실행한다(Claude Code에서 띄운 셸에는 이 변수가 들어 있다).
+설치 파일 크기·메모리 숫자(한눈에 보는 Sure-Mate 표, 첫 화면의 첨부 파일 크기)를 고친 뒤 Windows에서 다시 뽑는다. 시범 사용자 실측 칸은 두지 않는다(2026-11-13, 게시 전까지 동료 시범 사용이 어렵다). 저장소 루트에서, `ELECTRON_RUN_AS_NODE`를 지운 셸로 실행한다(Claude Code에서 띄운 셸에는 이 변수가 들어 있다).
 
 ```powershell
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
