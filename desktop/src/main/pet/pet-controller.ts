@@ -88,13 +88,20 @@ export interface PetController {
    * 언제 알릴지는 런타임(away-watch·pet-away)이 정한다
    */
   awayWarn(text: string, holdMs: number): boolean
+  /**
+   * 이석 기준 직전 초 세기(2026-11-13): 떠 있는 이석 알림의 말풍선 글만 바꾼다. 폴짝·새 말풍선(seq)·얼굴·소품·반응 시간
+   * (awayWarn이 잡은 이석 기준까지)은 그대로이고, 렌더러는 같은 말풍선의 글만 바꿔 다시 잰다(들어오는 움직임 없음).
+   * 이석 알림이 떠 있지 않거나(다른 반응·닫힘) 숨김·말풍선 끔·빈 문구·끝낸 뒤면 아무것도 하지 않고 false(런타임이 awayWarn으로 띄운다)
+   */
+  awayUpdate(text: string): boolean
   /** 입력이 돌아왔거나 알림을 껐다: 떠 있는 이석 알림을 말풍선을 누른 것처럼 닫는다. 다른 반응·숨긴 펫은 그대로 둔다 */
   awayClear(): void
   /** 말풍선을 눌렀다: 닫고 반응을 끝낸다 */
   bubbleClick(): void
   /**
    * 렌더러가 잰 말풍선 사각형(창 좌표). 클릭 판정에 더하고, null이면 뺀다.
-   * 렌더러는 새 말풍선(seq)마다 한 번 보낸다(새 반응이 사각형을 지우므로 같은 문구여도)
+   * 렌더러는 새 말풍선(seq)마다 한 번 보낸다(새 반응이 사각형을 지우므로 같은 문구여도). 같은 말풍선의 글만 바뀌어도
+   * (awayUpdate) 다시 재어 보낸다
    */
   bubbleRect(r: Rect | null): void
   /** 펫 위 오른쪽 클릭: 메뉴를 열고, 열려 있으면 닫는다(설계 §14-2) */
@@ -1875,6 +1882,17 @@ export function createPetController(d: PetControllerDeps): PetController {
       // 기다리던 반응도 버린다(settle이 꺼내 알림을 덮지 않게)
       pending = null
       showReaction(awayReaction(text, holdMs))
+      settle()
+      return true
+    },
+    awayUpdate(text) {
+      if (disposed || !shown || !world || !cfg.bubbles || text.trim() === '') return false
+      const cur = reacting
+      if (cur === null || cur.r.kind !== 'away' || cur.r.bubble === null) return false
+      if (cur.r.bubble === text) return true
+      // 글만 바꾼다: seq·cue·얼굴·반응 타이머·클릭 판정 사각형은 그대로 둔다. 렌더러가 바뀐 글을 다시 재어 사각형을 알린다
+      // (그 사이에는 옛 사각형으로 판정한다. 같은 말풍선이라 자리는 거의 같다)
+      reacting = { ...cur, r: { ...cur.r, bubble: text } }
       settle()
       return true
     },

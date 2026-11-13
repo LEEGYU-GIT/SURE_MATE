@@ -217,7 +217,16 @@ export function PetTab(): React.JSX.Element {
                 />
               )}
             </Row>
-            <Row label="미리 알림" description={`키보드와 마우스를 ${pet.awayAfterMin - pet.awayLeadMin}분 안 쓰면 알려요`}>
+            <Row
+              label="미리 알림"
+              description={
+                <>
+                  키보드와 마우스를 {pet.awayAfterMin - pet.awayLeadMin}분 안 쓰면 알려요.
+                  <br />
+                  마지막 30초는 &apos;30초 뒤&apos;부터 1초마다 세어 줘요
+                </>
+              }
+            >
               {(ids) => (
                 <Segmented
                   {...ids}

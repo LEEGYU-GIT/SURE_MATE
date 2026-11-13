@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { PET_CONTROL_GUIDE, PET_NUDGE_LINES } from '../../../shared/pet/pet-copy'
+import {
+  PET_CONTROL_GUIDE,
+  PET_NUDGE_LINES,
+  petAwayCountdownLine,
+  petAwayLine
+} from '../../../shared/pet/pet-copy'
 import { PET_WINDOW, SLOT as PET_SLOT } from '../../../shared/pet/pet-view'
 import {
   BUBBLE_BOX,
@@ -9,6 +14,7 @@ import {
   faceTarget,
   keepTogether,
   splitLead,
+  spokenBubble,
   tailOffset
 } from './bubble-box'
 import { MALLANG_FACE } from './mallang-shapes'
@@ -44,6 +50,41 @@ describe('bubbleMeasureKey: 언제 다시 재어 main에 사각형을 알리는�
     ]) {
       expect(bubbleMeasureKey({ ...warn, slot })).not.toBe(key)
     }
+  })
+})
+
+describe('이석 초 세기(2026-11-13): 같은 말풍선(seq)의 글만 1초마다 바뀐다', () => {
+  const tick = (
+    seq: number,
+    n: number
+  ): { seq: number; text: string; side: 'above'; slot: typeof SLOT } => ({
+    seq,
+    text: petAwayCountdownLine(n),
+    side: 'above',
+    slot: SLOT
+  })
+
+  it('bubbleMeasureKey: 숫자가 바뀌면 다시 재어 main에 사각형을 알린다(클릭 판정)', () => {
+    expect(bubbleMeasureKey(tick(3, 29))).not.toBe(bubbleMeasureKey(tick(3, 30)))
+    expect(bubbleMeasureKey(tick(3, 29))).toBe(bubbleMeasureKey(tick(3, 29)))
+  })
+
+  it('spokenBubble: 화면 읽기 프로그램에는 새 말풍선마다 한 번만 알리고, 같은 말풍선의 숫자 바뀜은 다시 읽지 않는다', () => {
+    const warn = { seq: 2, text: petAwayLine(2) }
+    const first = spokenBubble(null, warn)
+    expect(first).toEqual(warn)
+    // 같은 말풍선을 다시 그림: 받은 값 그대로(다시 그리지 않는다)
+    expect(spokenBubble(first, { ...warn })).toBe(first)
+    // 초 세기 첫 숫자는 새 말풍선(seq)이라 알린다
+    const count = spokenBubble(first, tick(3, 30))
+    expect(count).toEqual({ seq: 3, text: petAwayCountdownLine(30) })
+    // 그다음 숫자(같은 seq)는 처음 문구를 그대로 둔다
+    let s = count
+    for (let n = 29; n >= 1; n -= 1) s = spokenBubble(s, tick(3, n))
+    expect(s).toBe(count)
+    // 닫히면 비우고, 다음 말풍선은 다시 알린다(같은 문구여도)
+    expect(spokenBubble(s, null)).toBeNull()
+    expect(spokenBubble(null, tick(4, 30))).toEqual({ seq: 4, text: petAwayCountdownLine(30) })
   })
 })
 

@@ -231,6 +231,20 @@ function Ask([string]$text) {
   CapturePalette ('t23-before-enter-{0}' -f $script:typed)
   return $o
 }
+# Sure-Mate 창 하나(DIP 사각형, 펫 창)만 찍는다(%TEMP%\sure-mate-smoke). 다른 창·화면 전체는 찍지 않는다
+function CaptureRect([string]$name, $rect, [double]$scale) {
+  Add-Type -AssemblyName System.Drawing
+  $x = [int][Math]::Round($rect.x * $scale); $y = [int][Math]::Round($rect.y * $scale)
+  $w = [int][Math]::Round($rect.width * $scale); $h = [int][Math]::Round($rect.height * $scale)
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  try {
+    $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size $w, $h))
+    $dir = Join-Path $env:TEMP 'sure-mate-smoke'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $bmp.Save((Join-Path $dir "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $g.Dispose(); $bmp.Dispose() }
+}
 # 팔레트 창만 찍는다(판정이 틀렸을 때 입력칸과 목록을 보려고, %TEMP%\sure-mate-smoke). 다른 창·화면 전체는 찍지 않는다
 function CapturePalette([string]$name) {
   if ($script:paletteHwnd -eq [IntPtr]::Zero) { return }
@@ -389,6 +403,32 @@ try {
       }
     }
   } catch { StepFailed 'ttree_top' 'error_b_ttree' $_ }
+
+  # b2. 이석 미리 알림 미리 보기(개발 명령 dev.awayPreview): '이석 알림' → Enter → away.preview(via pet) → 펫 창만 찍는다
+  #     (미리 알림 문구 0.8초, 초 세기 3.4초·4.4초 무렵). 실제 입력 없는 시간·Ttree와는 상관없다
+  try {
+    $o = Ask '이석 알림'
+    $mark = LogMark
+    if (-not $o -or -not (PickTop $o)) { $r.away_preview = "skipped ($script:why)"; ClosePalette }
+    else {
+      $run = WaitLog $mark 'palette.run' { $true } 3000
+      $pv = WaitLog $mark 'away.preview' { $true } 3000
+      $r.away_preview = ($null -ne $run -and $run.id -eq 'dev.awayPreview' -and $null -ne $pv -and $pv.via -eq 'pet')
+      $scale = [double]$o.show.scale
+      $shots = @()
+      Pump 800
+      $pet = PetWindowRect $scale
+      if ($pet) {
+        foreach ($step in @(@{ name = 't23-away-1-warning'; wait = 0 }, @{ name = 't23-away-2-countdown'; wait = 2600 }, @{ name = 't23-away-3-countdown'; wait = 1000 })) {
+          if ($step.wait -gt 0) { Pump $step.wait }
+          CaptureRect $step.name $pet $scale
+          $shots += $step.name
+        }
+      }
+      $r.info_away = 'ran={0} via={1} pet_window={2} shots={3}' -f (RunText $run), $(if ($pv) { $pv.via } else { 'none' }), ($null -ne $pet), ($shots -join ',')
+      Pump 3000
+    }
+  } catch { StepFailed 'away_preview' 'error_b2_away' $_ }
 
   # c. 메신저(마지막): '메신저 열어줘' → Enter → 12초 안에 apps.open(messenger)과 앞 창 프로세스 SURESOFTMessenger.
   #    Enter를 뗀 뒤로는 키를 보내지 않는다(팔레트가 남아 있어도 닫지 않는다: run-smoke.ps1이 앱을 끝낸다)
