@@ -269,6 +269,11 @@ const fx = {
   },
   up(t, g) {
     add(sfx, t, 0.4, (s) => biquadStep(400 + 2200 * s, noise()) * Math.sin(Math.PI * Math.min(1, s / 0.38)), 0.32 * g)
+  },
+  /** 사무실 바닥 발소리: 낮게 눌린 잡음과 짧은 저음. pan은 걷는 사람 자리(왼쪽 -1 … 오른쪽 1) */
+  step(t, g, pan) {
+    const lp = biquad('lp', 700, 0.8)
+    add(sfx, t, 0.11, (s) => lp(noise()) * Math.exp(-s * 48) * 1.6 + Math.sin(TAU * 92 * s) * Math.exp(-s * 38) * 0.55, 0.26 * g, pan)
   }
 }
 // 주파수가 움직이는 대역 통과(효과음 쓸림 소리)
@@ -283,12 +288,14 @@ function biquadStep(f, x) {
 }
 for (const c of cues) {
   bq = { x1: 0, x2: 0, y1: 0, y2: 0 }
-  if (fx[c.type]) fx[c.type](c.t, c.gain ?? 1)
+  if (fx[c.type]) fx[c.type](c.t, c.gain ?? 1, c.pan ?? 0)
 }
 
 // ── 섞기: 효과음이 날 때 음악을 조금 낮추고, 끝에서 서서히 줄인다 ─────────────
 const duck = new Float32Array(N).fill(1)
 for (const c of cues) {
+  // 발소리는 잦아서 음악을 낮추지 않는다(음악이 출렁이지 않게)
+  if (c.type === 'step') continue
   const s0 = Math.round(c.t * SR)
   for (let i = -2400; i < 9600; i++) {
     const k = s0 + i

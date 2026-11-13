@@ -3,6 +3,8 @@
 // Sure-Mate 화면(팔레트·확인 화면·바·용어 카드·말랑 메이트·말풍선)은 capture.mjs가 실제 앱 코드로 그린 캡처이고,
 // 여기서 그리는 것은 바탕화면과 다른 앱 창(가상 이름만), 자막, 키, 커서, 카메라다.
 
+import { buildOffice, drawOffice } from './office.js'
+
 const CACHE = '../.cache/'
 const fx = await (await fetch(CACHE + 'fixtures.json')).json()
 const ui = await (await fetch(CACHE + 'ui/manifest.json')).json()
@@ -88,11 +90,14 @@ const img = (file) => {
 
 // ── 오디오 신호(audio.py가 이 시각에 효과음을 넣는다) ───────────────────
 const CUES = []
-const cue = (t, type, gain = 1) => CUES.push({ t: Math.round(t * 1000) / 1000, type, gain })
+const cue = (t, type, gain = 1, pan) => CUES.push({ t: Math.round(t * 1000) / 1000, type, gain, ...(pan !== undefined ? { pan: Math.round(pan * 100) / 100 } : {}) })
 
 // ── 장면 시각 ─────────────────────────────────────────────
-const T = { s1: 3.0, s2: 11.0, s3: 18.0, s4: 35.0, s5: 44.0, s6: 51.0, s7: 58.0, s8: 66.5, outro: 71.5, end: 77.0 }
-const CUTS = [T.s2, T.s3, T.s4, T.s5, T.s6, T.s7, T.s8]
+// away: 15:19 Ttree 이석 미리 알림(사무실 그림 → 화면), s7: 16:00 화면 감추기(사무실 그림 → 키보드 → 화면)
+const T = { s1: 3.0, s2: 11.0, s3: 18.0, s4: 35.0, s5: 44.0, s6: 51.0, away: 58.0, s7: 68.6, s8: 76.8, outro: 81.8, end: 87.3 }
+const CUTS = [T.s2, T.s3, T.s4, T.s5, T.s6, T.away, T.s7, T.s8]
+/** 장면 안에서 그림 ↔ 화면, 시간 건너뛰기: 더 짧게 어두워진다 */
+const QUICK_CUTS = [T.away + 1.8, T.away + 6.9, T.s7 + 2.75]
 const DURATION = T.end
 
 // ── 자막·시각·키 ───────────────────────────────────────────
@@ -110,9 +115,12 @@ const CAPTIONS = [
   [T.s5 + 2.4, '13:00', '용어 뜻은 바 옆에, 쓰던 창은 그대로'],
   [T.s6, '14:30', '결함을 찾았다면, 리포트 양식부터'],
   [T.s6 + 3.0, '14:30', '자주 쓰는 양식은 느낌표 하나로'],
-  [T.s7, '16:00', '자리로 손님이 온다면'],
-  [T.s7 + 2.2, '16:00', '업무 창만 남기고 모두 내려요'],
-  [T.s7 + 5.3, '16:00', '한 번 더 누르면 그대로'],
+  [T.away, '15:19', '서류를 읽느라 마우스를 안 썼더니'],
+  [T.away + 4.2, '15:19', '이석 2분 전에 말랑 메이트가 깨워요'],
+  [T.away + 6.9, '15:19', '마지막 30초는 초 단위로 세어 줘요'],
+  [T.s7, '16:00', '뒤로 누가 지나가면'],
+  [T.s7 + 2.35, '16:00', '단축키 한 번이면 업무 화면만 남아요'],
+  [T.s7 + 5.9, '16:00', '한 번 더 누르면 그대로'],
   [T.s8, '17:10', '한 시간 넘게 집중했다면'],
   [T.s8 + 1.9, '17:10', '말랑 메이트가 쉬어 가자고 말을 걸어요']
 ]
@@ -233,7 +241,21 @@ const memoLines = fx.memo.split('\n')
 const browser = (url, page) => `<div class="browser"><div class="bar"><div class="nav"><span>←</span><span>→</span><span>⟳</span></div><div class="url">${url}</div></div><div class="page">${page}</div></div>`
 const TITLE_CTL = '<span class="ctl"><span>—</span><span>☐</span><span>✕</span></span>'
 
-/** 창 정의: app은 작업 표시줄 칸, ico는 제목 줄 아이콘 */
+// 실제 Ttree 창(화면 캡처, 150% 배율 737×1188 → 491×792 CSS px). 파일이 없으면 그린 창을 쓴다
+const SHOT = { w: 491, h: 792 }
+const TTREE_SHOT = { morning: './assets/ttree-0900.png', away: './assets/ttree-1519.png' }
+const shotOk = async (src) => {
+  try {
+    return (await fetch(src, { cache: 'no-store' })).ok
+  } catch {
+    return false
+  }
+}
+const hasShot = { morning: await shotOk(TTREE_SHOT.morning), away: await shotOk(TTREE_SHOT.away) }
+/** 15:19 캡처에서 '이석체크간격 : 20분' 줄의 자리(캡처 CSS px 기준) */
+const AWAY_LINE = { x: 336, y: 124, w: 110, h: 13 }
+
+/** 창 정의: app은 작업 표시줄 칸, ico는 제목 줄 아이콘, shot은 실제 화면 캡처(제목 줄 포함) */
 const WINDOWS = {
   ttree: { app: 'ttree', ico: ['#1F8A57', 'T'], title: 'Ttree', body: `
     <div class="ttree">
@@ -244,6 +266,14 @@ const WINDOWS = {
       <div class="row3"><span>이석</span><span>휴가 신청</span><span>컴퓨터 종료</span></div>
       <div class="week">이번 주 근무 <b class="wk">0시간 0분</b> / 40시간</div>
       <div class="meter"><i></i></div>
+    </div>` },
+  ttreeAway: { app: 'ttree', ico: ['#1F8A57', 'T'], title: 'Ttree', body: `
+    <div class="ttree">
+      <div class="top"><b>Ttree</b><span>2026.11.16 (월)</span></div>
+      <div class="me"><i></i><div>김가상 책임<br><small style="color:#6B737D;font-weight:500">시험검증2팀</small></div></div>
+      <div class="state on"><small>오늘 근무</small><strong>근무 중</strong><small class="since">오전 9:00부터</small></div>
+      <div class="week"><span class="away-line">이석체크간격 : 20분</span></div>
+      <div class="row3"><span>이석</span><span>휴가 신청</span><span>컴퓨터 종료</span></div>
     </div>` },
   code: { app: 'code', dark: true, ico: ['#3B7BEA', '&lt;/&gt;'], title: 'brake_ctrl.c — BCM — 코드 편집기', body: `
     <div class="code"><div class="act"><i></i><i></i><i></i><i></i></div>
@@ -306,20 +336,24 @@ const WINDOWS = {
       <div class="row"><label>심각도</label><div><span class="chip">높음</span></div></div>
       <div class="row"><label>설명</label><div class="in area"><span class="snip"></span><span class="caret" style="display:inline-block;width:1.5px;height:18px;background:#1F2328;vertical-align:-3px"></span></div></div>
       <div class="btns"><span>취소</span><span class="pri">등록</span></div></div>`) },
-  secret: { app: 'doc', ico: ['#2B5CC8', '문서'], title: 'XY방산_납품문서_검토.docx — 문서 편집기', body: `
+  secret: { app: 'doc', ico: ['#2B5CC8', '문서'], title: 'XY방산_견적서.docx — 문서 편집기', body: `
     <div class="doc secret"><div class="ribbon"><span>파일</span><span class="on">홈</span><span>삽입</span><span>검토</span></div>
-      <div class="sheetwrap"><div class="page"><span class="stamp">대외비</span><h3>XY방산 시험장비 납품 문서 검토 의견</h3>
-        <p>1. 시험 절차서 3.2절의 장비 교정 주기가 계약서와 다름.</p><p>2. 납품 목록의 소프트웨어 버전 표기를 통일할 것.</p><p>3. 인수 시험 결과 요약표에 판정 기준을 추가할 것.</p></div></div></div>` }
+      <div class="sheetwrap"><div class="page"><span class="stamp">대외비</span><h3>XY방산 시험장비 견적서</h3>
+        <table class="quote"><tr><th>품목</th><th>수량</th><th>금액</th></tr><tr><td>HIL 시험장비</td><td>2식</td><td><i></i></td></tr><tr><td>교정 서비스</td><td>1년</td><td><i></i></td></tr><tr><td>현장 설치</td><td>1회</td><td><i></i></td></tr></table>
+        <p>견적 유효 기간은 발행일로부터 30일이며, 납품 일정은 계약 후 협의합니다.</p></div></div></div>` }
 }
 
 // ── 화면 만들기 ────────────────────────────────────────────
 const deskEl = $('#desk')
 const windowsEl = $('#windows')
 const wins = {}
+if (hasShot.morning) WINDOWS.ttree = { app: 'ttree', shot: TTREE_SHOT.morning }
+if (hasShot.away) WINDOWS.ttreeAway = { app: 'ttree', shot: TTREE_SHOT.away }
 for (const [id, spec] of Object.entries(WINDOWS)) {
   const el = document.createElement('div')
-  el.className = 'win' + (spec.dark ? ' dark' : '')
-  el.innerHTML = `<div class="titlebar"><span class="ico" style="background:${spec.ico[0]};${spec.ico[1].length > 2 ? 'font-size:9px' : ''}">${spec.ico[1]}</span><span class="title">${spec.title}</span>${TITLE_CTL}</div><div class="body">${spec.body}</div>`
+  el.className = 'win' + (spec.dark ? ' dark' : '') + (spec.shot ? ' shot' : '')
+  if (spec.shot) el.innerHTML = `<img src="${spec.shot}" alt="">`
+  else el.innerHTML = `<div class="titlebar"><span class="ico" style="background:${spec.ico[0]};${spec.ico[1].length > 2 ? 'font-size:9px' : ''}">${spec.ico[1]}</span><span class="title">${spec.title}</span>${TITLE_CTL}</div><div class="body">${spec.body}</div>`
   windowsEl.appendChild(el)
   wins[id] = { id, el, app: spec.app, used: false }
 }
@@ -363,7 +397,8 @@ const cardEl = $('#card')
 cardEl.src = CACHE + 'ui/' + ui.card.parts.card.file
 const petLooks = {}
 const bubbles = {}
-for (const name of ['pet-stand', 'pet-sit', 'pet-sleep', 'pet-copied', 'pet-unmask', 'pet-nudge']) {
+const AWAY_LOOKS = fx.bubbles.awayCountdown.map((c) => `pet-away-${c.seconds}`)
+for (const name of ['pet-stand', 'pet-sit', 'pet-sleep', 'pet-copied', 'pet-unmask', 'pet-nudge', 'pet-away', ...AWAY_LOOKS]) {
   const p = ui[name].parts.sprite
   const i = img(p.file)
   i.className = 'pet-img'
@@ -380,6 +415,10 @@ for (const name of ['pet-stand', 'pet-sit', 'pet-sleep', 'pet-copied', 'pet-unma
 $('#pet').remove()
 $('#bubble').remove()
 for (const i of $$('#intro .mate, #outro .mate')) i.src = CACHE + 'ui/' + ui['pet-stand'].parts.sprite.file
+
+// 사무실 그림(영상용 평면 일러스트)
+const officeEl = $('#office')
+const office = buildOffice($('#office-svg'))
 
 // 커서(화살표·I 모양)
 const cursorEl = $('#cursor')
@@ -468,6 +507,8 @@ function palette(name, t0, hideAt = Infinity, o = {}) {
   palState = { name, t0, hideAt, ...o }
 }
 let cursorState = null
+/** 사무실 그림 한 프레임(drawOffice 인자). null이면 모니터 화면 */
+let officeState = null
 let rippleState = null
 let marks = []
 let selState = {}
@@ -522,26 +563,37 @@ function scene(start, end, draw, cam) {
   const pal1 = typing(a + 1.55, 0.16, 'ttree')
   press(a + 2.9, ['Enter'])
   cue(a + 3.05, 'window')
-  cue(a + 4.45, 'click')
+  // 실제 Ttree 캡처: 열린 창이 이미 '근무중 09:00 ~'이다(누를 단추 없이 강조만). 캡처가 없으면 그린 창의 '근무 시작'을 누른다
+  const real = Boolean(WINDOWS.ttree.shot)
+  if (!real) cue(a + 4.45, 'click')
   cue(a + 4.5, 'ding')
-  const ttree = R(560, 150, 430, 470)
+  const ttree = real ? R(555, 30, SHOT.w, SHOT.h) : R(560, 150, 430, 470)
+  /** 캡처 속 '근무중 · 09:00 ~' 칸(캡처 CSS px) */
+  const onDuty = { x: ttree.x + 340, y: ttree.y + 144, w: 108, h: 64 }
   scene(a, T.s2, (t) => {
     const btn = PROBE.ttreeBtn ?? { x: 0, y: 0 }
     pet(t < a + 1.1 ? 'pet-sleep' : 'pet-stand', PET_FOOT, { hop: a + 1.1 })
     if (t >= a + 1.05) palette(pal1(t), a + 1.05, a + 2.95)
     if (t >= a + 3.05) {
       placeWin('ttree', { ...ttree, z: 10, focus: true, ...openTf(t, a + 3.05) })
-      const done = t >= a + 4.5
-      const el = wins.ttree.el
-      cls($('.state', el), 'on', done)
-      text($('.state strong', el), done ? '근무 중' : '근무 전')
-      text($('.since', el), done ? '오전 9:00부터 · 오늘 근무 시작' : '아직 출근 기록이 없어요')
-      cls($('.go', el), 'done', done)
-      text($('.go', el), done ? '근무 시작 완료 · 09:00' : '근무 시작')
+      if (real) markOn(t, a + 4.3, T.s2 + 0.3, { x: onDuty.x - 8, y: onDuty.y - 6, w: onDuty.w + 16, h: onDuty.h + 12 })
+      else {
+        const done = t >= a + 4.5
+        const el = wins.ttree.el
+        cls($('.state', el), 'on', done)
+        text($('.state strong', el), done ? '근무 중' : '근무 전')
+        text($('.since', el), done ? '오전 9:00부터 · 오늘 근무 시작' : '아직 출근 기록이 없어요')
+        cls($('.go', el), 'done', done)
+        text($('.go', el), done ? '근무 시작 완료 · 09:00' : '근무 시작')
+      }
     }
-    cursorPath(t, [[a + 3.4, 980, 760], [a + 4.3, btn.x + 30, btn.y + 4], [a + 6.4, btn.x + 70, btn.y + 60]])
-    click(t, a + 4.45, btn.x + 30, btn.y + 4)
-  }, (t) => track(t, [[a + 3.5, [1, 800, 450]], [a + 4.2, [1.38, 790, 400]], [T.s2, [1.38, 790, 400]]]))
+    if (!real) {
+      cursorPath(t, [[a + 3.4, 980, 760], [a + 4.3, btn.x + 30, btn.y + 4], [a + 6.4, btn.x + 70, btn.y + 60]])
+      click(t, a + 4.45, btn.x + 30, btn.y + 4)
+    }
+  }, (t) => (real
+    ? track(t, [[a + 3.5, [1, 800, 450]], [a + 4.2, [1.5, 830, 300]], [T.s2, [1.5, 830, 300]]])
+    : track(t, [[a + 3.5, [1, 800, 450]], [a + 4.2, [1.38, 790, 400]], [T.s2, [1.38, 790, 400]]])))
 }
 
 // S2 09:05 창 배치 불러오기(Ctrl+Alt+1)
@@ -709,7 +761,7 @@ function scene(start, end, draw, cam) {
   const pal6 = typing(a + 1.65, 0.15, 'snippet')
   press(a + 2.75, ['Enter'])
   cue(a + 2.95, 'paste')
-  scene(a, T.s7, (t) => {
+  scene(a, T.away, (t) => {
     for (const [id, r] of Object.entries(LAYOUT.saved)) placeWin(id, { ...r, z: 2 })
     placeWin('issue', { ...isR, z: 8, focus: true })
     pet('pet-stand', PET_FOOT)
@@ -722,26 +774,95 @@ function scene(start, end, draw, cam) {
     cursorPath(t, [[a + 0.1, areaPos.x + 160, areaPos.y + 160, 'a'], [a + 0.45, areaPos.x + 20, areaPos.y + 20, 'i'], [a + 1.0, areaPos.x + 30, areaPos.y + 80, 'i']])
     click(t, a + 0.5, areaPos.x + 20, areaPos.y + 20)
     if (t >= a + 1.25) palette(pal6(t), a + 1.25, a + 2.8)
-  }, (t) => track(t, [[a + 3.1, [1, 800, 450]], [a + 3.8, [1.38, 620, 470]], [T.s7, [1.38, 620, 470]]]))
+  }, (t) => track(t, [[a + 3.1, [1, 800, 450]], [a + 3.8, [1.38, 620, 470]], [T.away, [1.38, 620, 470]]]))
 }
 
-// S7 16:00 화면 감추기(Ctrl+Alt+H 두 번)
+// S6b 15:19 Ttree 이석 미리 알림: 서류를 읽는 동안(그림) → 화면의 Ttree 이석 기준 → 말랑 메이트가 깨워 알림 → 마지막 30초 초 세기
+{
+  const b = T.away
+  const ttR = R(540, 30, SHOT.w, SHOT.h)
+  const wake = b + 4.2
+  const jump = b + 6.9
+  const close = b + 9.75
+  cue(wake, 'hop')
+  cue(wake + 0.02, 'bubble')
+  AWAY_LOOKS.forEach((_, i) => i > 0 && cue(jump + i, 'tick', 0.6))
+  cue(close - 0.12, 'swap', 0.5)
+  scene(b, T.s7, (t) => {
+    if (t < b + 1.8) {
+      officeState = { shot: 'wide', screen: 'idle', reading: true, clock: [15, 19], zoom: [lerp(1, 1.05, seg(t, b, b + 1.8)), 980, 470] }
+      return
+    }
+    for (const [id, r] of Object.entries(LAYOUT.saved)) placeWin(id, { ...r, z: 2 })
+    placeWin('ttreeAway', { ...ttR, z: 6, focus: true })
+    const awake = t >= wake && t < close
+    const k = t < jump ? -1 : Math.min(AWAY_LOOKS.length - 1, Math.floor(t - jump))
+    const look = k < 0 ? 'pet-away' : AWAY_LOOKS[k]
+    pet(awake ? look : t < wake ? 'pet-sleep' : 'pet-stand', PET_FOOT, { hop: wake })
+    // 초 세기는 같은 말풍선에서 글자만 바뀐다(다시 튀어나오지 않는다)
+    if (awake) bubble(look, k < 0 ? wake : -10, close)
+    const line = PROBE.awayLine ?? { x: 0, y: 0, w: 0, h: 0 }
+    // 위 줄('Today …')을 가리지 않게 위아래 여백을 좁힌다
+    markOn(t, b + 2.6, b + 3.9, { x: line.x - 10, y: line.y - 3, w: line.w + 20, h: line.h + 6 })
+    // 마우스를 한 번 움직이면 말풍선이 닫힌다
+    cursorPath(t, [[close - 0.6, 1236, 600], [close - 0.42, 1270, 586], [close - 0.27, 1232, 606], [close - 0.12, 1268, 590], [close + 0.3, 1250, 598]])
+  }, (t) => {
+    const line = PROBE.awayLine ?? { x: 800, y: 450, w: 0, h: 0 }
+    const lx = line.x + line.w / 2
+    const ly = line.y + line.h / 2
+    return track(t, [[b + 2.05, [1, 800, 450]], [b + 2.65, [1.7, lx, ly]], [b + 3.6, [1.7, lx, ly]], [b + 4.1, [1.9, 1130, 740]], [T.s7, [1.9, 1130, 740]]])
+  })
+}
+
+// S7 16:00 화면 감추기: 뒤로 동료가 지나간다(그림) → 키보드 Ctrl+Alt+H → 업무 창만 남는다 → 한 번 더 눌러 되돌리기
 {
   const a = T.s7
   const R7 = { doc: R(100, 36, 780, 790), wiki: R(820, 60, 620, 420), msg: R(760, 130, 560, 560), secret: R(420, 210, 700, 560) }
-  press(a + 1.6, ['Ctrl', 'Alt', 'H'])
-  cue(a + 1.66, 'down')
-  press(a + 4.8, ['Ctrl', 'Alt', 'H'])
-  cue(a + 4.86, 'up')
+  // 지나가는 동료(그림): 왼쪽 밖에서 들어와 오른쪽으로, 걸음마다 발소리(왼쪽 → 오른쪽)
+  const walk0 = a + 0.1
+  const speed = 560
+  const stepHz = 1.2
+  const walkerX = (t) => -280 + speed * (t - walk0)
+  for (let k = 0; ; k++) {
+    const ts = walk0 + (0.25 + 0.5 * k) / stepHz
+    if (ts > a + 3.0) break
+    cue(ts, 'step', ts < a + 1.85 ? 1 : 0.6, Math.max(-0.9, Math.min(0.9, -0.9 + ((walkerX(ts) + 280) / 1380) * 1.8)))
+  }
+  cue(a + 1.2, 'bubble')
+  cue(a + 1.5, 'whoosh', 0.7)
+  press(a + 2.35, ['Ctrl', 'Alt', 'H'])
+  cue(a + 2.95, 'down')
+  press(a + 5.6, ['Ctrl', 'Alt', 'H'])
+  cue(a + 5.66, 'up')
   scene(a, T.s8, (t) => {
+    if (t < a + 2.75) {
+      if (t >= a + 1.85) {
+        const k = a + 2.35
+        const down = (j) => t >= k - (2 - j) * 0.08 && t < k + 0.22
+        officeState = { shot: 'keys', kbZoom: lerp(1.12, 1, appOut(seg(t, a + 1.85, a + 2.3))), down: { ctrl: down(0), alt: down(1), h: down(2) } }
+      } else {
+        const zp = inOut(seg(t, a + 1.55, a + 1.85))
+        officeState = {
+          shot: 'wide',
+          screen: 'secret',
+          reading: false,
+          clock: [16, 0],
+          zoom: [lerp(1, 2.8, zp), 1060, 612],
+          walker: t >= walk0 ? { x: walkerX(t), phase: (t - walk0) * stepHz * 2 * Math.PI } : null,
+          alert: t >= a + 1.2 ? outBack(seg(t, a + 1.2, a + 1.42)) : 0,
+          jolt: hopY(t, a + 1.2, 9, 0.28)
+        }
+      }
+      return
+    }
     pet('pet-stand', PET_FOOT)
-    placeWin('doc', { ...R7.doc, z: 2, focus: t >= a + 1.9 && t < a + 4.9 })
+    placeWin('doc', { ...R7.doc, z: 2, focus: t >= a + 3.25 && t < a + 5.7 })
     css($('.pasted', wins.doc.el), 'display', 'block')
     $$('.rest', wins.doc.el).forEach((e) => {
       css(e, 'background', 'transparent')
       css(e, 'boxShadow', 'none')
     })
-    const down = seg(t, a + 1.66, a + 2.06) - seg(t, a + 4.86, a + 5.26)
+    const down = seg(t, a + 2.95, a + 3.35) - seg(t, a + 5.66, a + 6.06)
     ;[['wiki', 3], ['msg', 4], ['secret', 5]].forEach(([id, z], i) => {
       const p = down > 0 ? clamp01(down * 1.0 - i * 0.04) : 0
       const r = R7[id]
@@ -811,7 +932,7 @@ function renderBand(t) {
 
 function renderDesk(t) {
   for (const w of Object.values(wins)) w.used = false
-  petState = bubbleState = palState = cursorState = rippleState = null
+  petState = bubbleState = palState = cursorState = rippleState = officeState = null
   marks = []
   selState = {}
   css(cardEl, 'display', 'none')
@@ -942,7 +1063,13 @@ function renderDesk(t) {
   // 장면 사이: 화면이 잠깐 어두워졌다 밝아지며 시간이 넘어간다
   let dim = 0
   for (const c of CUTS) dim = Math.max(dim, 1 - Math.abs(t - c) / 0.24)
+  for (const c of QUICK_CUTS) dim = Math.max(dim, 1 - Math.abs(t - c) / 0.14)
   css($('#dim'), 'opacity', String(0.9 * clamp01(dim)))
+
+  // 사무실 그림: 모니터 자리를 덮는다
+  css(officeEl, 'display', officeState ? 'block' : 'none')
+  if (officeState) drawOffice(office, { t, ...officeState })
+  css($('#office-dim'), 'opacity', String(0.9 * clamp01(dim)))
 }
 
 function renderCards(t) {
@@ -991,7 +1118,7 @@ function render(t) {
 
 // 목표 자리 재기: 그 장면을 한 번 그려 본 뒤 바탕화면 좌표로 잰다(카메라 배율과 상관없다)
 render(T.s1 + 3.5)
-{
+if (!WINDOWS.ttree.shot) {
   const g = deskPos($('.go', wins.ttree.el))
   PROBE.ttreeBtn = { x: g.x + g.w / 2, y: g.y + g.h / 2 }
 }
@@ -1006,6 +1133,11 @@ render(T.s6 + 0.2)
   const r = deskPos($('.area', wins.issue.el))
   PROBE.area = { x: r.x + 14, y: r.y + 12 }
 }
+render(T.away + 3.0)
+if (WINDOWS.ttreeAway.shot) {
+  const w = deskPos(wins.ttreeAway.el)
+  PROBE.awayLine = { x: w.x + AWAY_LINE.x, y: w.y + AWAY_LINE.y, w: AWAY_LINE.w, h: AWAY_LINE.h }
+} else PROBE.awayLine = deskPos($('.away-line', wins.ttreeAway.el))
 
 CUES.sort((x, y) => x.t - y.t)
 window.__duration = DURATION

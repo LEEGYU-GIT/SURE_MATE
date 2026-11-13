@@ -21,7 +21,8 @@ const { createMaskingService } = await app('src/main/masking/masking-service.ts'
 const { DEFAULT_SETTINGS } = await app('src/shared/settings/settings.ts')
 const { ALL_CATEGORIES } = await app('src/shared/masking/types.ts')
 const { allAiTargets } = await app('src/shared/ai-targets.ts')
-const { petBubbleText, PET_NUDGE_LINES } = await app('src/shared/pet/pet-copy.ts')
+const { petBubbleText, PET_NUDGE_LINES, petAwayLine, petAwayCountdownLine } = await app('src/shared/pet/pet-copy.ts')
+const { awayReaction } = await app('src/shared/pet/pet-reactions.ts')
 const { testWorkspace } = await app('src/shared/workspace/test-workspaces.ts')
 const { L, P } = await app('src/shared/workspace/test-monitors.ts')
 const { monitorFingerprint } = await app('src/shared/workspace/monitors.ts')
@@ -179,8 +180,13 @@ const fixtures = {
   bubbles: {
     copied: petBubbleText({ type: 'prompt-copied', masking: 'restore', masked, target: AI_TARGET.name }),
     unmasked: petBubbleText({ type: 'unmasked', restored: restored.restored }),
-    nudge: PET_NUDGE_LINES[0]
+    nudge: PET_NUDGE_LINES[0],
+    // 15:19 Ttree 이석 미리 알림(기준 20분, 2분 전) → 마지막 30초 초 세기(앞 세 번만 영상에 쓴다)
+    away: petAwayLine(2),
+    awayCountdown: [30, 29, 28].map((seconds) => ({ seconds, text: petAwayCountdownLine(seconds) }))
   },
+  /** 이석 미리 알림 반응의 표정·소품(awayReaction). 가명 처리 켬이라 앱처럼 선글라스를 얹는다(pet-controller look()) */
+  petAway: (({ face, props }) => ({ face, props: ['sunglasses', ...props] }))(awayReaction(petAwayLine(2), 120_000)),
   snippet: templates.find((t) => t.id === 'defect-report').body,
   apps: appCommandItems(['messenger', 'ttree'])
 }

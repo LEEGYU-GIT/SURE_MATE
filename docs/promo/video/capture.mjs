@@ -50,7 +50,7 @@ function initScript(patch, css) {
         }
         if (patch.shown) v.onShown = (cb) => { const t = setTimeout(() => cb(patch.shown), 0); return () => clearTimeout(t); };
         if (patch.preview) v.previewPrompt = async () => patch.preview;
-        if (patch.bubble) {
+        if (patch.bubble || patch.look) {
           const original = v.getPetView;
           // 말풍선은 처음 그릴 때 크기를 잰다. 미리 보기는 글꼴을 받기 전에 그려 대체 글꼴로 재므로(꼬리가 떨어진다),
           // 앱처럼 글꼴이 준비된 뒤에 펫 상태를 건넨다
@@ -58,7 +58,9 @@ function initScript(patch, css) {
             await Promise.all(['400 13px "Pretendard Variable"', '600 13px "Pretendard Variable"'].map((f) => document.fonts.load(f, '가A')));
             await document.fonts.ready;
             const view = await original();
-            if (view && view.bubble) view.bubble = { ...view.bubble, text: patch.bubble };
+            if (view && view.bubble && patch.bubble) view.bubble = { ...view.bubble, text: patch.bubble };
+            // 미리 보기 장면에 없는 반응 모습(이석 미리 알림: 선글라스 + 걱정 얼굴 + 주황 느낌표)은 표정·소품만 바꾼다
+            if (view && patch.look) view.look = { ...view.look, ...patch.look };
             return view;
           };
         }
@@ -97,13 +99,16 @@ jobs.push({
 jobs.push({ name: 'bar', scene: 'bar-edge-right', size: [640, 600], dpr: 2, patch: {}, parts: { bar: '[role="toolbar"]' } })
 jobs.push({ name: 'card', scene: 'card-best', size: [640, 600], dpr: 2, patch: {}, parts: { card: '[data-flyout-window]' }, refs: { bar: '[role="toolbar"]', item: '[aria-label="용어 사전에서 찾기"]', root: '[data-card-root]' } })
 const pet = (name, scene, o = {}) =>
-  jobs.push({ name, scene, size: [640, 600], dpr: 3, hideBar: true, patch: o.bubble ? { bubble: o.bubble } : {}, parts: { sprite: 'svg.pet-sprite', ...(o.withBubble ? { bubble: '.pet-bubble' } : {}) }, hideFor: { sprite: '.pet-bubble', bubble: 'svg.pet-sprite' }, refs: { bar: '[role="toolbar"]' } })
+  jobs.push({ name, scene, size: [640, 600], dpr: 3, hideBar: true, patch: { ...(o.bubble ? { bubble: o.bubble } : {}), ...(o.look ? { look: o.look } : {}) }, parts: { sprite: 'svg.pet-sprite', ...(o.withBubble ? { bubble: '.pet-bubble' } : {}) }, hideFor: { sprite: '.pet-bubble', bubble: 'svg.pet-sprite' }, refs: { bar: '[role="toolbar"]' } })
 pet('pet-stand', 'pet-sunglasses')
 pet('pet-sit', 'pet-sunglasses-sit')
 pet('pet-sleep', 'pet-sleep')
 pet('pet-copied', 'pet-celebrate-sunglasses', { withBubble: true, bubble: fx.bubbles.copied })
 pet('pet-unmask', 'pet-unmask', { withBubble: true, bubble: fx.bubbles.unmasked })
 pet('pet-nudge', 'pet-nudge', { withBubble: true, bubble: fx.bubbles.nudge })
+// 15:19 Ttree 이석 미리 알림: 경고 장면(걱정 얼굴·주황 느낌표, 말풍선 자리 계산)에 이석 문구와 awayReaction 모습을 얹는다
+pet('pet-away', 'pet-warn', { withBubble: true, bubble: fx.bubbles.away, look: fx.petAway })
+for (const c of fx.bubbles.awayCountdown) pet(`pet-away-${c.seconds}`, 'pet-warn', { withBubble: true, bubble: c.text, look: fx.petAway })
 
 const only = process.argv.slice(2).find((a) => a.startsWith('--only='))?.slice(7)
 const todo = only ? jobs.filter((j) => j.name.startsWith(only)) : jobs

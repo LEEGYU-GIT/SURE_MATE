@@ -1,7 +1,7 @@
 // Renders scene/index.html frame by frame (window.__render(t) → screenshot) and pipes the frames to ffmpeg.
 //   node render.mjs                      → .cache/video.mp4 (영상만) + .cache/cues.json (효과음 시각)
 //   node render.mjs --stills=3.5,20.1    → .cache/stills/still-3.50.png … (장면 확인용)
-//   node render.mjs --from=18 --to=35    → 일부 구간만
+//   node render.mjs --from=18 --to=35    → 일부 구간만(--out=.cache/seg-1.mp4 --profile=1로 여러 구간을 동시에)
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -16,7 +16,8 @@ const fps = Number(opt.fps ?? 30)
 const ffmpeg = process.env.FFMPEG ?? 'ffmpeg'
 
 const srv = await serveStatic({ '/': REPO })
-const chrome = await launchChrome({ userDataDir: join(CACHE, 'chrome-render') })
+// --profile=<이름>: 여러 구간을 동시에 그릴 때 Chrome 사용자 폴더를 나눈다(같은 폴더는 Chrome 하나만 쓸 수 있다)
+const chrome = await launchChrome({ userDataDir: join(CACHE, opt.profile ? `chrome-render-${opt.profile}` : 'chrome-render') })
 try {
   await chrome.viewport(1920, 1080, Number(opt.scale ?? 1))
   await chrome.goto(`${srv.origin}/docs/promo/video/scene/index.html?render`)

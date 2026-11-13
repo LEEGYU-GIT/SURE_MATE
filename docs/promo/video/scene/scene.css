@@ -272,6 +272,10 @@ body { width: 1920px; height: 1080px; overflow: hidden; font-family: var(--ui); 
 
 /* 다른 고객사 문서 */
 .secret .page h3 { color: #8B1E1E; }
+.quote { border-collapse: collapse; width: 100%; margin: 6px 0 14px; font-size: 13px; }
+.quote th, .quote td { border-bottom: 1px solid #E3E6EA; padding: 7px 8px; text-align: left; }
+.quote th { background: #F4F5F7; color: #5F6670; font-weight: 600; }
+.quote i { display: inline-block; width: 92px; height: 10px; border-radius: 3px; background: #C9CFD6; vertical-align: middle; }
 .stamp { display: inline-block; border: 2px solid #C7362F; color: #C7362F; border-radius: 6px; padding: 2px 8px; font: 800 12px/1.4 var(--ui); margin-bottom: 12px; }
 
 /* ── Sure-Mate 층(실제 화면 캡처) ─────────────────────────────── */
@@ -286,6 +290,15 @@ body { width: 1920px; height: 1080px; overflow: hidden; font-family: var(--ui); 
 .mark { position: absolute; border-radius: 8px; border: 3px solid var(--jelly); box-shadow: 0 0 0 6px rgba(60, 200, 180, 0.25); opacity: 0; }
 .ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 3px solid rgba(60, 200, 180, 0.9); opacity: 0; }
 #cursor { position: absolute; left: 0; top: 0; width: 26px; height: 26px; z-index: 8000; display: none; pointer-events: none; }
+
+/* ── 사무실 그림(16:00 손님·15:19 이석 장면 앞) ─────────────────────── */
+#office { position: absolute; left: 150px; top: 140px; width: 1620px; height: 920px; border-radius: 26px; overflow: hidden; display: none; background: #E4EFEC; box-shadow: 0 34px 70px rgba(23, 32, 42, 0.22); }
+#office svg { position: absolute; inset: 0; display: block; }
+#office svg text { font-family: var(--ui); }
+#office-dim { position: absolute; inset: 0; background: #0b1220; opacity: 0; pointer-events: none; }
+/* 실제 Ttree 창(화면 캡처): 그린 제목 줄 없이 캡처를 그대로 */
+.win.shot { border-radius: 8px; background: #fff; }
+.win.shot img { display: block; width: 100%; height: 100%; }
 
 /* ── 처음·끝 카드 ─────────────────────────────────────────── */
 .brand { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; background: var(--paper); opacity: 0; }
