@@ -399,7 +399,7 @@ p { margin: 0; }
     <span class="kit-name">Sure-Mate 홍보 키트</span>
     <div class="tabs" role="tablist" aria-label="보기">
       <button class="tab" role="tab" id="tab-page" aria-selected="true" aria-controls="panel-page">게시글 시안</button>
-      <button class="tab" role="tab" id="tab-plan" aria-selected="false" aria-controls="panel-plan" tabindex="-1">영상 콘티·준비물</button>
+      <button class="tab" role="tab" id="tab-plan" aria-selected="false" aria-controls="panel-plan" tabindex="-1">영상·게시 준비</button>
     </div>
   </div>
 </header>
@@ -724,7 +724,7 @@ p { margin: 0; }
   </section>
 </div>
 
-<!-- 둘째 탭: 영상 콘티와 준비물 -->
+<!-- 둘째 탭: 완성 영상과 게시 준비 -->
 <div id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
   <div class="wrap plan">
 
@@ -740,7 +740,7 @@ p { margin: 0; }
             <tr><td>AI를 어떻게 · 업무 적합성</td><td>AI를 이렇게 써요, 가명 처리</td><td>프롬프트 조립, 용어 자동 첨부, 보내기 전 가명 처리</td></tr>
             <tr><td>사용법</td><td>설치는 1분, 첫 실행 안내</td><td>SmartScreen 화면 캡처, 세 화면 안내, 30초 따라 해 보기</td></tr>
             <tr><td>확산 가치</td><td>한눈에 보는 Sure-Mate, 함께 출품</td><td>관리자 권한 없이 설치, 프롬프트·용어 팩을 파일로 나눠 쓰기</td></tr>
-            <tr><td>좋아요·댓글</td><td>첫 화면 티저, 마무리</td><td>30초 티저 영상, 말랑 메이트, 댓글 부탁</td></tr>
+            <tr><td>좋아요·댓글</td><td>맨 위 영상, 마무리</td><td>87초 영상(이석 미리 알림·지나가는 동료 장면), 말랑 메이트, 댓글 부탁</td></tr>
           </tbody>
         </table>
       </div>
@@ -760,63 +760,49 @@ p { margin: 0; }
     </section>
 
     <section>
-      <h2>영상 A · 30초 티저 「단축키 한 번」</h2>
-      <p>게시글 맨 위에 둬요. 내레이션 없이 음악과 큰 자막만, 장면마다 누른 키를 키캡 자막으로 띄워요.</p>
+      <h2>영상 · 87초 「김가상 책임의 월요일」</h2>
+      <p>완성했어요. <b>docs/promo/video/sure-mate-promo.mp4</b>(1920×1080, 87초, 15MB)와 대표 이미지 <b>sure-mate-promo-poster.png</b>예요. 한 직원의 하루를 시간 순서로 따라가며, 실제로 겪는 순간마다 Sure-Mate를 써요. 내레이션 없이 합성 음악·효과음과 해요체 자막을 넣고 누른 키를 키캡으로 띄워서, 소리를 꺼도 내용이 다 읽혀요.</p>
       <div class="board-wrap">
         <table class="board">
-          <thead><tr><th>시간</th><th>화면</th><th>자막</th></tr></thead>
+          <thead><tr><th>시간</th><th>장면과 화면</th><th>자막</th></tr></thead>
           <tbody>
-            <tr><td>0:00–0:03</td><td>두 모니터에 창이 뒤엉켜 있고 메신저가 위를 덮음</td><td>월요일 아침, 창 열두 개.</td></tr>
-            <tr><td>0:03–0:07</td><td><kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">1</kbd> 키캡 → 창이 저장한 자리로</td><td>단축키 한 번이면 제자리.</td></tr>
-            <tr><td>0:07–0:11</td><td>뒤에서 누가 다가옴 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">H</kbd> → 업무 창만 남음</td><td>뒤에 누가 오면, 한 번 더.</td></tr>
-            <tr><td>0:11–0:17</td><td>회의 메모 선택 → 팔레트 ‘회의록’ → Claude 열림</td><td>회의록 정리, AI에 바로.</td></tr>
-            <tr><td>0:17–0:22</td><td>확인 화면에서 가상자동차 → CLIENT_A로 바뀌는 순간 확대</td><td>고객사 이름은 AI가 몰라요.</td></tr>
-            <tr><td>0:22–0:26</td><td>문서에서 MC/DC 선택 → 바 옆 용어 카드</td><td>모르는 용어는 옆에 바로.</td></tr>
-            <tr><td>0:26–0:30</td><td>말랑 메이트가 편지를 들고 폴짝 → 로고와 첨부 파일 이름</td><td>Sure-Mate. 첨부 파일로 1분 설치.</td></tr>
+            <tr><td>0:00–0:03</td><td>처음 카드</td><td>Sure-Mate 이름과 한 줄 소개</td></tr>
+            <tr><td>0:03–0:11</td><td>09:00 출근 · 팔레트에 ‘출근’ → 실제 Ttree 화면(근무중 09:00 ~)</td><td>출근하면, 근무 시작부터 → ‘출근’만 쳐도 Ttree가 열려요</td></tr>
+            <tr><td>0:11–0:18</td><td>09:05 창 정리 · <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">1</kbd> → 저장해 둔 배치</td><td>어제 띄워 둔 창이 뒤죽박죽 → 저장해 둔 배치로, 단축키 한 번</td></tr>
+            <tr><td>0:18–0:35</td><td>10:30 회의록 · 메모 선택 → ‘회의록’ → 확인 화면의 가명 처리 → AI 채팅에 붙여넣기</td><td>회의가 끝나면, 회의록 정리 → 보내기 전에 고객사·사람 이름·IP는 가명으로 → AI는 CLIENT_A만 알아요</td></tr>
+            <tr><td>0:35–0:44</td><td>10:40 보고서 · AI 답 복사 → ‘가명 되돌려줘’ → 보고서에 붙여넣기</td><td>AI가 쓴 회의록을 보고서로 옮길 때 → ‘가명 되돌려줘’ 하면 원래 이름으로</td></tr>
+            <tr><td>0:44–0:51</td><td>13:00 용어 · ‘MC/DC’ 선택 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">W</kbd> 용어 카드</td><td>요구사항을 읽다가, ‘MC/DC’가 뭐였더라? → 용어 뜻은 바 옆에, 쓰던 창은 그대로</td></tr>
+            <tr><td>0:51–0:58</td><td>14:30 결함 등록 · <kbd class="key">!이슈</kbd> → 결함 리포트 양식</td><td>결함을 찾았다면, 리포트 양식부터 → 자주 쓰는 양식은 느낌표 하나로</td></tr>
+            <tr><td>0:58–1:08</td><td>15:19 이석 미리 알림 · 서류를 읽는 사무실 그림 → Ttree ‘이석체크간격 : 20분’ → 말랑 메이트 말풍선 → 30초부터 초 세기 → 마우스를 움직이면 닫힘</td><td>서류를 읽느라 마우스를 안 썼더니 → 이석 2분 전에 말랑 메이트가 깨워요 → 마지막 30초는 초 단위로 세어 줘요</td></tr>
+            <tr><td>1:08–1:16</td><td>16:00 지나가는 동료 · 사무실 그림(대외비 견적서, 뒤로 동료가 지나감) → 키보드 <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">H</kbd> → 업무 창만 남음 → 한 번 더 눌러 되돌리기</td><td>뒤로 누가 지나가면 → 단축키 한 번이면 업무 화면만 남아요 → 한 번 더 누르면 그대로</td></tr>
+            <tr><td>1:16–1:21</td><td>17:10 휴식 · 말랑 메이트의 쉬어 가기 말</td><td>한 시간 넘게 집중했다면 → 말랑 메이트가 쉬어 가자고 말을 걸어요</td></tr>
+            <tr><td>1:21–1:27</td><td>끝 카드 · 기본 단축키, 첨부 파일 이름, 설치 안내</td><td>—</td></tr>
           </tbody>
         </table>
       </div>
+      <h3>화면은 어디서 왔나</h3>
+      <p class="lead-sm">팔레트·확인 화면·바·용어 카드·말랑 메이트는 실제 앱 화면을 캡처했고, 바탕화면과 다른 앱 창은 영상용으로 그렸어요. Ttree는 동료가 바로 알아보도록 실제 화면을 쓰되, 이름·직급·팀·날짜·근무 기록은 가상 인물 김가상에 맞춰 바꿔 그렸어요. 사무실 장면은 얼굴 없는 평면 그림이고, 인물·고객사·문서 이름은 모두 가상이에요.</p>
+      <h3>게시판에 올리는 법</h3>
+      <p class="lead-sm">영상 파일을 게시글 맨 위에 첨부하고 대표 이미지를 썸네일로 써요. 게시판이 영상을 못 붙이면 장면을 6~8초 GIF로 잘라(이석 미리 알림 0:58–1:08, 지나가는 동료 1:08–1:16처럼) 이미지 사이에 넣어요.</p>
     </section>
 
     <section>
-      <h2>영상 B · 2분 30초 시연 「김가상 책임의 월요일」</h2>
-      <p>심사위원이 직접 해 볼 순서 그대로 보여 줘요. 인물·고객사는 모두 가상 이름이고, 내레이션은 텍스트 음성 변환으로 넣어 목소리로 작성자가 드러나지 않게 해요.</p>
-      <div class="board-wrap">
-        <table class="board">
-          <thead><tr><th>시간</th><th>화면</th><th>내레이션</th></tr></thead>
-          <tbody>
-            <tr><td>0:00–0:15</td><td>바탕화면, 오른쪽 바 위에 앉은 말랑 메이트</td><td>Sure-Mate는 단축키 하나로 창 배치, AI 프롬프트, 가명 처리, 사내 용어를 불러오는 작은 비서예요.</td></tr>
-            <tr><td>0:15–0:40</td><td>흐트러진 창 → 팔레트에 ‘보고서 모드로 바꿔줘’ → 두 모니터 배치 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">H</kbd>로 감췄다가 다시 누르기</td><td>저장해 둔 배치를 말로 불러요. 누가 뒤에 오면 화면 감추기로 업무 창만 남기고, 한 번 더 누르면 그대로 돌아와요.</td></tr>
-            <tr><td>0:40–1:20</td><td>회의 메모 선택 → 회의록 → 확인 화면(바뀐 이름 하이라이트) → Claude에 붙여넣기 → 답 복사 → ‘가명 되돌려줘’</td><td>AI에는 CLIENT_A만 가고, AI가 쓴 글은 원래 이름으로 되돌려요. 고객사 이름을 손으로 지울 일이 없어요.</td></tr>
-            <tr><td>1:20–1:40</td><td>보고서에서 MC/DC 선택 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">W</kbd> 용어 카드</td><td>사내 용어 뜻이 바 옆에 떠요. 프롬프트에도 자동으로 붙어 AI가 약어를 헷갈리지 않아요.</td></tr>
-            <tr><td>1:40–1:55</td><td>메모장에 <kbd class="key">!이슈</kbd> → 결함 리포트 양식</td><td>자주 쓰는 양식은 느낌표 하나로 붙여요.</td></tr>
-            <tr><td>1:55–2:15</td><td>복사 축하 → 가명 처리 끔 경고 → “물도 마시고 해요!” → 슬라이드쇼 시작하자 숨기</td><td>말랑 메이트가 지금 상태를 알려 주고, 가끔 쉬어 가자고 말을 걸고, 발표할 땐 알아서 숨어요.</td></tr>
-            <tr><td>2:15–2:30</td><td>설치와 첫 실행 안내 세 화면 → 끝 화면(로고, 첨부 파일, 함께 출품한 두 글)</td><td>관리자 권한 없이 1분이면 설치돼요. 앱은 인터넷에 접속하지 않아요.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <h3>장면별 GIF</h3>
-      <p class="lead-sm">게시판이 영상을 못 붙이면 영상 B의 장면을 6~8초 GIF로 잘라 이미지 사이에 넣어요. 창 배치, 화면 감추기, 프롬프트, 가명 처리, 용어 카드, 말랑 메이트 여섯 개면 충분해요.</p>
-    </section>
-
-    <section>
-      <h2>찍기 전에 준비할 것</h2>
+      <h2>영상을 다시 만들 때</h2>
       <ul class="checks">
-        <li><span>화면 1920×1080, 배율 100%<small>글자가 또렷하게 찍혀요. 시연 뒤 원래 배율로 돌려요</small></span></li>
-        <li><span>알림 끄기<small>설정 → 시스템 → 알림 → 방해 금지 켜기</small></span></li>
-        <li><span>가짜 자료만 화면에<small>가명 사전에 가상자동차·XY방산·김가상·이예시를 넣고, 메신저·메일처럼 실명이 보이는 창은 닫아요</small></span></li>
-        <li><span>녹화는 Windows 캡처 도구<small><kbd class="key">Win</kbd>+<kbd class="key">Shift</kbd>+<kbd class="key">R</kbd>로 영역을 골라 MP4로 저장해요</small></span></li>
-        <li><span>편집은 Clipchamp<small>Windows 11 기본 앱이에요. 자르기, 자막, 키캡 이미지, 텍스트 음성 변환, 무료 배경 음악까지 한 곳에서 해요</small></span></li>
+        <li><span>앱 문구가 바뀌면 다시 만들기<small>캡처와 자막 값을 그때 코드로 다시 뽑아요(docs/promo/video/README.md). 이 PC는 구간 6개를 동시에 그려 약 10분 걸려요</small></span></li>
+        <li><span>ffmpeg 준비<small>이 PC는 winget으로 설치한 Gyan.FFmpeg를 써요(winget install --id Gyan.FFmpeg -e)</small></span></li>
+        <li><span>Ttree 화면은 가상 값으로 바꾼 두 장만<small>scene/assets의 ttree-0900.png·ttree-1519.png만 저장소에 있어요. 다시 찍으면 실명 줄을 바꾼 뒤 원본은 지워요</small></span></li>
+        <li><span>알림 끄고 확인<small>다시 만든 뒤 소리를 켜고 처음부터 끝까지 한 번 봐요(음악·효과음 크기, 자막이 다 읽히는지)</small></span></li>
       </ul>
     </section>
 
     <section>
       <h2>게시 전 확인</h2>
       <ul class="checks">
-        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>지금 숫자는 11/10 설치본 측정값이에요</small></span></li>
-        <li><span>첨부 파일 용량 확인<small>설치 파일이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
+        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치고 이미지 다시 뽑기<small>11/13 빌드 설치 파일은 110.5MB예요(게시글은 아직 108MB). 메모리·CPU는 11/10 설치본 측정값이에요</small></span></li>
+        <li><span>첨부 파일 용량 확인<small>설치 파일(약 111MB)과 영상(15MB)이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
         <li><span>SHA-256 해시를 본문에 적기<small>받은 파일이 바뀌지 않았는지 동료가 확인할 수 있어요</small></span></li>
-        <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음</small></span></li>
+        <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음. 영상 속 Ttree 화면은 가상 인물(김가상)로 바꿔 그렸어요</small></span></li>
         <li><span>함께 출품한 두 글 링크 연결<small>세 글이 서로를 소개해요</small></span></li>
       </ul>
     </section>
@@ -824,13 +810,13 @@ p { margin: 0; }
     <section>
       <h2>게시판 본문 텍스트 초안</h2>
       <p>이미지 위아래에 붙이는 글이에요. 이미지가 안 보여도 필수 항목 네 가지가 다 읽히게 했어요.</p>
-      <div class="post-text">[어떤 업무에] 창 배치 전환, 회의록·보고서를 AI로 정리하기, 사내 용어 찾기, 결함 리포트 같은 양식 붙이기, 자리에 누가 왔을 때 화면 가리기처럼 하루에도 여러 번 반복하는 일에 써요.
+      <div class="post-text">[어떤 업무에] 창 배치 전환, 회의록·보고서를 AI로 정리하기, 사내 용어 찾기, 결함 리포트 같은 양식 붙이기, 자리에 누가 왔을 때 화면 가리기, Ttree 출근·휴가 신청과 이석 챙기기처럼 하루에도 여러 번 반복하는 일에 써요.
 
-[무엇이 좋아졌는지] 회의가 끝날 때마다 창을 다시 늘어놓던 일은 단축키 한 번으로, AI에 붙여넣기 전에 고객사 이름을 손으로 지우던 일은 자동 가명 처리로, 사내 위키를 열어 약어를 찾던 일은 글을 고르고 Ctrl+Alt+W 한 번으로 바뀌었어요.
+[무엇이 좋아졌는지] 회의가 끝날 때마다 창을 다시 늘어놓던 일은 단축키 한 번으로, AI에 붙여넣기 전에 고객사 이름을 손으로 지우던 일은 자동 가명 처리로, 사내 위키를 열어 약어를 찾던 일은 글을 고르고 Ctrl+Alt+W 한 번으로 바뀌었어요. 서류를 읽느라 마우스를 안 쓰고 있으면 이석 2분 전에 말랑 메이트가 알려 주고 마지막 30초는 초 단위로 세어 줘서, 자리에 있는데 이석으로 잡히는 일을 미리 막아요.
 
 [AI를 어떻게] 앱이 AI를 직접 부르지 않고, 우리 업무에 맞춘 프롬프트 9종에 선택한 글과 사내 용어 설명을 채워 클립보드에 넣어요. 보내기 전에 고객사·IP·경로를 다른 이름(CLIENT_A)으로 바꾸고, AI가 쓴 글은 ‘가명 되돌리기’로 원래 이름으로 돌려요. 회사가 허용한 AI라면 무엇이든 쓸 수 있어요.
 
-[사용법] 첨부한 Sure-Mate-Setup-0.1.0.exe를 실행하고(관리자 권한 필요 없음, ‘추가 정보 → 실행’), 첫 실행 안내 세 화면을 따라 하면 돼요. 팔레트는 Ctrl+Alt+Space, 용어 카드는 Ctrl+Alt+W, 화면 감추기는 Ctrl+Alt+H예요. 트레이 메뉴의 ‘따라 해 보기’로 30초 연습도 할 수 있어요.</div>
+[사용법] 첨부한 Sure-Mate-Setup-0.1.0.exe를 실행하고(관리자 권한 필요 없음, ‘추가 정보 → 실행’), 첫 실행 안내 세 화면을 따라 하면 돼요. 팔레트는 Ctrl+Alt+Space, 용어 카드는 Ctrl+Alt+W, 화면 감추기는 Ctrl+Alt+H예요. 팔레트에 ‘출근’이나 ‘휴가 신청’을 치면 Ttree가, ‘메신저’를 치면 사내 메신저가 열려요. 트레이 메뉴의 ‘따라 해 보기’로 30초 연습도 할 수 있어요.</div>
     </section>
 
     <section>
@@ -838,8 +824,9 @@ p { margin: 0; }
       <p>원하는 것을 말씀해 주시면 바로 이어서 할게요.</p>
       <div class="offers">
         <div><b>최종 설치 파일</b><span>게시할 코드로 설치 파일을 만들고, 설치본으로 메모리·CPU를 다시 재서 숫자와 해시를 고쳐요</span></div>
-        <div><b>시연 자동 재생</b><span>스모크 시험처럼 사람 손 타이밍으로 영상 B의 장면을 매번 똑같이 재생해, 녹화를 몇 번이고 다시 찍을 수 있게 해요</span></div>
-        <div><b>실제 화면 캡처</b><span>가짜 자료로 앱 화면을 찍어 시안의 그림 자리를 실제 화면으로 바꿔요</span></div>
+        <div><b>30초 티저</b><span>완성 영상에서 지나가는 동료·이석 미리 알림·회의록 장면을 골라 좋아요용 짧은 영상을 잘라요</span></div>
+        <div><b>장면별 GIF</b><span>게시판이 영상을 못 붙일 때 쓸 6~8초 GIF를 영상에서 뽑아요</span></div>
+        <div><b>새 기능 칸</b><span>사내 메신저·Ttree 열기와 이석 미리 알림을 게시글(첫째 탭)과 게시판 이미지에 더해요</span></div>
       </div>
     </section>
   </div>
