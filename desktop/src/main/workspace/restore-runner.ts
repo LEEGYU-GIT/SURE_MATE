@@ -95,7 +95,12 @@ export function unfocusableOwnWindow(hwnd: string, own: readonly OwnWindowState[
   return own.some((w) => w.hwnd === hwnd && (!w.visible || !w.focusable))
 }
 
-export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Promise<RestoreReport> } {
+/** 실행 옵션. hidden: 화면 감추기가 방금 내린 창(시작 때 앞 창이어도 돌려줄 창으로 보지 않는다: 최소화된 창에 포커스를 주지 않게) */
+export interface RestoreRunOptions {
+  hidden?: ReadonlySet<string>
+}
+
+export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan, o?: RestoreRunOptions): Promise<RestoreReport> } {
   const T = RESTORE_TIMING
 
   /** 조건이 될 때까지 pollMs 간격으로 최대 stateWaitMs 동안 읽는다. 창이 사라졌으면 'gone' */
@@ -165,7 +170,7 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
     return { result: 'off', diff: m.diff }
   }
 
-  async function run(plan: ReadyPlan): Promise<RestoreReport> {
+  async function run(plan: ReadyPlan, o: RestoreRunOptions = {}): Promise<RestoreReport> {
     const start = p.now()
     const remembered = p.foreground()
     const outcomes: WindowOutcome[] = plan.skipped.map((k) => ({ ruleId: k.ruleId, app: k.app, result: k.reason }))
@@ -205,12 +210,12 @@ export function createRestoreRunner(p: RestorePorts): { run(plan: ReadyPlan): Pr
     // 끝의 포커스(chooseFocus): 시작 때 앞 창이 이번에 올린 워크스페이스 창·Sure-Mate 자신의 창이면 그 창, 아니면 맨 위 복원 창
     let focusable = false
     let own = false
-    if (remembered !== null) {
+    if (remembered !== null && !o.hidden?.has(remembered)) {
       focusable = attempt(() => p.focusable(remembered), false)
       own = focusable && attempt(() => p.own(remembered), false)
     }
     const choice = chooseFocus({ remembered, focusable, own, raised, foreground: attempt(() => p.foreground(), null) })
-    // 고른 창을 맨 위로 올리고(포커스를 바꾸지 않는 비동기 HWND_TOP), focus면 포커스도 준다(시작 때 앞 창이 최소화 해제·최대화로
+    // 고른 창을 맨 위로 올리고(포커스를 바꾸지 않는 bringToFront: HWND_TOPMOST 뒤 HWND_NOTOPMOST, 비동기), focus면 포커스도 준다(시작 때 앞 창이 최소화 해제·최대화로
     // 앞 창이 아니게 됐거나, 맨 위 복원 창일 때). restoredFocus는 끝에 그 창이 맨 앞이고 포커스가 있는지다
     let restoredFocus = false
     if (choice.target !== null) {

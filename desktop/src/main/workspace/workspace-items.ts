@@ -1,6 +1,7 @@
 import { FLYOUT_MAX_HEIGHT, type FlyoutContent } from '../../shared/flyout/flyout-content'
 import { workspaceMenuRowsThatFit } from '../../shared/flyout/workspace-menu-fit'
 import type { PaletteItem } from '../../shared/types'
+import { hideFirst, isHideWorkspace } from '../../shared/workspace/builtin'
 import type { Workspace } from '../../shared/workspace/types'
 import { parseWorkspaceId, WORKSPACE_EDIT_PREFIX, WORKSPACE_ITEM_PREFIX as ITEM_PREFIX, type WorkspaceSaveResult } from '../../shared/workspace/workspace-ipc'
 import type { WorkspaceService } from './workspace-service'
@@ -16,11 +17,29 @@ const time = (iso: string): number => {
 /** 바 메뉴에 보이는 워크스페이스 수(나머지는 more로 센다) */
 export const WORKSPACE_MENU_MAX = 8
 
-/** 켜진 창 수와 다른 구성 여부. 다른 구성이면 불러올 때 모을 배치(첫 배치)의 창 수 */
+/**
+ * 켜진 창 수와 다른 구성 여부. 다른 구성이면 불러올 때 모을 배치(첫 배치)의 창 수. 저장한 배치가 하나도 없으면(저장 전의 화면 감추기)
+ * 다른 구성이 아니다
+ */
 function layoutInfo(ws: Workspace, fingerprint: string): { windows: number; otherConfig: boolean } {
   const own = Object.hasOwn(ws.layouts, fingerprint) ? ws.layouts[fingerprint] : undefined
   const layout = own ?? Object.values(ws.layouts)[0]
-  return { windows: layout ? layout.windows.filter((r) => r.enabled).length : 0, otherConfig: !own }
+  return { windows: layout ? layout.windows.filter((r) => r.enabled).length : 0, otherConfig: !own && layout !== undefined }
+}
+
+/** 최근에 바꾼 순서, 기본 워크스페이스(화면 감추기)는 맨 앞(설정 창 목록과 같은 차례) */
+const menuOrder = (list: readonly Workspace[]): Workspace[] =>
+  hideFirst(
+    [...list].sort((a, b) => time(b.updatedAt) - time(a.updatedAt)),
+    (w) => w.id
+  )
+
+/**
+ * 팔레트의 화면 감추기 부제(design:ux-copy): 다시 누르면 되돌릴 창이 있으면 그것을, 아니면 남길 창 수(저장 전이면 모든 창을 내린다)
+ */
+function hideSubtitle(windows: number, restorable: number): string {
+  if (restorable > 0) return `다시 누르면 내렸던 창 ${restorable}개를 되돌려요`
+  return windows > 0 ? `창 ${windows}개만 남기고 나머지 창은 내려요` : '열린 창을 모두 내려요'
 }
 
 /**
@@ -31,13 +50,20 @@ export function workspaceMenuContent(
   list: readonly Workspace[],
   fingerprint: string,
   canSave: boolean,
-  maxHeight: number = FLYOUT_MAX_HEIGHT
+  maxHeight: number = FLYOUT_MAX_HEIGHT,
+  /** 화면 감추기를 지금 누르면 되돌릴 창 수 */
+  restorable = 0
 ): Extract<FlyoutContent, { kind: 'workspace-menu' }> {
-  const sorted = [...list].sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
+  const sorted = menuOrder(list)
   const shown = workspaceMenuRowsThatFit({ maxHeight, canSave, max: WORKSPACE_MENU_MAX })
   return {
     kind: 'workspace-menu',
-    workspaces: sorted.slice(0, shown).map((ws) => ({ id: ws.id, name: ws.name, ...layoutInfo(ws, fingerprint) })),
+    workspaces: sorted.slice(0, shown).map((ws) => ({
+      id: ws.id,
+      name: ws.name,
+      ...layoutInfo(ws, fingerprint),
+      ...(isHideWorkspace(ws.id) ? { hide: true as const, ...(restorable > 0 ? { restorable } : {}) } : {})
+    })),
     canSave,
     more: Math.max(0, sorted.length - shown)
   }
@@ -48,7 +74,7 @@ export function workspaceMenuContent(
  * 이어서 워크스페이스를 최근에 바꾼 순서로. 부제는 포함한 창 수와 단축키, 지금 모니터 구성에서 저장한 배치가 없으면
  * '다른 모니터 구성'(불러오면 먼저 묻는다). 별칭은 키워드. 문구는 Task 8의 ux-copy에서 다듬는다.
  */
-export function workspacePaletteItems(list: readonly Workspace[], fingerprint: string): PaletteItem[] {
+export function workspacePaletteItems(list: readonly Workspace[], fingerprint: string, o: { restorable?: number } = {}): PaletteItem[] {
   const save: PaletteItem = {
     id: WORKSPACE_SAVE_ID,
     group: 'workspace',
@@ -56,12 +82,13 @@ export function workspacePaletteItems(list: readonly Workspace[], fingerprint: s
     subtitle: '지금 열린 창 위치를 새 워크스페이스로 저장해요',
     keywords: ['save', 'workspace', 'layout', '워크스페이스', '레이아웃', '창 배치', '배치 저장']
   }
-  const sorted = [...list].sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
+  // 화면 감추기(기본)는 지금 배치 저장 바로 다음에 고정한다: `@` 다음 Enter는 그대로 저장이고(모든 창을 내리지 않게) 그다음 줄이 감추기
+  const sorted = menuOrder(list)
   return [
     save,
     ...sorted.map((ws): PaletteItem => {
       const { windows, otherConfig } = layoutInfo(ws, fingerprint)
-      const parts = [`창 ${windows}개`]
+      const parts = [isHideWorkspace(ws.id) ? hideSubtitle(windows, o.restorable ?? 0) : `창 ${windows}개`]
       if (ws.hotkey) parts.push(ws.hotkey)
       if (otherConfig) parts.push('다른 모니터 구성')
       return { id: `${ITEM_PREFIX}${ws.id}`, group: 'workspace', title: ws.name, subtitle: parts.join(' · '), keywords: [...ws.aliases] }

@@ -107,6 +107,7 @@ function workspacesFake() {
     run: vi.fn(async () => wsRun),
     saveNew: vi.fn(async () => wsSaved),
     remove: vi.fn(async () => true),
+    setKeepOnTop: vi.fn(async () => true),
     saveAs: vi.fn(async () => wsSaved)
   } satisfies WorkspaceIpc
 }
@@ -543,6 +544,22 @@ describe('워크스페이스 IPC: 목록·보기·편집·다시 저장·불러�
         IPC.workspaceSaveNew
       ].sort()
     )
+  })
+
+  it('감춘 동안 항상 위(setKeepOnTop): 설정 창이 보낸 id·켬/끔(boolean)만 넘긴다', async () => {
+    expect(await invoke(IPC.workspaceSetKeepOnTop, SETTINGS, 'builtin-hide', true)).toBe(true)
+    expect(workspaces.setKeepOnTop).toHaveBeenCalledWith('builtin-hide', true)
+    workspaces.setKeepOnTop.mockClear()
+    for (const sender of [PALETTE, BAR, FLYOUT, PET, OTHER]) expect(await invoke(IPC.workspaceSetKeepOnTop, sender, 'builtin-hide', true)).toBe(false)
+    for (const [id, on] of [
+      ['a/b', true],
+      ['builtin-hide', 'yes'],
+      ['builtin-hide', 1],
+      [null, false]
+    ]) {
+      expect(await invoke(IPC.workspaceSetKeepOnTop, SETTINGS, id, on)).toBe(false)
+    }
+    expect(workspaces.setKeepOnTop).not.toHaveBeenCalled()
   })
 })
 

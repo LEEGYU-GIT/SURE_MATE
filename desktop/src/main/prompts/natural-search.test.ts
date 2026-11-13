@@ -10,6 +10,7 @@ import { ENGLISH_WORDS } from '../../shared/natural/test-english-words'
 import { understand } from '../../shared/natural/understand'
 import type { UsageRecord } from '../../shared/natural/usage'
 import { parseTemplatePack } from '../../shared/template/pack'
+import { HIDE_WORKSPACE_ID, withHideWorkspace } from '../../shared/workspace/builtin'
 import { monitorFingerprint } from '../../shared/workspace/monitors'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { testWorkspace } from '../../shared/workspace/test-workspaces'
@@ -32,9 +33,11 @@ const testTerm = (id: string, term: string): GlossaryEntry => ({
   version: 1
 })
 const userTerms = [testTerm('u-exact', '정확'), testTerm('u-accuracy', '정확도'), testTerm('u-mean', '평균')]
-// 워크스페이스 세 개(가상 이름). 배치는 워크스페이스 시험의 시험 지문 배치(test-workspaces.ts, 가상 창 제목)
+// 워크스페이스 세 개(가상 이름)와 기본 워크스페이스 화면 감추기(앱이 처음부터 만드는 그대로, 2026-11-12). 배치는 워크스페이스 시험의
+// 시험 지문 배치(test-workspaces.ts, 가상 창 제목)
 const workspaces = workspacePaletteItems(
   [
+    withHideWorkspace([], { now: new Date('2026-11-12T09:00:00.000Z'), hotkey: 'Ctrl+Alt+H' }).list[0],
     testWorkspace({ id: 'ws-qa', name: 'QA 모드', aliases: ['qa', '시험', '테스트'] }),
     testWorkspace({ id: 'ws-report', name: '보고서 모드', aliases: ['보고'] }),
     testWorkspace({ id: 'ws-meeting', name: '회의 모드', aliases: ['미팅 화면'] })
@@ -120,6 +123,14 @@ describe('문장 표: 맨 위 후보', () => {
   it.each(TABLE)('%s → %s', (sentence, id) => {
     expect(top(sentence)).toBe(id)
   })
+})
+
+it('기본 워크스페이스 화면 감추기: 감추기·숨기기·가리기 말로 찾고, 가명 처리·말랑 메이트 숨기기 문장은 그대로', () => {
+  const hide = `workspace:${HIDE_WORKSPACE_ID}`
+  for (const q of ['화면 감춰줘', '화면 숨겨줘', '화면 가려줘', '창 숨겨줘', '창 내려줘', '감춰줘', '화면 감추기', 'ghkaus rkacnrl']) expect(top(q), q).toBe(hide)
+  expect(search('화면 감춰줘').top).toEqual({ id: hide, label: '창 배치' })
+  expect(top('선택한 글 가려줘')).toBe('cmd.mask-selection')
+  expect(top('말랑 메이트 숨겨줘')).toBe('cmd.pet-visible')
 })
 
 it('(Review Focus 4) 낱말·영어 낱말·초성·오타·치는 중인 글은 말하듯 입력을 켜도 M4 검색과 맨 위가 같다', () => {

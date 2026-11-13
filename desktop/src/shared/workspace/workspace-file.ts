@@ -1,5 +1,6 @@
 import { compactOf } from '../search/ranker'
 import type { Rect } from '../types'
+import { isHideWorkspace } from './builtin'
 import { type MonitorRoleName, type SavedLayout, type SavedMonitor, type WindowRule, type Workspace, WORKSPACE_LIMITS as L, WORKSPACES_FORMAT } from './types'
 
 // 오류 문구에는 순번과 고정 문구만 싣는다(이름·별칭·창 제목 금지).
@@ -147,22 +148,39 @@ function parseWorkspace(v: unknown, n: number, errors: string[]): Workspace | nu
       if (layout) layouts[fp] = layout
     }
   }
-  return { id: v.id, name, aliases, hotkey, layouts, updatedAt }
+  // 감춘 동안 항상 위(기본 워크스페이스의 옵션)는 true일 때만 둔다(기본 꺼짐)
+  const keepOnTop = isHideWorkspace(v.id) && v.keepOnTop === true ? { keepOnTop: true } : {}
+  return { id: v.id, name, aliases, hotkey, layouts, updatedAt, ...keepOnTop }
 }
 
-/** workspaces.json의 내용을 검증해 읽을 수 있는 것만 돌려준다. 오류 문구에는 순번만 싣는다 */
+/**
+ * workspaces.json의 내용을 검증해 읽을 수 있는 것만 돌려준다. 오류 문구에는 순번만 싣는다.
+ * 기본 워크스페이스(화면 감추기)는 30개 제한에 들지 않아 앞의 31칸까지 읽고, 사용자 워크스페이스는 30개까지만 둔다
+ */
 export function parseWorkspaces(raw: unknown): { workspaces: Workspace[]; errors: string[] } {
   if (!isWorkspacesFile(raw)) return { workspaces: [], errors: ['workspaces.json: 형식이나 판이 달라 읽지 못함'] }
   const list = (raw as { workspaces: unknown[] }).workspaces
   const errors: string[] = []
   const workspaces: Workspace[] = []
-  if (list.length > L.workspaces) errors.push(`workspaces.json: 워크스페이스가 ${L.workspaces}개를 넘어 앞의 ${L.workspaces}개만 읽음`)
-  list.slice(0, L.workspaces).forEach((item, i) => {
+  let users = 0
+  let over = list.length > L.workspaces + 1
+  list.slice(0, L.workspaces + 1).forEach((item, i) => {
     const w = parseWorkspace(item, i + 1, errors)
     if (!w) return
-    if (workspaces.some((x) => x.id === w.id)) errors.push(`workspaces.json: ${i + 1}번째 워크스페이스 — id가 겹쳐 건너뜀`)
-    else workspaces.push(w)
+    if (workspaces.some((x) => x.id === w.id)) {
+      errors.push(`workspaces.json: ${i + 1}번째 워크스페이스 — id가 겹쳐 건너뜀`)
+      return
+    }
+    if (!isHideWorkspace(w.id)) {
+      if (users >= L.workspaces) {
+        over = true
+        return
+      }
+      users++
+    }
+    workspaces.push(w)
   })
+  if (over) errors.unshift(`workspaces.json: 워크스페이스가 ${L.workspaces}개를 넘어 앞의 ${L.workspaces}개만 읽음`)
   return { workspaces, errors }
 }
 

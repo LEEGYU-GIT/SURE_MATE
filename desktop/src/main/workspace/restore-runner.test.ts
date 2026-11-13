@@ -362,6 +362,18 @@ describe('createRestoreRunner', () => {
       expect(rep).toMatchObject({ focusTarget: 'start', restoredFocus: true })
     })
 
+    it('화면 감추기가 내린 시작 창(hidden)은 돌려줄 창이 아니다: 올린 창이 있으면 맨 위 복원 창, 없으면 아무 창도 올리지 않는다(최소화된 창에 포커스를 주지 않게)', async () => {
+      const w = world({ a: win(), b: win() }, 'messenger')
+      const rep = await createRestoreRunner(w.ports).run(plan([step('a'), step('b')]), { hidden: new Set(['messenger']) })
+      expect(only(w.calls, /^(raise|fg):/)).toEqual(['raise:a', 'raise:b', 'raise:b', 'fg:b'])
+      expect(rep).toMatchObject({ focusTarget: 'workspace', restoredFocus: true })
+
+      const none = world({ a: win({ gone: true }) }, 'messenger')
+      const rep2 = await createRestoreRunner(none.ports).run(plan([step('a')]), { hidden: new Set(['messenger']) })
+      expect(only(none.calls, /^(raise|fg):/)).toEqual([])
+      expect(rep2).toMatchObject({ focusTarget: null, restoredFocus: false })
+    })
+
     it('올린 창도 없고 시작 때 앞 창도 돌려줄 수 없으면(없음·포커스를 받지 않음) 아무 창도 올리지 않는다(focusTarget null)', async () => {
       const hidden = world({ a: win({ gone: true }) }, 'fg', { notFocusable: ['fg'] })
       const none = world({ a: win({ gone: true }) }, null)

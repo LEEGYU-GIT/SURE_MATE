@@ -1,5 +1,6 @@
-import type { RestoreReport, WindowOutcome } from './restore-result'
 import type { CaptureSkipped } from './capture'
+import type { HideOutcome } from './hide'
+import type { RestoreReport, WindowOutcome } from './restore-result'
 import { WORKSPACE_LIMITS } from './types'
 
 const MAX_NAMES = 2
@@ -25,15 +26,37 @@ const GROUPS: { has: (o: WindowOutcome) => boolean; text: (apps: string) => stri
   { has: (o) => o.result === 'failed' || o.result === 'timeout' || (o.result === 'blocked' && !unmovedAdmin(o)), text: (a) => `${a} 옮기지 못함` }
 ]
 
-export function restoreSummary(name: string, r: RestoreReport): string {
-  const head = r.placed >= r.total ? `${name} · 창 ${r.total}개 모두 배치했어요` : `${name} · 창 ${r.total}개 중 ${r.placed}개 배치`
-  const parts = [head]
+/** 배치 결과 조각(이름 없이): '창 N개 모두 배치했어요' 또는 'N개 중 M개 배치', 이어서 까닭 구간 */
+function restoreParts(r: RestoreReport): string[] {
+  const parts = [r.placed >= r.total ? `창 ${r.total}개 모두 배치했어요` : `창 ${r.total}개 중 ${r.placed}개 배치`]
   for (const g of GROUPS) {
     const apps = r.outcomes.filter(g.has).map((o) => o.app)
     if (apps.length > 0) parts.push(g.text(names(apps)))
   }
-  const text = parts.join(' · ')
+  return parts
+}
+
+export function restoreSummary(name: string, r: RestoreReport): string {
+  const text = [name, ...restoreParts(r)].join(' · ')
   return r.gathered ? `주 모니터로 모았어요 · ${text}` : text
+}
+
+/**
+ * 화면 감추기 알림(설정 창 결과 줄도 같다): 이름 · 내린 창 수(관리자 권한·그 밖에 내리지 못한 창 수) · 저장한 창의 배치 결과.
+ * 남길 창을 저장하지 않았으면 저장하는 곳(설정)을 알린다. 다시 누름은 되돌린 창 수
+ */
+export function hideSummary(name: string, r: RestoreReport, h: HideOutcome): string {
+  if (h.kind === 'unhide') {
+    const parts = [name, `내렸던 창 ${h.restored}개를 되돌렸어요`]
+    if (h.skipped > 0) parts.push(`창 ${h.skipped}개는 되돌리지 못했어요`)
+    return parts.join(' · ')
+  }
+  const parts = [name, h.minimized > 0 ? `창 ${h.minimized}개를 내렸어요` : '내릴 창이 없어요']
+  if (h.elevated > 0) parts.push(`관리자 권한 창 ${h.elevated}개는 내리지 못했어요`)
+  if (h.skipped > 0) parts.push(`창 ${h.skipped}개는 내리지 못했어요`)
+  if (r.total > 0) parts.push(...(r.gathered ? ['주 모니터로 모았어요'] : []), ...restoreParts(r))
+  else if (!h.saved) parts.push('설정에서 남길 창을 저장할 수 있어요')
+  return parts.join(' · ')
 }
 
 /**

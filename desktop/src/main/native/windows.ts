@@ -220,10 +220,87 @@ export function showWindowMaximized(hwnd: string): void {
   w.ShowWindowAsync(w.toHwnd(hwnd), w.SW_SHOWMAXIMIZED)
 }
 
-/** 위치·크기·활성 상태를 건드리지 않고 z-순서 맨 위로(HWND_TOP, 비동기 호출) */
+/** z-순서만 바꾸는 데 필요한 Win32 면(bringToFront). 시험은 가짜를 넘긴다 */
+export interface ZOrderWin32 {
+  toHwnd(hwnd: string): Hwnd
+  GetWindowLongPtrW(h: Hwnd, index: number): unknown
+  SetWindowPos(h: Hwnd, insertAfter: Hwnd | null, x: number, y: number, cx: number, cy: number, flags: number): unknown
+  GWL_EXSTYLE: number
+  WS_EX_TOPMOST: number
+  HWND_TOPMOST: Hwnd
+  HWND_NOTOPMOST: Hwnd
+  SWP_NOSIZE: number
+  SWP_NOMOVE: number
+  SWP_NOACTIVATE: number
+  SWP_NOOWNERZORDER: number
+  SWP_ASYNCWINDOWPOS: number
+}
+
+/**
+ * 다른 앱의 창을 지금 앞 창(메신저·Word 등)보다 위로 올린다. 위치·크기·활성 상태는 그대로다.
+ * HWND_TOP으로 올리려면 그 창의 프로세스가 SetForegroundWindow 권한을 가져야 해서(SetWindowPos 문서) 다른 앱의 창은 대개 올라가지
+ * 않는다. 맨 앞(HWND_TOPMOST)으로 올린 직후 보통 창(HWND_NOTOPMOST)으로 되돌리면 권한 없이 보통 창 가운데 맨 위에 남는다.
+ * 원래 항상 위(WS_EX_TOPMOST)인 창은 되돌리지 않는다(그 창의 항상 위 설정을 바꾸지 않게).
+ * 두 요청 모두 SWP_ASYNCWINDOWPOS: 응답이 느린 창에서 main이 멈추지 않고, 그 창의 메시지 큐에서 차례를 지킨다
+ */
+export function bringToFront(w: ZOrderWin32, hwnd: string): void {
+  const h = w.toHwnd(hwnd)
+  const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | w.SWP_ASYNCWINDOWPOS
+  const topmost = (Number(w.GetWindowLongPtrW(h, w.GWL_EXSTYLE)) & w.WS_EX_TOPMOST) !== 0
+  w.SetWindowPos(h, w.HWND_TOPMOST, 0, 0, 0, 0, flags)
+  if (!topmost) w.SetWindowPos(h, w.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+}
+
+/** 복원한 창을 다른 창 위로 올린다(bringToFront, 비동기). Win32를 쓸 수 없으면 아무것도 하지 않는다 */
 export function raiseWindow(hwnd: string): void {
   if (!nativeStatus().ok) return
-  const w = win32()
+  bringToFront(win32(), hwnd)
+}
+
+/** 항상 위로 고정(on, HWND_TOPMOST)하거나 푼다(HWND_NOTOPMOST). 이동·크기·활성화 없이 비동기(화면 감추기의 항상 위 옵션) */
+export function setTopmost(w: ZOrderWin32, hwnd: string, on: boolean): void {
   const flags = w.SWP_NOMOVE | w.SWP_NOSIZE | w.SWP_NOACTIVATE | w.SWP_NOOWNERZORDER | w.SWP_ASYNCWINDOWPOS
-  w.SetWindowPos(w.toHwnd(hwnd), null, 0, 0, 0, 0, flags)
+  w.SetWindowPos(w.toHwnd(hwnd), on ? w.HWND_TOPMOST : w.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+}
+
+/** setTopmost를 Win32로. Win32를 쓸 수 없으면 아무것도 하지 않는다 */
+export function pinWindow(hwnd: string, on: boolean): void {
+  if (!nativeStatus().ok) return
+  setTopmost(win32(), hwnd, on)
+}
+
+/** 원래 항상 위(WS_EX_TOPMOST)인지. Win32를 쓸 수 없거나 창이 없으면 false */
+export function isTopmost(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  const h = w.toHwnd(hwnd)
+  return Boolean(w.IsWindow(h)) && (Number(w.GetWindowLongPtrW(h, w.GWL_EXSTYLE)) & w.WS_EX_TOPMOST) !== 0
+}
+
+/** 활성화 없이 최소화(ShowWindowAsync SW_SHOWMINNOACTIVE, 비동기). 보냈으면 true. Win32를 쓸 수 없으면 false */
+export function minimizeWindow(hwnd: string): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  return Boolean(w.ShowWindowAsync(w.toHwnd(hwnd), w.SW_SHOWMINNOACTIVE))
+}
+
+/** 지금 앞 창의 맨 위 소유 창(GA_ROOTOWNER: 대화상자는 그 앱 창)과 그것이 Sure-Mate 자신의 창인지. 없거나 Win32를 쓸 수 없으면 null */
+export function foregroundRoot(): { hwnd: string; own: boolean } | null {
+  if (!nativeStatus().ok) return null
+  const w = win32()
+  const fg = w.GetForegroundWindow()
+  if (!fg) return null
+  const root = w.GetAncestor(fg, w.GA_ROOTOWNER) || fg
+  const pidOut = [0]
+  w.GetWindowThreadProcessId(root, pidOut)
+  const hwnd = w.fromHwnd(root)
+  return hwnd ? { hwnd, own: pidOut[0] === process.pid } : null
+}
+
+/** 바탕 화면(GetShellWindow)에 포커스를 준다. 셸이 없거나 Win32를 쓸 수 없으면 false */
+export function focusDesktop(): boolean {
+  if (!nativeStatus().ok) return false
+  const w = win32()
+  const shell = w.GetShellWindow()
+  return Boolean(shell) && Boolean(w.SetForegroundWindow(shell))
 }

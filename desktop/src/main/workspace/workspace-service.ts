@@ -1,11 +1,13 @@
 import { sameAccelerator } from '../../shared/hotkeys/accelerator-input'
 import { compactOf } from '../../shared/search/ranker'
 import type { MonitorInfo, Rect, WindowInfo } from '../../shared/types'
+import { hideFirst, isHideWorkspace, withHideWorkspace } from '../../shared/workspace/builtin'
 import { captureLayout } from '../../shared/workspace/capture'
 import { applyWorkspaceEdit, type WorkspaceEdit } from '../../shared/workspace/edit'
-import { restoreSummary, saveSummary, WORKSPACE_NOTES as NOTES } from '../../shared/workspace/messages'
+import { hideCandidates, type HideOutcome, needsDesktopFocus, pinTargets, workspaceWindowIds } from '../../shared/workspace/hide'
+import { hideSummary, restoreSummary, saveSummary, WORKSPACE_NOTES as NOTES } from '../../shared/workspace/messages'
 import { monitorFingerprint } from '../../shared/workspace/monitors'
-import { planRestore, type ReadyPlan, type RestorePlan } from '../../shared/workspace/restore-plan'
+import { planRestore, type ReadyPlan, type RestorePlan, type RestoreStep } from '../../shared/workspace/restore-plan'
 import type { OutcomeResult, RestoreReport } from '../../shared/workspace/restore-result'
 import { type Workspace, WORKSPACE_LIMITS } from '../../shared/workspace/types'
 import { nextWorkspaceName } from '../../shared/workspace/workspace-file'
@@ -19,6 +21,8 @@ import type {
   WorkspaceView
 } from '../../shared/workspace/workspace-ipc'
 import { errorCode, errorText } from '../error-text'
+import type { HideController } from './hide-runner'
+import type { RestoreRunOptions } from './restore-runner'
 
 export type { WorkspaceEditResult, WorkspaceFailReason, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceSource, WorkspaceView }
 
@@ -45,6 +49,17 @@ export interface WorkspaceService {
   setHotkey(id: string, hotkey: string | null): Promise<boolean>
   /** 저장·편집·삭제·단축키 저장 뒤 새 목록으로 부른다. 돌려받은 함수로 그만 듣는다 */
   onChange(cb: (list: Workspace[]) => void): () => void
+  /**
+   * 기본 워크스페이스 '화면 감추기'가 없으면 맨 앞에 만든다(시작할 때 한 번). 단축키는 만들 때만 hotkey()로 정한다(Ctrl+Alt+H가 비어
+   * 있을 때만, defaultHideHotkey). 파일을 읽을 때 문제가 있었으면 만들지 않는다. 만들었으면 true
+   */
+  ensureBuiltin(o: { hotkey(): string | null }): Promise<boolean>
+  /** 감춘 동안 업무 창을 항상 위에 두기(기본 워크스페이스만). 저장했으면 true. 끄면 지금 고정을 푼다 */
+  setKeepOnTop(id: string, on: boolean): Promise<boolean>
+  /** 화면 감추기를 지금 누르면 되돌릴 창 수(팔레트·바 메뉴·설정 창 표시용). Win32를 쓸 수 없거나 없으면 0 */
+  hideRestorable(): number
+  /** 앱을 끝낼 때: 화면 감추기가 항상 위에 둔 창을 푼다 */
+  shutdown(): void
 }
 
 export interface WorkspaceServiceDeps {
@@ -57,7 +72,13 @@ export interface WorkspaceServiceDeps {
   monitors(): MonitorInfo[]
   toDip(physical: Rect): Rect
   selfElevated(): boolean | null
-  runner: { run(plan: ReadyPlan): Promise<RestoreReport> }
+  runner: { run(plan: ReadyPlan, o?: RestoreRunOptions): Promise<RestoreReport> }
+  /** 화면 감추기(기본 워크스페이스)의 창 내리기·되돌리기·항상 위. 없으면 기본 워크스페이스도 보통 워크스페이스처럼 불러온다 */
+  hide?: HideController
+  /** 이번 실행에서 workspaces.json을 문제없이 읽었는지(기본 워크스페이스를 자동으로 저장해도 되는지). 없으면 true로 본다 */
+  loadClean?(): boolean
+  /** Sure-Mate 프로세스 id(내릴 창에서 뺀다). 없으면 process.pid */
+  selfPid?: number
   /** 다른 모니터 구성에서 저장한 배치를 주 모니터로 모을지 묻는다 */
   confirmGather(o: { savedMonitors: number; currentMonitors: number }): Promise<boolean>
   notify(message: string): void
@@ -191,7 +212,8 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
           next = { ...target, layouts: { [fingerprint]: layout }, updatedAt }
           nextList = list.map((w) => (w.id === id ? next : w))
         } else {
-          if (list.length >= WORKSPACE_LIMITS.workspaces) return fail('limit', counts)
+          // 기본 워크스페이스(화면 감추기)는 30개 제한에 들지 않는다
+          if (list.filter((w) => !isHideWorkspace(w.id)).length >= WORKSPACE_LIMITS.workspaces) return fail('limit', counts)
           const wanted = what.kind === 'recapture' ? undefined : what.name
           const name = wanted?.trim().slice(0, WORKSPACE_LIMITS.name).trim()
           autoNamed = !name
@@ -213,6 +235,130 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     }
   }
 
+  /** 불러오기 결과 기록(id·건수·시간만) */
+  function logRestore(source: WorkspaceSource, id: string, report: RestoreReport): void {
+    const counts = Object.fromEntries(OUTCOMES.map((r) => [r, report.outcomes.filter((o) => o.result === r).length]))
+    d.log('workspace.restore', {
+      source,
+      ok: true,
+      id,
+      total: report.total,
+      placed: report.placed,
+      ...counts,
+      gathered: report.gathered,
+      maxDiff: report.maxDiff,
+      ms: report.ms,
+      restoredFocus: report.restoredFocus,
+      focusTarget: report.focusTarget ?? null
+    })
+  }
+
+  /** 불러오기를 마쳤다고 알린다. 듣는 곳의 오류는 불러오기 결과를 바꾸지 않는다(commit과 같다) */
+  function afterRestore(id: string, source: WorkspaceSource): void {
+    try {
+      d.restored?.(id, source)
+    } catch (e) {
+      d.log('workspace.listenerError', { error: errorText(e) })
+    }
+  }
+
+  /** 창을 하나도 불러오지 않은 결과(화면 감추기의 저장 전·되돌리기) */
+  const emptyReport = (ms: number): RestoreReport => ({ total: 0, placed: 0, outcomes: [], gathered: false, ms, maxDiff: 0, restoredFocus: false, focusTarget: null })
+
+  /** 켜진 창 규칙 수(불러오기와 같은 배치: 지금 구성의 배치, 없으면 첫 배치) */
+  function enabledRules(ws: Workspace, monitors: MonitorInfo[]): number {
+    const layout = ws.layouts[monitorFingerprint(monitors)] ?? Object.values(ws.layouts)[0]
+    return layout ? layout.windows.filter((r) => r.enabled).length : 0
+  }
+
+  /**
+   * 화면 감추기(기본 워크스페이스, 2026-11-12): 항상 위 고정을 먼저 풀고, 10분 안의 다시 누름이면 내렸던 창을 되돌린다. 아니면 저장한 창
+   * (업무 창)이 아닌 앱 창을 모든 모니터에서 활성화 없이 내리고(개인 화면을 먼저 가린다), 저장한 창을 불러온 뒤 포커스를 정하고(chooseFocus,
+   * 줄 창이 없고 앞 창을 내렸으면 바탕 화면), 옵션이 켜져 있으면 배치한 업무 창을 항상 위에 둔다. 알림은 이름과 창 수, 기록은 건수만
+   */
+  async function runHide(ws: Workspace, source: WorkspaceSource, h: HideController, fail: (reason: WorkspaceFailReason, extra?: Record<string, unknown>) => WorkspaceRunResult): Promise<WorkspaceRunResult> {
+    const started = d.now().getTime()
+    const elapsed = (): number => d.now().getTime() - started
+    h.release('press')
+    const decision = h.decide()
+    if (decision.kind === 'restore') {
+      const r = await h.unhide(decision)
+      const hide: HideOutcome = { kind: 'unhide', restored: r.restored, skipped: r.skipped }
+      const report = emptyReport(elapsed())
+      d.notify(hideSummary(ws.name, report, hide))
+      d.log('workspace.unhide', { source, ok: true, id: ws.id, restored: r.restored, skipped: r.skipped, focused: r.focused, ms: elapsed() })
+      afterRestore(ws.id, source)
+      return { ok: true, report, hide }
+    }
+
+    let snap: ReturnType<WorkspaceServiceDeps['snapshot']>
+    try {
+      snap = d.snapshot()
+    } catch (e) {
+      return fail('native-unavailable', { error: errorText(e) })
+    }
+    const keep = workspaceWindowIds(ws, snap.monitors, snap.windows)
+    const cand = hideCandidates({ windows: snap.windows, monitors: snap.monitors, toDip: d.toDip, keep, selfElevated: d.selfElevated(), selfPid: d.selfPid ?? process.pid })
+    const front = h.front()
+    // 감추기 전에 이미 항상 위인 업무 창은 Sure-Mate가 고정한 창이 아니다(불러오기의 올리기가 잠깐 항상 위로 만들기 전에 읽는다)
+    const topmostBefore = ws.keepOnTop ? h.topmost(keep) : new Set<string>()
+    const m = await h.hide({ targets: cand.targets, front, carry: decision.carry })
+
+    const plan = (gather: boolean, s: ReturnType<WorkspaceServiceDeps['snapshot']>): RestorePlan =>
+      planRestore({ workspace: ws, monitors: s.monitors, windows: s.windows, gather, selfElevated: d.selfElevated() })
+    let p = plan(false, snap)
+    if (p.kind === 'needs-gather') {
+      // 다른 모니터 구성: 다른 워크스페이스처럼 먼저 묻는다(창은 이미 내렸다). 거절하면 저장한 창은 불러오지 않는다
+      let accepted = false
+      try {
+        accepted = await d.confirmGather({ savedMonitors: p.savedMonitors, currentMonitors: p.currentMonitors })
+      } catch (e) {
+        d.log('workspace.gatherError', { error: errorText(e) })
+      }
+      d.log('workspace.gather', { source, accepted, savedMonitors: p.savedMonitors, currentMonitors: p.currentMonitors })
+      try {
+        p = accepted ? plan(true, d.snapshot()) : { kind: 'empty' }
+      } catch (e) {
+        d.log('workspace.hideError', { error: errorText(e) })
+        p = { kind: 'empty' }
+      }
+    }
+    let report = emptyReport(0)
+    let steps: RestoreStep[] = []
+    if (p.kind === 'ready') {
+      try {
+        report = await d.runner.run(p, { hidden: m.hidden })
+        steps = p.steps
+      } catch (e) {
+        d.log('workspace.hideError', { error: errorText(e) })
+      }
+    }
+    const desktop = needsDesktopFocus({ focusTarget: report.focusTarget, front, hidden: m.hidden })
+    if (desktop) h.focusDesktop()
+    const pinned = ws.keepOnTop ? h.pin(pinTargets({ steps, outcomes: report.outcomes, topmostBefore }), keep) : 0
+    const saved = enabledRules(ws, snap.monitors) > 0
+    const hide: HideOutcome = { kind: 'hide', minimized: m.minimized, elevated: cand.elevated + m.elevated, skipped: m.hung + m.failed, saved }
+    d.notify(hideSummary(ws.name, report, hide))
+    if (report.total > 0) logRestore(source, ws.id, report)
+    d.log('workspace.hide', {
+      source,
+      ok: true,
+      id: ws.id,
+      minimized: m.minimized,
+      elevated: hide.elevated,
+      hung: m.hung,
+      failed: m.failed,
+      carried: decision.carry.length,
+      why: decision.why,
+      saved,
+      desktop,
+      pinned,
+      ms: elapsed()
+    })
+    afterRestore(ws.id, source)
+    return { ok: true, report, hide }
+  }
+
   async function run(id: string, source: WorkspaceSource): Promise<WorkspaceRunResult> {
     const fail = (reason: WorkspaceFailReason | 'empty', extra: Record<string, unknown> = {}): WorkspaceRunResult => {
       d.notify(reason === 'empty' ? NOTES.empty : FAIL_MESSAGE[reason])
@@ -225,6 +371,9 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     try {
       const ws = (await safeList()).find((w) => w.id === id)
       if (!ws) return fail('missing')
+      if (isHideWorkspace(ws.id) && d.hide) return await runHide(ws, source, d.hide, fail)
+      // 화면 감추기가 항상 위에 둔 창을 먼저 푼다(이 배치가 그 창들 밑에 깔리지 않게)
+      d.hide?.release('workspace')
       const plan = (gather: boolean): RestorePlan => {
         const snap = d.snapshot()
         return planRestore({ workspace: ws, monitors: snap.monitors, windows: snap.windows, gather, selfElevated: d.selfElevated() })
@@ -261,26 +410,8 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
         return fail('native-unavailable', { error: errorText(e) })
       }
       d.notify(restoreSummary(ws.name, report))
-      const counts = Object.fromEntries(OUTCOMES.map((r) => [r, report.outcomes.filter((o) => o.result === r).length]))
-      d.log('workspace.restore', {
-        source,
-        ok: true,
-        id,
-        total: report.total,
-        placed: report.placed,
-        ...counts,
-        gathered: report.gathered,
-        maxDiff: report.maxDiff,
-        ms: report.ms,
-        restoredFocus: report.restoredFocus,
-        focusTarget: report.focusTarget ?? null
-      })
-      // 듣는 곳의 오류는 불러오기 결과를 바꾸지 않는다(commit과 같다)
-      try {
-        d.restored?.(id, source)
-      } catch (e) {
-        d.log('workspace.listenerError', { error: errorText(e) })
-      }
+      logRestore(source, id, report)
+      afterRestore(id, source)
       return { ok: true, report }
     } finally {
       busy = null
@@ -297,13 +428,25 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     }
   }
 
-  /** 설정 창이 그리는 워크스페이스 하나: 같은 구성인지, 저장한 단축키를 지금 잡고 있는지 */
+  /** 화면 감추기를 지금 누르면 되돌릴 창 수. Win32를 쓸 수 없거나 읽지 못하면 0 */
+  function hideRestorable(): number {
+    if (!d.hide || !d.nativeOk()) return 0
+    try {
+      return d.hide.restorable()
+    } catch {
+      return 0
+    }
+  }
+
+  /** 설정 창이 그리는 워크스페이스 하나: 같은 구성인지, 저장한 단축키를 지금 잡고 있는지, (화면 감추기) 되돌릴 창 수 */
   function viewOf(ws: Workspace, fingerprint: string | null): WorkspaceView {
     const bound = ws.hotkey === null ? undefined : d.hotkeyBound?.(ws.id)
+    const restorable = isHideWorkspace(ws.id) ? hideRestorable() : 0
     return {
       workspace: ws,
       sameConfig: fingerprint !== null && Object.hasOwn(ws.layouts, fingerprint),
-      hotkeyRegistered: ws.hotkey !== null && bound !== undefined && sameAccelerator(bound, ws.hotkey)
+      hotkeyRegistered: ws.hotkey !== null && bound !== undefined && sameAccelerator(bound, ws.hotkey),
+      ...(restorable > 0 ? { restorable } : {})
     }
   }
 
@@ -318,7 +461,11 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
     async listView() {
       const list = await safeList()
       const fingerprint = currentFingerprint()
-      const sorted = [...list].sort((a, b) => updatedTime(b) - updatedTime(a))
+      // 기본 워크스페이스(화면 감추기)는 맨 앞에 고정, 나머지는 최근에 바꾼 순서
+      const sorted = hideFirst(
+        [...list].sort((a, b) => updatedTime(b) - updatedTime(a)),
+        (w) => w.id
+      )
       return { items: sorted.map((ws) => viewOf(ws, fingerprint)), canControl: d.nativeOk() }
     },
 
@@ -359,6 +506,11 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
 
     remove: (id) =>
       serial(async () => {
+        // 기본 워크스페이스(화면 감추기)는 지울 수 없다(설정 창도 지우기 단추를 보이지 않는다)
+        if (isHideWorkspace(id)) {
+          d.log('workspace.remove', { id, ok: false, reason: 'builtin' })
+          return false
+        }
         try {
           const list = await d.store.get()
           if (!list.some((w) => w.id === id)) return false
@@ -391,6 +543,64 @@ export function createWorkspaceService(d: WorkspaceServiceDeps): WorkspaceServic
       listeners.add(cb)
       return () => {
         listeners.delete(cb)
+      }
+    },
+
+    ensureBuiltin: (o) =>
+      serial(async () => {
+        let list: Workspace[]
+        try {
+          list = await d.store.get()
+        } catch (e) {
+          d.log('workspace.builtin', { created: false, error: errorCode(e) })
+          return false
+        }
+        if (list.some((w) => isHideWorkspace(w.id))) return false
+        // 깨졌거나 일부를 건너뛴 파일은 자동으로 덮어쓰지 않는다(사용자가 저장할 때 사본을 남기고 고친다). 다음 시작에 만든다
+        if (d.loadClean && !d.loadClean()) {
+          d.log('workspace.builtin', { created: false, reason: 'load-errors' })
+          return false
+        }
+        const hotkey = o.hotkey()
+        try {
+          await commit(withHideWorkspace(list, { now: d.now(), hotkey }).list)
+        } catch (e) {
+          d.log('workspace.builtin', { created: false, error: errorCode(e) })
+          return false
+        }
+        d.log('workspace.builtin', { created: true, hotkey: hotkey !== null })
+        return true
+      }),
+
+    setKeepOnTop: (id, on) =>
+      serial(async () => {
+        if (!isHideWorkspace(id)) return false
+        try {
+          const list = await d.store.get()
+          const ws = list.find((w) => w.id === id)
+          if (!ws) return false
+          if ((ws.keepOnTop === true) === on) return true
+          const next: Workspace = { ...ws }
+          if (on) next.keepOnTop = true
+          else delete next.keepOnTop
+          await commit(list.map((w) => (w.id === id ? next : w)))
+        } catch (e) {
+          d.log('workspace.keepOnTopError', { id, error: errorCode(e) })
+          return false
+        }
+        d.log('workspace.keepOnTop', { id, on })
+        // 끄면 지금 항상 위에 둔 창을 바로 푼다
+        if (!on) d.hide?.release('off')
+        return true
+      }),
+
+    hideRestorable,
+
+    shutdown() {
+      try {
+        d.hide?.release('quit')
+      } catch (e) {
+        d.log('workspace.hideError', { error: errorText(e) })
       }
     }
   }

@@ -136,6 +136,7 @@ const api: SureMateApi = {
   runWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRun, id),
   saveWorkspaceNew: () => ipcRenderer.invoke(IPC.workspaceSaveNew),
   removeWorkspace: (id) => ipcRenderer.invoke(IPC.workspaceRemove, id),
+  setWorkspaceKeepOnTop: (id, on) => ipcRenderer.invoke(IPC.workspaceSetKeepOnTop, id, on),
   saveWorkspaceAs: (name) => ipcRenderer.invoke(IPC.workspaceSaveAs, name),
   naturalView: () => ipcRenderer.invoke(IPC.naturalView),
   onNaturalChanged: (cb) => {

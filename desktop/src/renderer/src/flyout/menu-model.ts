@@ -98,17 +98,29 @@ export const WORKSPACE_MENU_TEXT = {
   editHint: '설정에서 이름과 단축키를 바꿔요',
   more: (n: number): string => `외 ${n}개 더 있어요`,
   windows: (n: number): string => `창 ${n}개`,
-  otherConfig: '다른 모니터 구성'
+  otherConfig: '다른 모니터 구성',
+  /** 화면 감추기(기본) 행의 한 줄 설명(18자 안: 넘으면 행이 두 줄이 된다) */
+  hideAll: '열린 창을 모두 내려요',
+  hideKeep: (n: number): string => `창 ${n}개만 남기고 내려요`,
+  hideRestore: (n: number): string => `내렸던 창 ${n}개 되돌리기`
 } as const
 
-/** 워크스페이스 메뉴(바의 워크스페이스 단추): 저장한 배치 불러오기 | 지금 배치 저장 | 모두 보기·편집 */
+/** 워크스페이스 행의 설명: 다른 구성은 색(warn)만이 아니라 글로도 알린다(§14-4). 화면 감추기는 누르면 일어나는 일 */
+function workspaceDetail(w: Extract<FlyoutContent, { kind: 'workspace-menu' }>['workspaces'][number]): string {
+  const T = WORKSPACE_MENU_TEXT
+  if (w.otherConfig) return `${T.windows(w.windows)} · ${T.otherConfig}`
+  if (!w.hide) return T.windows(w.windows)
+  if (w.restorable) return T.hideRestore(w.restorable)
+  return w.windows > 0 ? T.hideKeep(w.windows) : T.hideAll
+}
+
+/** 워크스페이스 메뉴(바의 워크스페이스 단추): 저장한 배치 불러오기(화면 감추기가 맨 앞) | 지금 배치 저장 | 모두 보기·편집 */
 export function workspaceMenuRows(c: Extract<FlyoutContent, { kind: 'workspace-menu' }>): MenuRow[] {
   const T = WORKSPACE_MENU_TEXT
   const rows: MenuRow[] = c.workspaces.map((w) => ({
     key: `workspace:${w.id}`,
     title: w.name,
-    // 다른 구성은 색(warn)만이 아니라 글로도 알린다(§14-4)
-    detail: w.otherConfig ? `${T.windows(w.windows)} · ${T.otherConfig}` : T.windows(w.windows),
+    detail: workspaceDetail(w),
     checked: false,
     tone: w.otherConfig ? 'warn' : 'normal',
     action: { type: 'workspace-run', id: w.id }

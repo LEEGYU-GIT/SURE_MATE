@@ -34,10 +34,16 @@ export type FlyoutContent =
   | { kind: 'label'; text: string }
   | { kind: 'masking-menu'; mode: MaskingMode }
   /**
-   * 워크스페이스 메뉴: 최근에 바꾼 순서의 앞 8개(workspaces), 나머지 수(more), Win32를 쓸 수 있는지(canSave).
-   * otherConfig: 지금 모니터 구성에서 저장한 배치가 없음(불러오면 먼저 묻는다). windows는 켜진 창 수
+   * 워크스페이스 메뉴: 최근에 바꾼 순서의 앞 8개(workspaces, 기본 워크스페이스 화면 감추기는 맨 앞), 나머지 수(more), Win32를 쓸 수 있는지(canSave).
+   * otherConfig: 지금 모니터 구성에서 저장한 배치가 없음(불러오면 먼저 묻는다). windows는 켜진 창 수.
+   * hide: 화면 감추기 행, restorable: 지금 누르면 되돌릴 내렸던 창 수(있을 때만)
    */
-  | { kind: 'workspace-menu'; workspaces: { id: string; name: string; windows: number; otherConfig: boolean }[]; canSave: boolean; more: number }
+  | {
+      kind: 'workspace-menu'
+      workspaces: { id: string; name: string; windows: number; otherConfig: boolean; hide?: true; restorable?: number }[]
+      canSave: boolean
+      more: number
+    }
   | { kind: 'bar-menu'; shape: BarShape }
   /**
    * cardId: 조회마다 main(showCard)이 새로 매기는 카드 번호. 고정(pin)만 바뀐 새 내용은 같은 번호라

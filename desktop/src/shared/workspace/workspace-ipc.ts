@@ -1,5 +1,6 @@
 import type { CaptureSkipped } from './capture'
 import type { WorkspaceEdit } from './edit'
+import type { HideOutcome } from './hide'
 import type { RestoreReport } from './restore-result'
 import { type Workspace, WORKSPACE_LIMITS } from './types'
 
@@ -9,6 +10,8 @@ export interface WorkspaceView {
   sameConfig: boolean
   /** 저장한 단축키를 지금 Sure-Mate가 잡고 있는지(조합이 없으면 false. 다른 앱이 쓰면 false) */
   hotkeyRegistered: boolean
+  /** 기본 워크스페이스(화면 감추기)만: 지금 누르면 되돌릴 내렸던 창 수(없으면 빠진다) */
+  restorable?: number
 }
 
 /** 설정 창 워크스페이스 탭: 모든 워크스페이스(최근에 바꾼 순서)와, 창을 저장·불러올 수 있는지(Win32를 막았으면 false) */
@@ -31,8 +34,11 @@ export type WorkspaceSaveResult =
 
 export type WorkspaceEditResult = { ok: true; workspace: Workspace } | { ok: false; errors: string[] }
 
-/** 불러오기 결과. cancelled는 다른 모니터 구성 질문에서 취소, empty는 불러올(켜진) 창 규칙이 없음 */
-export type WorkspaceRunResult = { ok: true; report: RestoreReport } | { ok: false; reason: WorkspaceFailReason | 'cancelled' | 'empty' }
+/**
+ * 불러오기 결과. cancelled는 다른 모니터 구성 질문에서 취소, empty는 불러올(켜진) 창 규칙이 없음. hide는 기본 워크스페이스(화면 감추기)의
+ * 결과(내린 창·되돌린 창 수)이고, 그때 report는 저장한 창의 배치 결과다(저장한 창이 없거나 되돌리기면 창 0개)
+ */
+export type WorkspaceRunResult = { ok: true; report: RestoreReport; hide?: HideOutcome } | { ok: false; reason: WorkspaceFailReason | 'cancelled' | 'empty' }
 
 /** 저장·불러오기를 부른 곳(로그용). editor는 설정 창의 워크스페이스 탭, onboarding은 첫 실행 안내 */
 export type WorkspaceSource = 'palette' | 'bar' | 'hotkey' | 'editor' | 'onboarding'

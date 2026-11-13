@@ -122,4 +122,14 @@ describe('워크스페이스 메뉴', () => {
     const rows = workspaceMenuRows(content({ workspaces: [] }))
     expect(rows.map((r) => r.action.type)).toEqual(['workspace-save', 'workspace-edit'])
   })
+
+  it('화면 감추기(기본) 행: 저장 전에는 모든 창을, 저장한 뒤에는 그 창만 남긴다고, 되돌릴 창이 있으면 되돌리기로 적는다(한 줄)', () => {
+    const hide = (o: { windows: number; restorable?: number; otherConfig?: boolean }) =>
+      workspaceMenuRows(content({ workspaces: [{ id: 'builtin-hide', name: '화면 감추기', windows: o.windows, otherConfig: o.otherConfig ?? false, hide: true, ...(o.restorable ? { restorable: o.restorable } : {}) }] }))[0]
+    expect(hide({ windows: 0 })).toMatchObject({ key: 'workspace:builtin-hide', title: '화면 감추기', detail: '열린 창을 모두 내려요', tone: 'normal', action: { type: 'workspace-run', id: 'builtin-hide' } })
+    expect(hide({ windows: 2 }).detail).toBe('창 2개만 남기고 내려요')
+    expect(hide({ windows: 2, restorable: 12 }).detail).toBe('내렸던 창 12개 되돌리기')
+    expect(hide({ windows: 2, otherConfig: true })).toMatchObject({ detail: '창 2개 · 다른 모니터 구성', tone: 'warn' })
+    for (const t of ['열린 창을 모두 내려요', '창 22개만 남기고 내려요', '내렸던 창 40개 되돌리기']) expect(t.length, t).toBeLessThanOrEqual(18)
+  })
 })

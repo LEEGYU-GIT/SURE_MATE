@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { MonitorInfo, WindowInfo } from '../../shared/types'
 import type { CaptureSkipped } from '../../shared/workspace/capture'
+import { HIDE_WORKSPACE_ID, HIDE_WORKSPACE_NAME, withHideWorkspace } from '../../shared/workspace/builtin'
 import { EDIT_ERRORS } from '../../shared/workspace/edit'
-import { restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../shared/workspace/messages'
+import type { PressDecision } from '../../shared/workspace/hide'
+import { hideSummary, restoreSummary, saveSummary, WORKSPACE_NOTES } from '../../shared/workspace/messages'
 import { monitorFingerprint, monitorKey } from '../../shared/workspace/monitors'
 import type { ReadyPlan } from '../../shared/workspace/restore-plan'
 import type { RestoreReport } from '../../shared/workspace/restore-result'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { TEST_WINDOWS, testWindow, testWorkspace, toDipPL } from '../../shared/workspace/test-workspaces'
 import type { Workspace } from '../../shared/workspace/types'
+import type { HideController } from './hide-runner'
 import { createWorkspaceService, type WorkspaceServiceDeps, type WorkspaceSource } from './workspace-service'
 
 const FP = monitorFingerprint([P, L])
@@ -60,12 +63,16 @@ interface World {
   /** restored를 부른 차례. after는 그때 마지막 로그 줄의 이름 */
   restored: { id: string; source: WorkspaceSource; after: string | undefined }[]
   restoredThrows: boolean
+  /** runner에 넘긴 화면 감추기가 내린 창(정렬, 없으면 null) */
+  runHidden: (string[] | null)[]
 }
 
 const worlds: World[] = []
 
 /** 가짜 세계: 메모리 저장소(실제 캐시처럼 얼린 목록을 준다), 고정 snapshot, 계획을 기록하는 runner, 가짜 확인·시계 */
-function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors' | 'confirm'>> = {}): { w: World; service: ReturnType<typeof createWorkspaceService> } {
+function world(
+  o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors' | 'confirm'>> & { hide?: HideController; loadClean?: boolean } = {}
+): { w: World; service: ReturnType<typeof createWorkspaceService> } {
   const w: World = {
     list: deepFreeze(o.list ?? []),
     saves: 0,
@@ -83,7 +90,8 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     logs: [],
     bound: new Map(),
     restored: [],
-    restoredThrows: false
+    restoredThrows: false,
+    runHidden: []
   }
   worlds.push(w)
   let n = 0
@@ -106,12 +114,16 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
     toDip: toDipPL,
     selfElevated: () => false,
     runner: {
-      run: async (plan) => {
+      run: async (plan, ro) => {
         w.plans.push(plan)
+        w.runHidden.push(ro?.hidden ? [...ro.hidden].sort() : null)
         if (w.hold) await w.hold
         return reportOf(plan)
       }
     },
+    hide: o.hide,
+    loadClean: o.loadClean === undefined ? undefined : () => o.loadClean!,
+    selfPid: 4242,
     confirmGather: async (c) => {
       w.confirms.push(c)
       return w.confirm
@@ -133,7 +145,7 @@ function world(o: Partial<Pick<World, 'list' | 'native' | 'windows' | 'monitors'
 afterEach(() => {
   const json = JSON.stringify(worlds.map((w) => w.logs))
   worlds.length = 0
-  for (const content of ['QA 모드', '가상자동차', 'XY방산', 'SureMate-WS-A', '배치 1', '보고서 모드', '회의 모드']) expect(json).not.toContain(content)
+  for (const content of ['QA 모드', '가상자동차', 'XY방산', 'SureMate-WS-A', '배치 1', '보고서 모드', '회의 모드', '화면 감추기', '가상 메신저']) expect(json).not.toContain(content)
 })
 
 describe('지금 배치 저장(saveNew)', () => {
@@ -552,5 +564,189 @@ describe('보기(view)·목록(list)', () => {
     })
     expect(await broken.listView()).toEqual({ items: [], canControl: true })
     expect(await service.listView()).toEqual({ items: [], canControl: true })
+  })
+})
+
+// ── 기본 워크스페이스 '화면 감추기'(2026-11-12 사용자 결정) ─────────────────────────────────────────────
+
+/** 다른 앱 창(가상): 메신저(맨 위, 감추기 직전 앞 창)와 Word */
+const CHAT = testWindow({ hwnd: '201', exe: 'chat.exe', title: '가상 메신저', frame: { x: 100, y: 100, width: 400, height: 600 } })
+const WORD = testWindow({ hwnd: '202', exe: 'WINWORD.EXE', title: 'XY방산 회의록.docx - Word', maximized: true, frame: { x: 0, y: 0, width: 1920, height: 1040 } })
+/** 저장한 창이 없는(처음 만든) 화면 감추기 */
+const hideEmpty = (): Workspace => withHideWorkspace([], { now: new Date(NOW), hotkey: 'Ctrl+Alt+H' }).list[0]
+/** 시험 창 3개(101~103)를 저장한 화면 감추기 */
+const hideSaved = (o: Partial<Workspace> = {}): Workspace => ({ ...testWorkspace({ id: HIDE_WORKSPACE_ID, name: HIDE_WORKSPACE_NAME, aliases: [] }), ...o })
+
+/** 부른 차례를 남기는 가짜 화면 감추기(내리기는 모두 성공, 되돌리기도 모두 성공) */
+function fakeHide(o: { decide?: PressDecision; front?: string | null; topmost?: string[] } = {}): { hide: HideController; calls: string[] } {
+  const calls: string[] = []
+  const hide: HideController = {
+    front: () => (o.front === undefined ? '201' : o.front),
+    focusDesktop: () => {
+      calls.push('desktop')
+      return true
+    },
+    decide: () => o.decide ?? { kind: 'hide', why: 'first', carry: [] },
+    hide: async (x) => {
+      calls.push(`hide:${x.targets.map((t) => t.hwnd).join(',')}|front:${x.front}|carry:${x.carry.length}`)
+      return { minimized: x.targets.length, elevated: 0, hung: 0, failed: 0, hidden: new Set(x.targets.map((t) => t.hwnd)) }
+    },
+    unhide: async (d) => {
+      calls.push(`unhide:${d.windows.map((x) => x.hwnd).join(',')}|focus:${d.focus}`)
+      return { restored: d.windows.length, skipped: 0, focused: true }
+    },
+    restorable: () => 3,
+    topmost: (hs) => new Set([...hs].filter((h) => (o.topmost ?? []).includes(h))),
+    pin: (hs, keep) => {
+      calls.push(`pin:${hs.join(',')}|keep:${[...keep].sort().join(',')}`)
+      return hs.length
+    },
+    release: (t) => void calls.push(`release:${t}`)
+  }
+  return { hide, calls }
+}
+
+describe('기본 워크스페이스 만들기(ensureBuiltin)·지우기 거절·목록 차례', () => {
+  it('없으면 맨 앞에 만들고 그때만 단축키를 정한다(검사 함수를 한 번 부른다). 있으면 다시 만들지 않는다', async () => {
+    const { w, service } = world({ list: [testWorkspace()], loadClean: true })
+    let asked = 0
+    expect(await service.ensureBuiltin({ hotkey: () => (asked++, 'Ctrl+Alt+H') })).toBe(true)
+    expect(w.list.map((x) => x.id)).toEqual([HIDE_WORKSPACE_ID, 'ws-qa'])
+    expect(w.list[0]).toMatchObject({ name: HIDE_WORKSPACE_NAME, hotkey: 'Ctrl+Alt+H', layouts: {} })
+    expect(await service.ensureBuiltin({ hotkey: () => (asked++, null) })).toBe(false)
+    expect(asked).toBe(1)
+    expect(w.saves).toBe(1)
+    expect(w.logs).toContainEqual(['workspace.builtin', { created: true, hotkey: true }])
+  })
+
+  it('파일을 읽을 때 문제가 있었으면(깨짐·일부 건너뜀) 만들지 않는다(사본을 남기기 전에 자동으로 덮어쓰지 않게)', async () => {
+    const { w, service } = world({ loadClean: false })
+    expect(await service.ensureBuiltin({ hotkey: () => 'Ctrl+Alt+H' })).toBe(false)
+    expect(w.saves).toBe(0)
+    expect(w.logs).toContainEqual(['workspace.builtin', { created: false, reason: 'load-errors' }])
+  })
+
+  it('지우기를 거절한다(파일 그대로, 까닭 builtin)', async () => {
+    const { w, service } = world({ list: [hideEmpty(), testWorkspace()] })
+    expect(await service.remove(HIDE_WORKSPACE_ID)).toBe(false)
+    expect(w.saves).toBe(0)
+    expect(w.list).toHaveLength(2)
+    expect(w.logs).toContainEqual(['workspace.remove', { id: HIDE_WORKSPACE_ID, ok: false, reason: 'builtin' }])
+  })
+
+  it('30개 제한은 사용자 워크스페이스만 센다(기본 + 29개면 저장, 기본 + 30개면 limit)', async () => {
+    const users = (n: number): Workspace[] => Array.from({ length: n }, (_, i) => testWorkspace({ id: `ws-${i}`, name: `가상 ${i}` }))
+    expect((await world({ list: [hideEmpty(), ...users(29)] }).service.saveNew({ source: 'palette' })).ok).toBe(true)
+    expect(await world({ list: [hideEmpty(), ...users(30)] }).service.saveNew({ source: 'palette' })).toMatchObject({ ok: false, reason: 'limit' })
+  })
+
+  it('설정 창 목록은 기본 워크스페이스를 맨 앞에(나머지는 최근에 바꾼 순서), 되돌릴 창 수를 함께 준다', async () => {
+    const { hide } = fakeHide()
+    const old = { ...hideEmpty(), updatedAt: '2020-01-01T00:00:00.000Z' }
+    const { service } = world({ list: [testWorkspace({ id: 'ws-a', updatedAt: '2026-11-10T00:00:00.000Z' }), old, testWorkspace({ id: 'ws-b', updatedAt: '2026-11-11T00:00:00.000Z' })], hide })
+    const v = await service.listView()
+    expect(v.items.map((i) => [i.workspace.id, i.restorable])).toEqual([
+      [HIDE_WORKSPACE_ID, 3],
+      ['ws-b', undefined],
+      ['ws-a', undefined]
+    ])
+    expect(service.hideRestorable()).toBe(3)
+  })
+})
+
+describe('화면 감추기 불러오기(run): 저장한 창만 남기고 나머지 앱 창을 내린다', () => {
+  it('저장한 창(업무 창)은 불러오고, 그 밖의 창을 z-순서대로 내리며, runner에 내린 창을 넘긴다. 알림·결과·기록(건수만)', async () => {
+    const { hide, calls } = fakeHide()
+    const { w, service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS, WORD], hide })
+    const r = await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(calls).toEqual(['release:press', 'hide:201,202|front:201|carry:0'])
+    expect(w.plans).toHaveLength(1)
+    expect(w.runHidden).toEqual([['201', '202']])
+    expect(r).toMatchObject({ ok: true, hide: { kind: 'hide', minimized: 2, elevated: 0, skipped: 0, saved: true } })
+    if (!r.ok) throw new Error('ok expected')
+    expect(w.notes).toEqual([hideSummary(HIDE_WORKSPACE_NAME, r.report, r.hide!)])
+    expect(w.logs).toContainEqual(['workspace.hide', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, minimized: 2, elevated: 0, hung: 0, failed: 0, why: 'first', saved: true, desktop: false })])
+    expect(w.logs).toContainEqual(['workspace.restore', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, total: 3, placed: 3 })])
+    expect(w.restored).toEqual([{ id: HIDE_WORKSPACE_ID, source: 'hotkey', after: 'workspace.hide' }])
+  })
+
+  it('저장한 창이 없으면(처음) 모든 앱 창을 내리고 불러오기는 하지 않으며, 감추기 직전 앞 창을 내렸으면 바탕 화면에 포커스', async () => {
+    const { hide, calls } = fakeHide()
+    const { w, service } = world({ list: [hideEmpty()], windows: [CHAT, ...TEST_WINDOWS], hide })
+    const r = await service.run(HIDE_WORKSPACE_ID, 'palette')
+    expect(calls).toEqual(['release:press', 'hide:201,101,102,103|front:201|carry:0', 'desktop'])
+    expect(w.plans).toEqual([])
+    expect(r).toMatchObject({ ok: true, report: { total: 0, placed: 0 }, hide: { kind: 'hide', minimized: 4, saved: false } })
+    expect(w.notes).toEqual(['화면 감추기 · 창 4개를 내렸어요 · 설정에서 남길 창을 저장할 수 있어요'])
+  })
+
+  it('다시 누름(10분 안): 내렸던 창을 되돌리고 알린다(창 목록·runner를 부르지 않는다)', async () => {
+    const decide: PressDecision = { kind: 'restore', windows: [{ hwnd: '202', maximized: true }, { hwnd: '201', maximized: false }], focus: '201' }
+    const { hide, calls } = fakeHide({ decide })
+    const { w, service } = world({ list: [hideSaved()], hide })
+    const r = await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(calls).toEqual(['release:press', 'unhide:202,201|focus:201'])
+    expect(w.snapshots).toBe(0)
+    expect(w.plans).toEqual([])
+    expect(r).toMatchObject({ ok: true, hide: { kind: 'unhide', restored: 2, skipped: 0 } })
+    expect(w.notes).toEqual(['화면 감추기 · 내렸던 창 2개를 되돌렸어요'])
+    expect(w.logs).toContainEqual(['workspace.unhide', expect.objectContaining({ source: 'hotkey', id: HIDE_WORKSPACE_ID, restored: 2, skipped: 0, focused: true })])
+  })
+
+  it('사용자가 내린 창을 되살린 뒤 누르면(changed) 다시 감추고 아직 최소화된 창을 이어서 기억한다', async () => {
+    const { hide, calls } = fakeHide({ decide: { kind: 'hide', why: 'changed', carry: [{ hwnd: '300', maximized: false }] } })
+    const { service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'bar')
+    expect(calls).toContain('hide:201|front:201|carry:1')
+  })
+
+  it('Win32를 쓸 수 없으면 보안 프로그램 안내만 하고 아무 창도 내리지 않는다', async () => {
+    const { hide, calls } = fakeHide()
+    const { w, service } = world({ list: [hideSaved()], native: false, hide })
+    expect(await service.run(HIDE_WORKSPACE_ID, 'hotkey')).toEqual({ ok: false, reason: 'native-unavailable' })
+    expect(calls).toEqual([])
+    expect(w.notes).toEqual([WORKSPACE_NOTES.nativeUnavailable])
+  })
+
+  it('다른 워크스페이스를 불러오면 먼저 항상 위 고정을 푼다(새 배치가 고정한 창 밑에 깔리지 않게)', async () => {
+    const { hide, calls } = fakeHide()
+    const { service } = world({ list: [hideSaved(), testWorkspace()], hide })
+    await service.run('ws-qa', 'hotkey')
+    expect(calls).toEqual(['release:workspace'])
+  })
+})
+
+describe('감춘 동안 업무 창을 항상 위에 두기(keepOnTop, 기본 꺼짐)', () => {
+  it('켜져 있으면 배치한 업무 창을 고정한다: 감추기 전에 이미 항상 위였던 창은 빼고, 업무 창 전체를 앞 창 판단에 넘긴다', async () => {
+    const { hide, calls } = fakeHide({ topmost: ['102'] })
+    const { service } = world({ list: [hideSaved({ keepOnTop: true })], windows: [CHAT, ...TEST_WINDOWS], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(calls).toContain('pin:103,101|keep:101,102,103')
+  })
+
+  it('꺼져 있으면 아무 창도 고정하지 않는다', async () => {
+    const { hide, calls } = fakeHide()
+    const { service } = world({ list: [hideSaved()], windows: [CHAT, ...TEST_WINDOWS], hide })
+    await service.run(HIDE_WORKSPACE_ID, 'hotkey')
+    expect(calls.filter((c) => c.startsWith('pin:'))).toEqual([])
+  })
+
+  it('setKeepOnTop: 기본 워크스페이스에만 저장하고(켜면 true, 끄면 칸을 지움), 끄면 지금 고정을 푼다', async () => {
+    const { hide, calls } = fakeHide()
+    const { w, service } = world({ list: [hideEmpty(), testWorkspace()], hide })
+    expect(await service.setKeepOnTop(HIDE_WORKSPACE_ID, true)).toBe(true)
+    expect(w.list[0].keepOnTop).toBe(true)
+    expect(await service.setKeepOnTop(HIDE_WORKSPACE_ID, false)).toBe(true)
+    expect(Object.hasOwn(w.list[0], 'keepOnTop')).toBe(false)
+    expect(calls).toEqual(['release:off'])
+    expect(await service.setKeepOnTop('ws-qa', true)).toBe(false)
+    expect(w.saves).toBe(2)
+    expect(w.logs).toContainEqual(['workspace.keepOnTop', { id: HIDE_WORKSPACE_ID, on: true }])
+  })
+
+  it('앱을 끝낼 때(shutdown) 고정을 푼다', () => {
+    const { hide, calls } = fakeHide()
+    world({ hide }).service.shutdown()
+    expect(calls).toEqual(['release:quit'])
   })
 })

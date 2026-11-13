@@ -45,6 +45,11 @@ export interface Workspace {
   /** 모니터 구성 지문 → 배치 */
   layouts: Record<string, SavedLayout>
   updatedAt: string
+  /**
+   * 기본 워크스페이스(화면 감추기)만: 감춘 동안 업무 창을 항상 위에 둔다(2026-11-12 사용자 결정, 기본 꺼짐). 켰을 때만 true로 저장하고
+   * 다른 값·다른 워크스페이스에서는 읽지 않는다
+   */
+  keepOnTop?: boolean
 }
 
 export const WORKSPACES_FORMAT = 'sure-mate-workspaces'

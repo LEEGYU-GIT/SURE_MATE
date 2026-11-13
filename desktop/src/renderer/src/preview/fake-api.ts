@@ -13,6 +13,7 @@ import builtinIntents from '../../../../resources/intents.json'
 import { parseIntentPack } from '../../../shared/natural/intent-pack'
 import type { NaturalChangeResult, NaturalView } from '../../../shared/natural/natural-ipc'
 import type { UsageRecord } from '../../../shared/natural/usage'
+import { isHideWorkspace } from '../../../shared/workspace/builtin'
 import { applyWorkspaceEdit } from '../../../shared/workspace/edit'
 import { WORKSPACE_NOTES } from '../../../shared/workspace/messages'
 import type { WorkspaceListView } from '../../../shared/workspace/workspace-ipc'
@@ -140,6 +141,7 @@ export function createFakeApi(f: Partial<FakeFixtures> = {}): SureMateApi {
     runWorkspace: async () => ({ ok: false, reason: 'native-unavailable' }),
     saveWorkspaceNew: async () => ({ ok: false, reason: 'native-unavailable', message: WORKSPACE_NOTES.nativeUnavailable }),
     removeWorkspace: async (id) => ws.remove(id),
+    setWorkspaceKeepOnTop: async (id, on) => ws.setKeepOnTop(id, on),
     saveWorkspaceAs: async () => ({ ok: false, reason: 'native-unavailable', message: '' }),
     naturalView: async () => natural.view(),
     onNaturalChanged: (cb) => natural.listen(cb),
@@ -184,6 +186,7 @@ function fakeWorkspaces(fx: FakeFixtures): {
   edit(id: string, edit: Parameters<SureMateApi['editWorkspace']>[1]): ReturnType<SureMateApi['editWorkspace']>
   remove(id: string): Promise<boolean>
   setHotkey(id: string, acc: string | null): void
+  setKeepOnTop(id: string, on: boolean): Promise<boolean>
 } {
   let state: WorkspaceListView = fx.workspaces ?? { items: [], canControl: true }
   const listeners = new Set<(v: WorkspaceListView) => void>()
@@ -210,7 +213,21 @@ function fakeWorkspaces(fx: FakeFixtures): {
       return r
     },
     async remove(id) {
+      // 기본 워크스페이스(화면 감추기)는 앱처럼 지우지 않는다
+      if (isHideWorkspace(id)) return false
       publish({ ...state, items: state.items.filter((i) => i.workspace.id !== id) })
+      return true
+    },
+    async setKeepOnTop(id, on) {
+      if (!isHideWorkspace(id)) return false
+      publish({
+        ...state,
+        items: state.items.map((i) => {
+          if (i.workspace.id !== id) return i
+          const { keepOnTop: _drop, ...rest } = i.workspace
+          return { ...i, workspace: on ? { ...rest, keepOnTop: true } : rest }
+        })
+      })
       return true
     },
     setHotkey(id, acc) {

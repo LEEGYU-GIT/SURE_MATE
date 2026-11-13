@@ -5,10 +5,15 @@ import { log } from '../log'
 import { getMonitors, toDip, toPhysical } from '../native/coords'
 import { nativeStatus } from '../native/win32'
 import {
+  focusDesktop,
+  foregroundRoot,
   getForegroundWindow,
+  isTopmost,
   isWindowVisible,
   listWindows,
+  minimizeWindow,
   moveWindow,
+  pinWindow,
   raiseWindow,
   readWindowState,
   selfElevated,
@@ -17,6 +22,7 @@ import {
   showWindowNormal
 } from '../native/windows'
 import { notify } from '../notify'
+import { createHideController } from './hide-runner'
 import { createRestoreRunner, type OwnWindowState, unfocusableOwnWindow } from './restore-runner'
 import { createWorkspaceService, type WorkspaceService, type WorkspaceSource } from './workspace-service'
 import { createWorkspaceCache } from './workspace-store'
@@ -85,8 +91,42 @@ export function createWorkspaceRuntime(o: {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: Date.now
   })
+  // 화면 감추기(기본 워크스페이스): 다른 앱 창을 활성화 없이 내리고 되돌리며, 옵션이 켜져 있으면 업무 창을 항상 위에 둔다.
+  // 창 기능은 모두 nativeStatus()를 확인한다(서비스가 먼저 nativeOk로 막는다)
+  const hide = createHideController({
+    foreground: getForegroundWindow,
+    // 숨은 창(숨은 팔레트, 트레이로 숨은 앱)은 사라진 창으로 본다: 되돌리거나 포커스를 주지 않는다(최소화한 창은 보이는 창이다)
+    state: (hwnd) => {
+      const s = isWindowVisible(hwnd) ? readWindowState(hwnd) : null
+      return s ? { minimized: s.minimized, maximized: s.maximized, hung: s.hung } : null
+    },
+    minimize: minimizeWindow,
+    unminimize: (hwnd, maximized) => (maximized ? showWindowMaximized(hwnd) : showWindowNormal(hwnd, false)),
+    raise: raiseWindow,
+    setForeground,
+    focusDesktop,
+    topmost: isTopmost,
+    pin: (hwnd) => pinWindow(hwnd, true),
+    unpin: (hwnd) => pinWindow(hwnd, false),
+    foregroundRoot,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: Date.now,
+    every: (ms, fn) => {
+      const t = setInterval(fn, ms)
+      return () => clearInterval(t)
+    },
+    log
+  })
+  // 이번 실행에서 workspaces.json을 읽다가 문제가 있었는지(있으면 기본 워크스페이스를 자동으로 저장하지 않는다)
+  let loadErrors = false
   return createWorkspaceService({
-    store: createWorkspaceCache(o.userData, o.reportErrors),
+    store: createWorkspaceCache(o.userData, (errors) => {
+      loadErrors = true
+      o.reportErrors(errors)
+    }),
+    loadClean: () => !loadErrors,
+    hide,
+    selfPid: process.pid,
     nativeOk: native,
     snapshot: () => ({ windows: native() ? listWindows() : [], monitors: getMonitors() }),
     monitors: getMonitors,

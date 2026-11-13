@@ -15,6 +15,7 @@ import { parseGlossaryPack } from '../shared/glossary/pack'
 import { parseTemplatePack } from '../shared/template/pack'
 import type { Template } from '../shared/template/types'
 import type { MaskingMode, PaletteItem } from '../shared/types'
+import { defaultHideHotkey, HIDE_DEFAULT_HOTKEY, HIDE_WORKSPACE_ID } from '../shared/workspace/builtin'
 import { monitorFingerprint } from '../shared/workspace/monitors'
 import { appEvents } from './app-events'
 import { createBarCommands } from './bar/bar-commands'
@@ -387,7 +388,8 @@ function startBar(): void {
     saveBarShape,
     copyWiki: (id) => (glossaryRuntime ? glossaryRuntime.copyForCard(id) : Promise.resolve(false)),
     lookupClipboard: () => (wikiCard ? wikiCard.lookupClipboard() : Promise.resolve()),
-    workspaceMenu: async (maxHeight) => workspaceMenuContent(workspaceSvc ? await workspaceSvc.list() : [], monitorFingerprint(getMonitors()), nativeStatus().ok, maxHeight),
+    workspaceMenu: async (maxHeight) =>
+      workspaceMenuContent(workspaceSvc ? await workspaceSvc.list() : [], monitorFingerprint(getMonitors()), nativeStatus().ok, maxHeight, workspaceSvc?.hideRestorable() ?? 0),
     // 메뉴는 이미 닫혔고 포커스는 원래 창에 있다. 알림(이름 포함)·바쁨·Win32 불가는 서비스가 처리한다
     onWorkspaceAction: async (a) => {
       if (a.type === 'workspace-edit') {
@@ -646,6 +648,11 @@ async function startShell(): Promise<void> {
     const { failed } = workspaceHotkeys.sync(await workspaces.list())
     if (failed.length) warn(`워크스페이스 단축키를 등록하지 못했어요: ${failed.map((f) => f.hotkey).join(', ')}`)
     workspaces.onChange((list) => void workspaceHotkeys.sync(list))
+    // 기본 워크스페이스 '화면 감추기'(2026-11-12): 없으면 만든다. 단축키는 만들 때만 Ctrl+Alt+H가 비어 있으면(단축키 바꾸기 검사 ok:
+    // 막힌 조합·다른 단축키와 겹침·다른 앱이 씀이 아님) 정하고 아니면 없음. 위에서 등록한 워크스페이스 단축키와도 견주도록 맞춘 뒤에 묻는다
+    await workspaces.ensureBuiltin({
+      hotkey: () => defaultHideHotkey(hotkeyChanger?.check(workspaceHotkeyId(HIDE_WORKSPACE_ID), HIDE_DEFAULT_HOTKEY).level ?? null)
+    })
   }
 
   flushFileErrors()
@@ -816,7 +823,7 @@ if (!app.requestSingleInstanceLock()) {
     /** 지금 팔레트 항목(팔레트 목록과 같은 규칙). 설정 창 말하듯 입력 탭은 이것으로 기억한 문장·의도 대상의 이름과 구역을 찾는다 */
     const paletteItemsOf = async (list: Template[], glossary: GlossaryEntry[]): Promise<PaletteItem[]> => {
       // 워크스페이스 구역: "지금 배치 저장"과 저장한 배치(지금 모니터 구성과 다르면 부제에 알린다)
-      const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()))
+      const workspaceItems = workspacePaletteItems(await workspaceService.list(), monitorFingerprint(getMonitors()), { restorable: workspaceService.hideRestorable() })
       return buildPaletteItems(list, DEV_COMMAND_ITEMS, {
         maskingMode: settings.masking.mode,
         glossary,
@@ -893,6 +900,7 @@ if (!app.requestSingleInstanceLock()) {
         run: (id) => workspaceService.run(id, 'editor'),
         saveNew: () => workspaceService.saveNew({ source: 'editor', quiet: true }),
         remove: (id) => workspaceService.remove(id),
+        setKeepOnTop: (id, on) => workspaceService.setKeepOnTop(id, on),
         saveAs: (name) => workspaceCmds.saveAs(name)
       },
       // 펫 채널은 펫 창이 보낸 것만 받는다(펫 런타임은 바 다음에 만든다)
@@ -1035,6 +1043,8 @@ if (!app.requestSingleInstanceLock()) {
 
   // 창이 모두 닫혀도 트레이에 남는다
   app.on('window-all-closed', () => {})
+  // 화면 감추기가 항상 위에 둔 업무 창을 앱이 끝나기 전에 푼다(그대로 두면 다른 창 위에 계속 남는다)
+  app.on('before-quit', () => workspaceSvc?.shutdown())
   app.on('will-quit', () => {
     hotkeyChanger?.dispose()
     globalShortcut.unregisterAll()

@@ -11,12 +11,17 @@ export type RawRect = { left: number; top: number; right: number; bottom: number
 const CONSTANTS = {
   GW_OWNER: 4,
   GWL_EXSTYLE: -20,
+  WS_EX_TOPMOST: 0x00000008,
   WS_EX_TOOLWINDOW: 0x80,
   WS_EX_NOACTIVATE: 0x08000000,
   SW_RESTORE: 9,
   SW_MAXIMIZE: 3,
   SW_SHOWMAXIMIZED: 3,
   SW_SHOWNOACTIVATE: 4,
+  /** 활성화 없이 최소화(화면 감추기: 다른 창이 활성화되지 않게) */
+  SW_SHOWMINNOACTIVE: 7,
+  /** GetAncestor: 맨 위 소유 창(대화상자 → 그 앱 창) */
+  GA_ROOTOWNER: 3,
   // SetWindowPos 플래그와 삽입 기준(winuser.h): SWP_NOSIZE 0x0001, SWP_NOMOVE 0x0002, SWP_NOACTIVATE 0x0010, SWP_NOOWNERZORDER 0x0200
   SWP_NOSIZE: 0x0001,
   SWP_NOMOVE: 0x0002,
@@ -32,8 +37,9 @@ const CONSTANTS = {
   INPUT_KEYBOARD: 1,
   KEYEVENTF_EXTENDEDKEY: 0x0001,
   KEYEVENTF_KEYUP: 0x0002,
-  // HWND_TOPMOST는 (HWND)-1. koffi 3의 포인터는 BigInt라 64비트 부호 없는 값으로 넘긴다.
+  // HWND_TOPMOST는 (HWND)-1, HWND_NOTOPMOST는 (HWND)-2. koffi 3의 포인터는 BigInt라 64비트 부호 없는 값으로 넘긴다.
   HWND_TOPMOST: BigInt.asUintN(64, -1n),
+  HWND_NOTOPMOST: BigInt.asUintN(64, -2n),
   // GetAsyncKeyState 가상 키 코드(winuser.h)
   VK_LBUTTON: 0x01,
   VK_RBUTTON: 0x02,
@@ -93,6 +99,9 @@ function bind(koffi: typeof Koffi) {
     GetWindowLongPtrW: user32.func('intptr_t __stdcall GetWindowLongPtrW(HWND hWnd, int nIndex)'),
     GetWindowThreadProcessId: user32.func('uint32_t __stdcall GetWindowThreadProcessId(HWND hWnd, _Out_ uint32_t *lpdwProcessId)'),
     GetForegroundWindow: user32.func('HWND __stdcall GetForegroundWindow()'),
+    GetAncestor: user32.func('HWND __stdcall GetAncestor(HWND hwnd, uint32_t gaFlags)'),
+    /** 바탕 화면 창(Progman). 셸이 없으면 NULL */
+    GetShellWindow: user32.func('HWND __stdcall GetShellWindow()'),
     SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(HWND hWnd)'),
     ShowWindow: user32.func('bool __stdcall ShowWindow(HWND hWnd, int nCmdShow)'),
     ShowWindowAsync: user32.func('bool __stdcall ShowWindowAsync(HWND hWnd, int nCmdShow)'),

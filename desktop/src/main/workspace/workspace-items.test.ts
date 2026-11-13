@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { HIDE_WORKSPACE_ALIASES, HIDE_WORKSPACE_ID, HIDE_WORKSPACE_NAME, withHideWorkspace } from '../../shared/workspace/builtin'
 import { monitorFingerprint } from '../../shared/workspace/monitors'
 import { L, P } from '../../shared/workspace/test-monitors'
 import { testWorkspace } from '../../shared/workspace/test-workspaces'
@@ -35,6 +36,26 @@ describe('workspacePaletteItems', () => {
     const ws = testWorkspace()
     ws.layouts[FP] = { ...ws.layouts[FP], windows: ws.layouts[FP].windows.map((x, i) => (i === 0 ? { ...x, enabled: false } : x)) }
     expect(workspacePaletteItems([ws], FP)[1].subtitle).toBe('창 2개')
+  })
+
+  it('화면 감추기(기본)는 지금 배치 저장 바로 다음에 고정(@ 다음 Enter는 그대로 저장), 별칭은 키워드', () => {
+    const hide = withHideWorkspace([], { now: new Date('2020-01-01T00:00:00.000Z'), hotkey: 'Ctrl+Alt+H' }).list[0]
+    const items = workspacePaletteItems([testWorkspace({ updatedAt: '2026-11-11T00:00:00.000Z' }), hide], FP)
+    expect(items.map((i) => i.id)).toEqual([WORKSPACE_SAVE_ID, `workspace:${HIDE_WORKSPACE_ID}`, 'workspace:ws-qa'])
+    expect(items[1]).toEqual({
+      id: `workspace:${HIDE_WORKSPACE_ID}`,
+      group: 'workspace',
+      title: HIDE_WORKSPACE_NAME,
+      subtitle: '열린 창을 모두 내려요 · Ctrl+Alt+H',
+      keywords: [...HIDE_WORKSPACE_ALIASES]
+    })
+  })
+
+  it('화면 감추기 부제: 저장한 창이 있으면 그 창만 남긴다고, 되돌릴 창이 있으면 다시 누르면 되돌린다고(다른 구성은 배치가 있을 때만)', () => {
+    const saved = testWorkspace({ id: HIDE_WORKSPACE_ID, name: HIDE_WORKSPACE_NAME })
+    expect(workspacePaletteItems([saved], FP)[1].subtitle).toBe('창 3개만 남기고 나머지 창은 내려요')
+    expect(workspacePaletteItems([saved], monitorFingerprint([P]))[1].subtitle).toBe('창 3개만 남기고 나머지 창은 내려요 · 다른 모니터 구성')
+    expect(workspacePaletteItems([saved], FP, { restorable: 7 })[1].subtitle).toBe('다시 누르면 내렸던 창 7개를 되돌려요')
   })
 
   it('updatedAt 내림차순(최근에 바꾼 것 먼저), 받은 목록은 고치지 않는다', () => {
@@ -173,6 +194,16 @@ describe('workspaceMenuContent: 바 펼침 창 메뉴 내용', () => {
     expect(workspaceMenuContent(many(3), FP, true, 512)).toMatchObject({ more: 0 })
     // 행이 하나도 들어가지 않으면 모두 more(빈 목록과 다르다)
     expect(workspaceMenuContent(many(2), FP, true, 150)).toMatchObject({ workspaces: [], more: 2 })
+  })
+
+  it('화면 감추기(기본)는 최근에 바꾼 순서와 상관없이 첫 행이고 한 행을 차지한다. 되돌릴 창 수를 함께 싣는다', () => {
+    const hide = { ...withHideWorkspace([], { now: new Date('2020-01-01T00:00:00.000Z'), hotkey: null }).list[0] }
+    const c = workspaceMenuContent([...many(10), hide], FP, true, undefined, 4)
+    expect(c.workspaces[0]).toEqual({ id: HIDE_WORKSPACE_ID, name: HIDE_WORKSPACE_NAME, windows: 0, otherConfig: false, hide: true, restorable: 4 })
+    expect(c.workspaces.slice(1).map((w) => w.id)).toEqual(['ws-9', 'ws-8', 'ws-7', 'ws-6', 'ws-5', 'ws-4', 'ws-3'])
+    expect(c.more).toBe(3)
+    // 되돌릴 창이 없으면 restorable을 싣지 않는다
+    expect(workspaceMenuContent([hide], FP, true).workspaces[0]).toEqual({ id: HIDE_WORKSPACE_ID, name: HIDE_WORKSPACE_NAME, windows: 0, otherConfig: false, hide: true })
   })
 
   it('창 수는 켜진 창만, otherConfig는 지금 지문의 배치가 없을 때', () => {

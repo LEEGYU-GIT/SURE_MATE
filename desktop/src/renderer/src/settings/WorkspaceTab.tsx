@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { isImeComposing } from '../../../shared/ime'
 import { withObjectParticle } from '../../../shared/josa'
-import { restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from '../../../shared/workspace/messages'
+import { isHideWorkspace } from '../../../shared/workspace/builtin'
+import { hideSummary, restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from '../../../shared/workspace/messages'
 import { type SavedLayout, type Workspace, WORKSPACE_LIMITS } from '../../../shared/workspace/types'
 import type { WorkspaceEditResult, WorkspaceListView, WorkspaceRunResult, WorkspaceSaveResult, WorkspaceView } from '../../../shared/workspace/workspace-ipc'
-import { ChevronLeftIcon, ChevronRightIcon, MonitorIcon, TriangleAlertIcon } from '../design/icons'
-import { Button, ConfirmButton, type Notice, NoticeLine, Row, Section, TextField } from './controls'
+import { ChevronLeftIcon, ChevronRightIcon, EyeOffIcon, MonitorIcon, TriangleAlertIcon } from '../design/icons'
+import { Button, ConfirmButton, type Notice, NoticeLine, Row, Section, TextField, Toggle } from './controls'
 import { HotkeyRecorder } from './HotkeyRecorder'
 import { monitorLabel } from './monitor-preview'
 import { MonitorPreview } from './MonitorPreview'
@@ -75,7 +76,26 @@ const COPY = {
   saveFailed: '저장하지 못했어요. 다시 해 주세요',
   cancelled: '불러오기를 그만뒀어요',
   empty: '불러올 창이 없어요. 창 배치에서 창을 하나 이상 체크해 주세요.',
-  runFailed: '불러오지 못했어요. 다시 해 주세요'
+  runFailed: '불러오지 못했어요. 다시 해 주세요',
+  // 기본 워크스페이스 '화면 감추기'(2026-11-12, design:ux-copy). 문장마다 줄을 바꾼다
+  builtinTitle: '기본 워크스페이스',
+  hideAll: '열린 창을 모두 내려요',
+  hideKeep: (n: number): string => `창 ${n}개만 남기고 나머지 창은 내려요`,
+  hideRestore: (n: number): string => `다시 누르면 내렸던 창 ${n}개를 되돌려요`,
+  hideAbout: ['누르면 이 배치만 남고 나머지 창은 모두 내려가요.', '10분 안에 한 번 더 누르면 내렸던 창이 돌아와요.'],
+  hideNow: '지금 감추기',
+  hideHotkeyDesc: '누르면 바로 감추고, 10분 안에 다시 누르면 되돌려요',
+  hiding: '감추는 중…',
+  unhide: '내렸던 창 되돌리기',
+  unhiding: '되돌리는 중…',
+  hideLayoutHelp: (n: number): string =>
+    n > 0 ? `남길 창 ${n}개를 불러오고 나머지 창은 내려요. 같은 프로그램 창이 여럿이면 ‘제목에 포함’으로 구분해요.` : '남길 창이 없어 누르면 열린 창을 모두 내려요.',
+  hideNoRules: '아직 남길 창이 없어 누르면 열린 창을 모두 내려요. 업무 창을 놓고 ‘지금 배치로 다시 저장’을 누르세요.',
+  hideRecaptureHelp: ['다시 저장하면 남길 창을', '지금 열린 창으로 바꿔요.', '이름·별칭·단축키는 그대로예요.'],
+  keepOnTopSection: '감추는 동안',
+  keepOnTop: '감춘 동안 업무 창을 항상 위에 두기',
+  keepOnTopDesc: '메신저 알림 같은 새 창이 업무 창을 덮지 못해요. 다른 창으로 옮기거나 다시 누르면 풀려요.',
+  keepOnTopFailed: '저장하지 못했어요. 다시 해 주세요'
 } as const
 
 /** main이 열라고 한 워크스페이스는 한 번만 연다(탭을 옮겼다 돌아오면 목록부터) */
@@ -199,18 +219,40 @@ export function WorkspaceTab(): React.JSX.Element {
     </Button>
   )
 
-  if (data.items.length === 0) {
+  const row = (v: WorkspaceView): React.JSX.Element => (
+    <WorkspaceRow
+      key={v.workspace.id}
+      view={v}
+      ref={(el) => {
+        if (el) rowRefs.current.set(v.workspace.id, el)
+        else rowRefs.current.delete(v.workspace.id)
+      }}
+      onOpen={() => {
+        setListNotice(null)
+        setOpened({ id: v.workspace.id, focus: 'back', seq: Date.now(), notice: null })
+      }}
+    />
+  )
+  // 기본 워크스페이스(화면 감추기)는 따로 맨 위 구역에 고정하고, 사용자가 저장한 워크스페이스만 세고 빈 화면을 고른다
+  const builtin = data.items.filter((v) => isHideWorkspace(v.workspace.id))
+  const saved = data.items.filter((v) => !isHideWorkspace(v.workspace.id))
+  const builtinSection = builtin.length > 0 ? <Section title={COPY.builtinTitle}>{builtin.map(row)}</Section> : null
+
+  if (saved.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 rounded-window bg-surface-inset px-8 pt-9 pb-8 text-center">
-        <EmptyArt />
-        <div className="flex flex-col gap-1.5">
-          <p className="text-body leading-5 font-semibold text-fg">{COPY.emptyTitle}</p>
-          <p className="max-w-[420px] text-small leading-5 text-balance break-keep text-fg-2">{COPY.emptyBody}</p>
+      <>
+        {builtinSection}
+        <div className="flex flex-col items-center gap-4 rounded-window bg-surface-inset px-8 pt-9 pb-8 text-center">
+          <EmptyArt />
+          <div className="flex flex-col gap-1.5">
+            <p className="text-body leading-5 font-semibold text-fg">{COPY.emptyTitle}</p>
+            <p className="max-w-[420px] text-small leading-5 text-balance break-keep text-fg-2">{COPY.emptyBody}</p>
+          </div>
+          {saveButton}
+          {!data.canControl ? <NoticeLine notice={{ tone: 'warn', text: COPY.blocked.join(' ') }} className="max-w-[420px] text-balance" /> : null}
+          {listNotice ? <NoticeLine notice={listNotice} className="max-w-[420px] text-balance" /> : null}
         </div>
-        {saveButton}
-        {!data.canControl ? <NoticeLine notice={{ tone: 'warn', text: COPY.blocked.join(' ') }} className="max-w-[420px] text-balance" /> : null}
-        {listNotice ? <NoticeLine notice={listNotice} className="max-w-[420px] text-balance" /> : null}
-      </div>
+      </>
     )
   }
 
@@ -224,34 +266,28 @@ export function WorkspaceTab(): React.JSX.Element {
         {!data.canControl ? <NoticeLine notice={{ tone: 'warn', text: COPY.blocked.join(' ') }} /> : null}
         {listNotice ? <NoticeLine notice={listNotice} /> : null}
       </div>
-      <Section title={COPY.listTitle(data.items.length)}>
-        {data.items.map((v) => (
-          <WorkspaceRow
-            key={v.workspace.id}
-            view={v}
-            ref={(el) => {
-              if (el) rowRefs.current.set(v.workspace.id, el)
-              else rowRefs.current.delete(v.workspace.id)
-            }}
-            onOpen={() => {
-              setListNotice(null)
-              setOpened({ id: v.workspace.id, focus: 'back', seq: Date.now(), notice: null })
-            }}
-          />
-        ))}
-      </Section>
+      {builtinSection}
+      <Section title={COPY.listTitle(saved.length)}>{saved.map(row)}</Section>
     </>
   )
 }
+
+/** 저장한 배치가 있는지(저장 전의 화면 감추기는 없다: 다른 모니터 구성으로 보이지 않게) */
+const hasLayout = (ws: Workspace): boolean => Object.keys(ws.layouts).length > 0
+
+/** 화면 감추기 행·부제: 되돌릴 창이 있으면 다시 누르면 되돌린다고, 아니면 남길 창 수(저장 전이면 모든 창을 내린다) */
+const hideCaption = (n: number, restorable: number | undefined): string => (restorable ? COPY.hideRestore(restorable) : n > 0 ? COPY.hideKeep(n) : COPY.hideAll)
 
 /** 목록 한 줄: 이름, 포함한 창 수(다른 모니터 구성이면 주황 글자로), 단축키와 등록 상태. 누르면 연다 */
 function WorkspaceRow({ view, onOpen, ref }: { view: WorkspaceView; onOpen(): void; ref: React.Ref<HTMLButtonElement> }): React.JSX.Element {
   const ws = view.workspace
   const n = enabledCount(ws)
+  const caption = isHideWorkspace(ws.id) ? hideCaption(n, view.restorable) : COPY.windows(n)
+  const otherConfig = !view.sameConfig && hasLayout(ws)
   const label = [
     `${ws.name} 열기`,
-    COPY.windows(n),
-    view.sameConfig ? null : COPY.otherConfig,
+    caption,
+    otherConfig ? COPY.otherConfig : null,
     ws.hotkey ? `단축키 ${ws.hotkey}${view.hotkeyRegistered ? '' : `, ${COPY.notRegistered}`}` : null
   ]
     .filter(Boolean)
@@ -267,8 +303,8 @@ function WorkspaceRow({ view, onOpen, ref }: { view: WorkspaceView; onOpen(): vo
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body leading-5 text-fg">{ws.name}</span>
         <span className="block truncate text-small leading-5 text-fg-2">
-          {COPY.windows(n)}
-          {view.sameConfig ? null : <span className="text-warn"> · {COPY.otherConfig}</span>}
+          {caption}
+          {otherConfig ? <span className="text-warn"> · {COPY.otherConfig}</span> : null}
         </span>
       </span>
       {ws.hotkey ? (
@@ -331,6 +367,8 @@ function WorkspaceDetail({
 }): React.JSX.Element {
   const { track } = useSettingsCtx()
   const api = window.sureMate
+  /** 기본 워크스페이스 화면 감추기: 하는 일 안내·감추기 단추·항상 위 옵션, 지우기 없음 */
+  const hide = isHideWorkspace(item.workspace.id)
   const [saved, setSaved] = useState(item.workspace)
   const [draft, setDraft] = useState<WorkspaceDraft>(() => draftFromWorkspace(item.workspace))
   const savedRef = useRef(saved)
@@ -406,6 +444,8 @@ function WorkspaceDetail({
     const r = await api.runWorkspace(savedRef.current.id).catch((): WorkspaceRunResult => ({ ok: false, reason: 'invalid' }))
     setAction(null)
     setActionNotice(runNotice(savedRef.current.name, r))
+    // 화면 감추기: 다음 누름이 되돌리기인지(단추 이름) 새 목록으로 받는다
+    if (hide) onRefresh()
   }
 
   const recapture = async (): Promise<void> => {
@@ -423,6 +463,9 @@ function WorkspaceDetail({
   const layout = firstLayout(saved)
   const enabled = draft.rules.filter((r) => r.enabled).length
   const busy = action !== null
+  /** 화면 감추기를 지금 누르면 되돌리기인지(단추 이름) */
+  const restoring = hide && (item.restorable ?? 0) > 0
+  const runLabel = hide ? (action === 'restore' ? (restoring ? COPY.unhiding : COPY.hiding) : restoring ? COPY.unhide : COPY.hideNow) : action === 'restore' ? COPY.restoring : COPY.restore
   // 그림은 칸의 글(포함 여부·대상 모니터)을 바로 따른다(저장 응답을 기다리지 않는다)
   const byId = new Map(draft.rules.map((r) => [r.id, r]))
   const shown: SavedLayout | null = layout && {
@@ -452,7 +495,20 @@ function WorkspaceDetail({
           </button>
           <h3 className="min-w-0 flex-1 truncate text-body leading-5 font-semibold text-fg">{saved.name}</h3>
         </div>
-        {item.sameConfig ? null : (
+        {hide ? (
+          // 화면 감추기가 하는 일(문장마다 줄을 바꾼다)
+          <p className="flex items-start gap-2 rounded-window border border-line bg-surface-inset px-3 py-2.5 text-small leading-5 break-keep text-fg-2">
+            <EyeOffIcon size={16} className="mt-0.5 shrink-0 text-brand" />
+            <span>
+              {COPY.hideAbout.map((line, i) => (
+                <span key={i} className="block">
+                  {line}
+                </span>
+              ))}
+            </span>
+          </p>
+        ) : null}
+        {item.sameConfig || !hasLayout(saved) ? null : (
           <p className="flex items-start gap-2 rounded-window border border-warn/35 bg-warn/10 px-3 py-2.5 text-small leading-5 break-keep text-warn">
             <TriangleAlertIcon size={16} className="mt-0.5 shrink-0" />
             {COPY.otherConfigLine}
@@ -482,7 +538,7 @@ function WorkspaceDetail({
             {/* 하는 동안은 busy(aria-disabled): 누른 단추가 포커스를 잃지 않는다(A-M8) */}
             <div className="flex flex-wrap gap-2 @min-[600px]:flex-col">
               <Button kind="primary" disabled={!canControl} busy={busy} onClick={() => void restore()}>
-                {action === 'restore' ? COPY.restoring : COPY.restore}
+                {runLabel}
               </Button>
               <Button disabled={!canControl} busy={busy} onClick={() => void recapture()}>
                 {action === 'recapture' ? COPY.saving : COPY.recapture}
@@ -490,7 +546,7 @@ function WorkspaceDetail({
             </div>
             {/* 단추를 쓸 수 없으면 그 까닭을, 쓸 수 있으면 다시 저장이 무엇을 바꾸는지를 단추 바로 아래에 */}
             <p className={`text-small leading-5 break-keep ${canControl ? 'text-fg-2' : 'text-warn'}`}>
-              {(canControl ? COPY.recaptureHelp : COPY.blocked).map((line, i) => (
+              {(canControl ? (hide ? COPY.hideRecaptureHelp : COPY.recaptureHelp) : COPY.blocked).map((line, i) => (
                 <span key={i} className="block">
                   {line}
                 </span>
@@ -526,13 +582,22 @@ function WorkspaceDetail({
                 />
               )}
             </FieldRow>
-            <HotkeyRow workspace={saved} registered={item.hotkeyRegistered} onChanged={onRefresh} />
+            <HotkeyRow workspace={saved} registered={item.hotkeyRegistered} description={hide ? COPY.hideHotkeyDesc : undefined} onChanged={onRefresh} />
           </Section>
 
+          {hide ? (
+            <Section title={COPY.keepOnTopSection}>
+              <KeepOnTopRow workspace={item.workspace} />
+            </Section>
+          ) : null}
+
           <Section title={COPY.layout}>
-            <p className={`border-b border-line px-4 py-3 text-small leading-5 break-keep ${enabled > 0 || !layout ? 'text-fg-2' : 'text-warn'}`}>
-              {COPY.layoutHelp(enabled)}
-            </p>
+            {/* 화면 감추기는 저장 전에도 쓸 수 있어(모든 창을 내린다) 주의 색 없이 하는 일을 적는다 */}
+            {hide && !layout ? null : (
+              <p className={`border-b border-line px-4 py-3 text-small leading-5 break-keep ${enabled > 0 || !layout || hide ? 'text-fg-2' : 'text-warn'}`}>
+                {hide ? COPY.hideLayoutHelp(enabled) : COPY.layoutHelp(enabled)}
+              </p>
+            )}
             {layout && layout.windows.length > 0 ? (
               <RuleList
                 layout={layout}
@@ -553,10 +618,12 @@ function WorkspaceDetail({
                 }}
               />
             ) : (
-              <p className="px-4 py-3 text-small leading-5 break-keep text-fg-2">{COPY.noRules}</p>
+              <p className="px-4 py-3 text-small leading-5 break-keep text-fg-2">{hide ? COPY.hideNoRules : COPY.noRules}</p>
             )}
           </Section>
 
+          {/* 기본 워크스페이스(화면 감추기)는 지울 수 없다(main도 거절한다) */}
+          {hide ? null : (
           <Section title={COPY.removeSection}>
             <Row label={COPY.removeLabel} description={COPY.removeDesc} stack>
               {(f) => (
@@ -572,6 +639,7 @@ function WorkspaceDetail({
               )}
             </Row>
           </Section>
+          )}
         </div>
 
       </div>
@@ -579,8 +647,12 @@ function WorkspaceDetail({
   )
 }
 
-/** 불러오기 결과를 그 자리에 보이는 문구로(알림도 함께 뜬다) */
+/** 불러오기 결과를 그 자리에 보이는 문구로(알림도 함께 뜬다). 화면 감추기는 내린·되돌린 창 수 */
 function runNotice(name: string, r: WorkspaceRunResult): Notice {
+  if (r.ok && r.hide) {
+    const missed = r.hide.kind === 'hide' ? r.hide.elevated + r.hide.skipped : r.hide.skipped
+    return { tone: missed > 0 || r.report.placed < r.report.total ? 'warn' : 'ok', text: hideSummary(name, r.report, r.hide) }
+  }
   if (r.ok) return { tone: r.report.placed < r.report.total ? 'warn' : 'ok', text: restoreSummary(name, r.report) }
   switch (r.reason) {
     case 'cancelled':
@@ -598,6 +670,41 @@ function runNotice(name: string, r: WorkspaceRunResult): Notice {
     default:
       return { tone: 'error', text: COPY.runFailed }
   }
+}
+
+/**
+ * 감춘 동안 업무 창을 항상 위에 두기(화면 감추기의 옵션, 기본 꺼짐, 2026-11-12). 스위치는 누르면 바로 바뀌고 저장하며, 저장하지 못하면
+ * 되돌리고 까닭을 적는다. 다른 곳에서 바뀌면(목록 알림) 그 값을 따른다
+ */
+function KeepOnTopRow({ workspace }: { workspace: Workspace }): React.JSX.Element {
+  const saved = workspace.keepOnTop === true
+  const [pending, setPending] = useState<boolean | null>(null)
+  const [failed, setFailed] = useState(false)
+  const checked = pending ?? saved
+  return (
+    <Row label={COPY.keepOnTop} description={COPY.keepOnTopDesc}>
+      {(f) => (
+        <div className="flex flex-col items-end gap-1.5">
+          <Toggle
+            {...f}
+            checked={checked}
+            onChange={(on) => {
+              setPending(on)
+              setFailed(false)
+              void window.sureMate
+                .setWorkspaceKeepOnTop(workspace.id, on)
+                .catch(() => false)
+                .then((ok) => {
+                  setPending(null)
+                  if (!ok) setFailed(true)
+                })
+            }}
+          />
+          {failed ? <NoticeLine notice={{ tone: 'error', text: COPY.keepOnTopFailed }} /> : null}
+        </div>
+      )}
+    </Row>
+  )
 }
 
 /** 이름·설명 아래에 입력칸(편집 칸은 좁은 왼쪽 열이라 위아래로 쌓는다). 저장 오류는 입력칸 바로 아래에 보인다 */
@@ -639,7 +746,18 @@ function FieldRow({
  * 워크스페이스 단축키(설계 §11): 지금 조합(없으면 '없음')·등록 상태, 정하기·바꾸기(단축키 탭과 같은 녹화 칸, id workspace:<id>),
  * 지우기. 녹화 칸이나 지우기 단추가 사라져 포커스를 잃으면 정하기·바꾸기 단추로 돌려준다(키보드만으로 사용, §16).
  */
-function HotkeyRow({ workspace, registered, onChanged }: { workspace: Workspace; registered: boolean; onChanged(): void }): React.JSX.Element {
+function HotkeyRow({
+  workspace,
+  registered,
+  description = COPY.hotkeyDesc,
+  onChanged
+}: {
+  workspace: Workspace
+  registered: boolean
+  /** 단축키가 하는 일(화면 감추기는 감추기·되돌리기) */
+  description?: string
+  onChanged(): void
+}): React.JSX.Element {
   const api = window.sureMate.settings
   const hotkeyId = `workspace:${workspace.id}` as const
   const acc = workspace.hotkey
@@ -682,7 +800,7 @@ function HotkeyRow({ workspace, registered, onChanged }: { workspace: Workspace;
           <div id={labelId} className="text-body leading-5 text-fg">
             {COPY.hotkey}
           </div>
-          <div className="mt-0.5 text-small leading-5 text-balance break-keep text-fg-2">{COPY.hotkeyDesc}</div>
+          <div className="mt-0.5 text-small leading-5 text-balance break-keep text-fg-2">{description}</div>
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <kbd className={`rounded-control border border-line bg-surface-inset px-2 py-1 font-ui text-small whitespace-nowrap ${acc ? 'text-fg' : 'text-fg-3'}`}>{acc ?? COPY.none}</kbd>

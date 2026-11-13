@@ -283,10 +283,11 @@ function FlyoutStage({ bar, edge, driver }: { bar: BarViewState | null; edge: Ba
   )
 }
 
-/** 워크스페이스 메뉴 장면 내용(가상 이름) */
+/** 워크스페이스 메뉴 장면 내용(가상 이름). 기본 워크스페이스 화면 감추기가 첫 행(저장 전) */
 const WS_MENU: Extract<FlyoutContent, { kind: 'workspace-menu' }> = {
   kind: 'workspace-menu',
   workspaces: [
+    { id: 'builtin-hide', name: '화면 감추기', windows: 0, otherConfig: false, hide: true },
     { id: 'ws-qa', name: 'QA 모드', windows: 3, otherConfig: false },
     { id: 'ws-review', name: '가상자동차 요구사항 검토', windows: 4, otherConfig: false },
     { id: 'ws-dock', name: '외부 모니터 발표', windows: 2, otherConfig: true }
@@ -1027,6 +1028,31 @@ const WS_LIST: WorkspaceListView = {
   canControl: true
 }
 
+/** 기본 워크스페이스 화면 감추기: 처음 만든 그대로(저장한 창 없음, Ctrl+Alt+H 쓰는 중) */
+const WS_HIDE: Workspace = {
+  id: 'builtin-hide',
+  name: '화면 감추기',
+  aliases: ['감추기', '숨기기', '가리기', '화면 숨기기', '화면 가리기', '창 숨기기', '창 내리기'],
+  hotkey: 'Ctrl+Alt+H',
+  layouts: {},
+  updatedAt: '2026-11-12T09:00:00.000Z'
+}
+/** 업무 창 두 개(Excel·메모장)를 저장하고 항상 위 옵션을 켠 화면 감추기 */
+const WS_HIDE_SAVED: Workspace = {
+  ...previewWorkspace(
+    'builtin-hide',
+    '화면 감추기',
+    [
+      wsRule('h1', 'EXCEL.EXE', '가상자동차 보고서.xlsx - Excel', KP, { x: 0, y: 0, w: 0.6, h: 1 }, { order: 0 }),
+      wsRule('h2', 'notepad.exe', 'SureMate-WS-A - Windows 메모장', KP, { x: 0.6, y: 0, w: 0.4, h: 1 }, { order: 1 })
+    ],
+    { aliases: WS_HIDE.aliases, hotkey: 'Ctrl+Alt+H' }
+  ),
+  keepOnTop: true
+}
+/** 화면 감추기를 맨 위 구역에 둔 목록(앱의 실제 모습: 기본 워크스페이스는 늘 있다) */
+const WS_LIST_HIDE: WorkspaceListView = { ...WS_LIST, items: [{ ...wsView(WS_HIDE), sameConfig: false }, ...WS_LIST.items] }
+
 /**
  * 워크스페이스 탭 장면: 880×640 설정 창. open을 주면 그 워크스페이스를 연 채로(main이 연 것처럼 이름 칸을 골라 둔 뒤
  * prep.blur로 풀어 기본 모습을 찍는다)
@@ -1071,8 +1097,20 @@ const WORKSPACE_SCENES: Scene[] = [
     { ...WS_LIST, items: [wsView(WS_MANY), ...WS_LIST.items] },
     { open: 'ws-many', prep: { blur: true, hover: '[data-rule="m10"]' } }
   ),
-  workspaceScene('settings-workspace-list', '설정: 워크스페이스 목록(3개: 쓰는 중·다른 모니터 구성·등록 못 함)', WS_LIST),
-  workspaceScene('settings-workspace-empty', '설정: 저장한 워크스페이스 없음', { items: [], canControl: true }),
+  workspaceScene('settings-workspace-list', '설정: 워크스페이스 목록(기본 화면 감추기 + 3개: 쓰는 중·다른 모니터 구성·등록 못 함)', WS_LIST_HIDE),
+  workspaceScene('settings-workspace-empty', '설정: 저장한 워크스페이스 없음(기본 화면 감추기만)', { items: [{ ...wsView(WS_HIDE), sameConfig: false }], canControl: true }),
+  workspaceScene('settings-workspace-hide', '설정: 화면 감추기(처음 그대로: 저장한 창 없음, 지우기 없음, 항상 위 끔)', WS_LIST_HIDE, { open: 'builtin-hide', prep: { blur: true } }),
+  workspaceScene(
+    'settings-workspace-hide-saved',
+    '설정: 화면 감추기(업무 창 2개 저장, 항상 위 켬, 창 12개를 내린 뒤라 단추가 되돌리기)',
+    { ...WS_LIST, items: [{ ...wsView(WS_HIDE_SAVED), restorable: 12 }, ...WS_LIST.items] },
+    { open: 'builtin-hide', prep: { blur: true } }
+  ),
+  workspaceScene('settings-workspace-hide-end', '설정: 화면 감추기 아래쪽(감추는 동안: 항상 위 켬, 저장한 창 2개, 지우기 없음)', { ...WS_LIST, items: [wsView(WS_HIDE_SAVED), ...WS_LIST.items] }, {
+    open: 'builtin-hide',
+    prep: { blur: true, scrollEnd: true }
+  }),
+  workspaceScene('settings-workspace-hide-narrow', '설정: 화면 감추기, 가장 좁은 창 720×520', WS_LIST_HIDE, { open: 'builtin-hide', prep: { blur: true }, width: 720, height: 520 }),
   workspaceScene('settings-workspace-blocked', '설정: 보안 프로그램이 창 제어를 막음(저장·불러오기 단추 막힘, 편집은 됨)', { ...WS_LIST, canControl: false }, {
     open: 'ws-qa',
     prep: { blur: true }
@@ -1210,7 +1248,11 @@ export const SCENES: Scene[] = [
   ),
   flyoutScene('flyout-masking', '펼침 창: 가명 처리 기본값 메뉴(가명 후 되돌리기)', EDGE_RIGHT, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'restore' }),
   flyoutScene('flyout-masking-off', '펼침 창: 가명 처리 기본값 메뉴(끔 — 글과 주황으로)', EDGE_RIGHT_OFF, { itemId: 'masking' }, { kind: 'masking-menu', mode: 'off' }),
-  flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(저장한 배치 3개, 하나는 다른 모니터 구성)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU),
+  flyoutScene('flyout-workspaces', '펼침 창: 워크스페이스(화면 감추기 + 저장한 배치 3개, 하나는 다른 모니터 구성)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU),
+  flyoutScene('flyout-workspaces-hide-restore', '펼침 창: 워크스페이스(화면 감추기로 창 12개를 내린 뒤: 되돌리기 행)', EDGE_RIGHT, { itemId: 'workspace' }, {
+    ...WS_MENU,
+    workspaces: [{ id: 'builtin-hide', name: '화면 감추기', windows: 2, otherConfig: false, hide: true, restorable: 12 }, ...WS_MENU.workspaces.slice(1)]
+  }),
   flyoutScene('flyout-workspaces-empty', '펼침 창: 워크스페이스(저장한 배치 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { kind: 'workspace-menu', workspaces: [], canSave: true, more: 0 }),
   flyoutScene('flyout-workspaces-blocked', '펼침 창: 워크스페이스(보안 프로그램이 막아 저장 행을 쓸 수 없음)', EDGE_RIGHT, { itemId: 'workspace' }, { ...WS_MENU, canSave: false }),
   flyoutScene('flyout-workspaces-more', '펼침 창: 워크스페이스(8개 + 외 3개 더, 긴 이름은 한 줄로 줄임)', EDGE_RIGHT, { itemId: 'workspace' }, WS_MENU_MORE),

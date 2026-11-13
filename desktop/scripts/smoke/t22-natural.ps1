@@ -73,8 +73,14 @@ function RunText($run) { if ($run) { return [string]$run.id }; return 'none' }
 
 $form = $null
 try {
-  # 0. t22-run.ps1이 비운 상태인지(직접 실행하면 사용자 파일을 바꾸고, 최근 항목·학습이 목록 순서를 바꾼다)
-  $left = @(@('workspaces.json', 'phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
+  # 0. t22-run.ps1이 비운 상태인지(직접 실행하면 사용자 파일을 바꾸고, 최근 항목·학습이 목록 순서를 바꾼다).
+  #    앱은 시작할 때 기본 워크스페이스 '화면 감추기'(id builtin-hide)를 만들므로 workspaces.json에 그것만 있으면 빈 상태다
+  $left = @(@('phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
+  $wsPath = Join-Path $appDir 'workspaces.json'
+  if (Test-Path $wsPath) {
+    $wsNow = @(); try { $wsNow = @((Get-Content $wsPath -Raw -Encoding UTF8 | ConvertFrom-Json).workspaces) } catch { $wsNow = @('unreadable') }
+    if (@($wsNow | Where-Object { $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
+  }
   if ($left.Count -gt 0) { throw "t22-run.ps1로 실행한다(시작할 때 없어야 하는 파일이 있다: $($left -join ', '))" }
   $r.info_palette_hotkey = $Combo
   # 클립보드는 시험 중 가짜 글로 바뀐다. t22-run.ps1이 시작 전 글자 내용을 저장해 두었다가 되돌린다(내용은 로그·출력에 남기지 않는다)

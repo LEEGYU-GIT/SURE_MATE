@@ -70,6 +70,8 @@ export interface WorkspaceIpc {
   /** 워크스페이스 탭의 [지금 배치 저장](결과는 화면에 보이므로 알리지 않는다) */
   saveNew(): Promise<WorkspaceSaveResult>
   remove(id: string): Promise<boolean>
+  /** 화면 감추기의 감춘 동안 항상 위(기본 워크스페이스만) */
+  setKeepOnTop(id: string, on: boolean): Promise<boolean>
   /** 팔레트 `@이름` 줄(키 확인·성공 시 팔레트 숨김 포함) */
   saveAs(name: string): Promise<WorkspaceSaveResult>
 }
@@ -252,6 +254,10 @@ function registerWorkspaceIpc(d: IpcDeps): void {
   ipcMain.handle(IPC.workspaceRemove, (e, raw: unknown) => {
     const id = parseWorkspaceId(raw)
     return fromSettings(e) && id ? attempt(IPC.workspaceRemove, false, () => d.workspaces.remove(id)) : false
+  })
+  ipcMain.handle(IPC.workspaceSetKeepOnTop, (e, raw: unknown, on: unknown) => {
+    const id = parseWorkspaceId(raw)
+    return fromSettings(e) && id && typeof on === 'boolean' ? attempt(IPC.workspaceSetKeepOnTop, false, () => d.workspaces.setKeepOnTop(id, on)) : false
   })
   ipcMain.handle(IPC.workspaceSaveAs, (e, raw: unknown) => {
     const name = parseWorkspaceName(raw)

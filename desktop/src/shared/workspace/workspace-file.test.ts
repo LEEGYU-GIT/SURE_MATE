@@ -63,6 +63,29 @@ it('워크스페이스 31개는 30개와 오류, 같은 id는 앞의 것만', ()
   expect(d.errors).toHaveLength(1)
 })
 
+it('기본 워크스페이스(화면 감추기)는 30개 제한에 들지 않는다: 기본 하나와 사용자 30개는 모두 읽고 오류가 없다', () => {
+  const users = Array.from({ length: 30 }, (_, i) => ws({ id: `w${i}` }))
+  for (const at of [0, 30]) {
+    const list = [...users]
+    list.splice(at, 0, ws({ id: 'builtin-hide', name: '화면 감추기', layouts: {} }))
+    const r = parseWorkspaces(file(list))
+    expect(r.workspaces, `at ${at}`).toHaveLength(31)
+    expect(r.errors, `at ${at}`).toEqual([])
+  }
+  // 사용자 워크스페이스가 31개면 기본이 있어도 앞의 30개만 읽고 알린다
+  const over = parseWorkspaces(file([ws({ id: 'builtin-hide', name: '화면 감추기' }), ...users, ws({ id: 'w30' })]))
+  expect(over.workspaces).toHaveLength(31)
+  expect(over.workspaces.filter((w) => w.id !== 'builtin-hide')).toHaveLength(30)
+  expect(over.errors.length).toBeGreaterThan(0)
+})
+
+it('감춘 동안 항상 위(keepOnTop): 기본 워크스페이스에서 true일 때만 읽고, 다른 값·다른 워크스페이스에서는 뺀다(기본 꺼짐)', () => {
+  const hide = (v: unknown): Workspace => parseWorkspaces(file([ws({ id: 'builtin-hide', keepOnTop: v })])).workspaces[0]
+  expect(hide(true).keepOnTop).toBe(true)
+  for (const v of [false, 'true', 1, null, undefined]) expect(Object.hasOwn(hide(v), 'keepOnTop'), String(v)).toBe(false)
+  expect(Object.hasOwn(parseWorkspaces(file([ws({ keepOnTop: true })])).workspaces[0], 'keepOnTop')).toBe(false)
+})
+
 const rulesOf = (r: ReturnType<typeof parseWorkspaces>): Workspace['layouts'][string]['windows'] => r.workspaces[0].layouts['fp-1'].windows
 
 it('titleRegex가 잘못되면 그 칸만 빼고 오류', () => {

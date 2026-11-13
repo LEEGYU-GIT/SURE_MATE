@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from './messages'
+import { hideSummary, restoreSummary, saveSummary, skippedParts, WORKSPACE_NOTES } from './messages'
 import type { RestoreReport, WindowOutcome } from './restore-result'
 
 const o = (app: string, result: WindowOutcome['result']): WindowOutcome => ({ ruleId: app, app, result })
@@ -85,5 +85,33 @@ describe('saveSummary / notes', () => {
     expect(WORKSPACE_NOTES.empty).toBe('불러올 창이 없어요. 설정에서 창을 하나 이상 포함해 주세요.')
     expect(WORKSPACE_NOTES.saveFailed).toBe('워크스페이스 파일을 저장하지 못했어요. 잠시 뒤 다시 해 주세요.')
     for (const text of Object.values(WORKSPACE_NOTES)) if (typeof text === 'string') expect(text).not.toContain('편집 화면')
+  })
+})
+
+describe('화면 감추기 알림(hideSummary, 2026-11-12)', () => {
+  const none = report([], 0)
+  it('저장한 창이 있으면 내린 수 다음에 배치 결과', () => {
+    const r = report([o('Code', 'placed'), o('Chrome', 'placed')], 2)
+    expect(hideSummary('화면 감추기', r, { kind: 'hide', minimized: 9, elevated: 0, skipped: 0, saved: true })).toBe('화면 감추기 · 창 9개를 내렸어요 · 창 2개 모두 배치했어요')
+  })
+  it('관리자 권한 창·응답 없는 창은 내리지 못했다고 수만 알린다', () => {
+    expect(hideSummary('화면 감추기', report([o('Code', 'placed')], 1), { kind: 'hide', minimized: 3, elevated: 2, skipped: 1, saved: true })).toBe(
+      '화면 감추기 · 창 3개를 내렸어요 · 관리자 권한 창 2개는 내리지 못했어요 · 창 1개는 내리지 못했어요 · 창 1개 모두 배치했어요'
+    )
+  })
+  it('저장한 창이 없으면(처음) 모든 창을 내렸다고 알리고 남길 창을 저장하는 곳을 알린다', () => {
+    expect(hideSummary('화면 감추기', none, { kind: 'hide', minimized: 5, elevated: 0, skipped: 0, saved: false })).toBe('화면 감추기 · 창 5개를 내렸어요 · 설정에서 남길 창을 저장할 수 있어요')
+  })
+  it('내릴 창이 없으면 그렇게 알린다', () => {
+    expect(hideSummary('화면 감추기', none, { kind: 'hide', minimized: 0, elevated: 0, skipped: 0, saved: true })).toBe('화면 감추기 · 내릴 창이 없어요')
+  })
+  it('모으기는 배치 결과 앞에 붙는다', () => {
+    expect(hideSummary('화면 감추기', report([o('Code', 'placed')], 1, { gathered: true }), { kind: 'hide', minimized: 1, elevated: 0, skipped: 0, saved: true })).toBe(
+      '화면 감추기 · 창 1개를 내렸어요 · 주 모니터로 모았어요 · 창 1개 모두 배치했어요'
+    )
+  })
+  it('다시 누름: 되돌린 수, 되돌리지 못한 창이 있으면 그 수', () => {
+    expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 12, skipped: 0 })).toBe('화면 감추기 · 내렸던 창 12개를 되돌렸어요')
+    expect(hideSummary('화면 감추기', none, { kind: 'unhide', restored: 2, skipped: 1 })).toBe('화면 감추기 · 내렸던 창 2개를 되돌렸어요 · 창 1개는 되돌리지 못했어요')
   })
 })

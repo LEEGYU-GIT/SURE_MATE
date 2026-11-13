@@ -179,6 +179,7 @@ export const IPC = {
   workspaceSaveNew: 'workspace:save-new',
   /** 설정 창 → main(invoke): 지우기 */
   workspaceRemove: 'workspace:remove',
+  workspaceSetKeepOnTop: 'workspace:set-keep-on-top',
   /** 팔레트 → main(invoke): `@이름` 줄 — 그 이름으로 지금 배치 저장(같은 이름이 있으면 다시 저장) */
   workspaceSaveAs: 'workspace:save-as',
   /** 설정 창 → main(invoke): 말하듯 입력 탭 보기(기억한 문장·사용 기록 수·단어 목록, 설계 §13·§14) */
@@ -295,6 +296,8 @@ export interface SureMateApi {
   /** 지금 배치를 새 워크스페이스로 저장('배치 N'). 결과는 알리지 않고 돌려준다 */
   saveWorkspaceNew(): Promise<WorkspaceSaveResult>
   removeWorkspace(id: string): Promise<boolean>
+  /** 화면 감추기(기본 워크스페이스)의 '감춘 동안 업무 창을 항상 위에 두기'. 저장했으면 true */
+  setWorkspaceKeepOnTop(id: string, on: boolean): Promise<boolean>
   /** 팔레트 `@이름` 줄: 그 이름으로 지금 배치 저장(같은 이름·별칭이 있으면 다시 저장). 성공하면 main이 팔레트를 숨긴다 */
   saveWorkspaceAs(name: string): Promise<WorkspaceSaveResult>
   /** 설정 창 말하듯 입력 탭(설계 §13·§14): 기억한 문장·사용 기록 수·단어 목록. 설정 창이 아닌 창이 부르거나 읽지 못하면 null */

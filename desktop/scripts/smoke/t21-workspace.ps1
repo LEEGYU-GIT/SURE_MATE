@@ -251,9 +251,17 @@ function EndControlIfAny {
 
 $A = $null; $B = $null; $C = $null
 try {
-  # 0. t21-run.ps1이 비운 상태인지(직접 실행하면 사용자 파일을 바꾸고, 저장해 둔 워크스페이스·최근 항목이 목록 순서와 메뉴 첫 행을 바꾼다)
-  $left = @(@('workspaces.json', 'phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
+  # 0. t21-run.ps1이 비운 상태인지(직접 실행하면 사용자 파일을 바꾸고, 저장해 둔 워크스페이스·최근 항목이 목록 순서와 메뉴 행을 바꾼다).
+  #    앱은 시작할 때 기본 워크스페이스 '화면 감추기'(id builtin-hide)를 만들므로 workspaces.json에 그것만 있으면 빈 상태다
+  $left = @(@('phrase-map.json', 'usage.json', 'intents.json') | Where-Object { Test-Path (Join-Path $appDir $_) })
+  $builtinAtStart = $false
+  if (Test-Path $wsFile) {
+    $wsNow = @(); try { $wsNow = @((ReadWs).workspaces) } catch { $wsNow = @('unreadable') }
+    if (@($wsNow | Where-Object { $_.id -ne 'builtin-hide' }).Count -gt 0) { $left += 'workspaces.json (a workspace other than the built-in one)' }
+    $builtinAtStart = (@($wsNow | Where-Object { $_.id -eq 'builtin-hide' }).Count -eq 1)
+  }
   if ($left.Count -gt 0) { throw "t21-run.ps1로 실행한다(시작할 때 없어야 하는 파일이 있다: $($left -join ', '))" }
+  $r.builtin_created = $builtinAtStart
   $r.info_palette_hotkey = $Combo
   $r.info_workspace_hotkey = $WsHotkey
   $r.info_dpi_awareness = DpiAware
@@ -517,7 +525,8 @@ try {
   } catch { $r['error_6_control'] = "$_ at line $($_.InvocationInfo.ScriptLineNumber)"; try { EndControlIfAny } catch { } }
 
   # 7. 바: B를 옮기고 앞에 둔 채 워크스페이스 단추(bar.place와 BarLayout으로 위치 계산) 클릭 → flyout.show kind workspace-menu, 앞 창 그대로 →
-  #    캡처 m7-flyout-workspaces → 첫 행(시험이 저장한 워크스페이스, 목록에 하나뿐) 클릭 → workspace.restore(출처 bar) 성공, B 테두리가 저장 위치 ±10px
+  #    캡처 m7-flyout-workspaces → 둘째 행(시험이 저장한 워크스페이스. 첫 행은 늘 기본 워크스페이스 '화면 감추기'라 누르지 않는다) 클릭 →
+  #    workspace.restore(출처 bar) 성공, B 테두리가 저장 위치 ±10px
   $step7 = @('bar_menu_shown', 'menu_kept_focus', 'bar_restores')
   try {
     $place = LastBarPlace
@@ -545,11 +554,11 @@ try {
           $r.info_foreground_with_menu = $fgTitle
           Pump 200
           ShotRect 'm7-flyout-workspaces' $menu.bounds $bs
-          # 메뉴 카드 안 첫 행 가운데: 안쪽 여백 4 + 머리 28 + 두 줄 행 52의 절반(가명 처리 메뉴의 첫 행 58과 같은 구조)
+          # 메뉴 카드 안 둘째 행 가운데: 안쪽 여백 4 + 머리 28 + 첫 행(화면 감추기) 52 + 두 줄 행 52의 절반 = 110
           $card = MenuCard $menu.bounds
           $rowX = $card.x + $card.width / 2
-          $rowY = $card.y + 58
-          if (-not (WaitPetAway $rowX $rowY)) { $r.bar_restores = 'skipped (the pet covers the first menu row)' }
+          $rowY = $card.y + 110
+          if (-not (WaitPetAway $rowX $rowY)) { $r.bar_restores = 'skipped (the pet covers the second menu row)' }
           else {
             $mark2 = LogMark
             ClickAt ([int][Math]::Round($rowX * $bs)) ([int][Math]::Round($rowY * $bs))
@@ -566,6 +575,61 @@ try {
     }
   } catch { $r['error_7_bar'] = "$_ at line $($_.InvocationInfo.ScriptLineNumber)" }
 
+  # 7-2. 화면 감추기(기본 워크스페이스, 2026-11-12): C를 최소화한 채 팔레트 '@화면 감추기' → 목록 끝 '지금 배치로 바꾸기' 줄(End) → Enter로
+  #    B가 보이는 배치를 화면 감추기에 저장(workspace.save op recapture, id builtin-hide) → C를 보통 상태로 되돌린 뒤 '@화면 감추기' Enter →
+  #    workspace.hide(출처 palette)이고 저장하지 않은 C는 최소화, 저장한 B는 최소화가 아님 → 한 번 더 '@화면 감추기' Enter → workspace.unhide이고
+  #    C가 보통 상태로 돌아온다. 이 단계는 열린 다른 앱 창도 잠시 내렸다가 되돌린다. 기본 워크스페이스가 없거나 앞 단계가 성립하지 않으면 skipped
+  $hideKeys = @('hide_saved', 'hide_minimizes_others', 'hide_press_again_restores')
+  try {
+    $hideName = '화면 감추기'
+    if (-not $builtinAtStart) { SkipAll $hideKeys 'workspaces.json had no built-in workspace at start: see builtin_created' }
+    elseif (-not $B -or -not $C) { SkipAll $hideKeys 'the test windows B and C are not both open' }
+    else {
+      SetFormState $C 'Minimized'
+      if ((StateOf $B) -ne 'Normal') { SetFormState $B 'Normal' }
+      Pump 400
+      if ((StateOf $C) -ne 'Minimized') { SkipAll $hideKeys 'C did not minimize before saving into the built-in workspace' }
+      elseif (-not (Ask ('@' + $hideName) $B)) { SkipAll $hideKeys $script:why }
+      else {
+        ExtTapHuman 0x23; Pump 300
+        $mark = LogMark
+        PressEnter
+        $hs = WaitLog $mark 'workspace.save' { $_.source -eq 'palette' } 6000
+        $hideSaved = ($null -ne $hs -and $hs.ok -eq $true -and $hs.id -eq 'builtin-hide' -and $hs.op -eq 'recapture')
+        $r.hide_saved = $hideSaved
+        $r.info_hide_save = if ($hs) { 'ok={0} op={1} id_is_builtin={2} windows={3}' -f $hs.ok, $hs.op, ($hs.id -eq 'builtin-hide'), $hs.windows } else { 'no workspace.save within 6 s' }
+        Pump 800
+        ClosePalette
+        if (-not $hideSaved) { SkipAll $hideKeys 'nothing was saved into the built-in workspace: see hide_saved' }
+        else {
+          SetFormState $C 'Normal'
+          Pump 400
+          if ((StateOf $C) -ne 'Normal') { SkipAll $hideKeys 'C did not come back to normal before hiding' }
+          elseif (-not (Ask ('@' + $hideName) $B)) { SkipAll $hideKeys $script:why }
+          else {
+            $mark = LogMark
+            PressEnter
+            $hd = WaitLog $mark 'workspace.hide' { $_.source -eq 'palette' } 15000
+            Pump 800
+            $r.hide_minimizes_others = ($null -ne $hd -and $hd.id -eq 'builtin-hide' -and (StateOf $C) -eq 'Minimized' -and (StateOf $B) -ne 'Minimized')
+            $r.info_hide = if ($hd) { 'minimized={0} elevated={1} hung={2} failed={3} saved={4} desktop={5} pinned={6} C={7} B={8}' -f $hd.minimized, $hd.elevated, $hd.hung, $hd.failed, $hd.saved, $hd.desktop, $hd.pinned, (StateOf $C), (StateOf $B) } else { 'no workspace.hide within 15 s' }
+            if (-not $hd -or (StateOf $C) -ne 'Minimized') { SkipAll @('hide_press_again_restores') 'the first press did not minimize C: see hide_minimizes_others' }
+            elseif (-not (Ask ('@' + $hideName) $B)) { SkipAll @('hide_press_again_restores') $script:why }
+            else {
+              $mark = LogMark
+              PressEnter
+              $uh = WaitLog $mark 'workspace.unhide' { $_.source -eq 'palette' } 15000
+              Pump 800
+              $r.hide_press_again_restores = ($null -ne $uh -and $uh.id -eq 'builtin-hide' -and (StateOf $C) -eq 'Normal')
+              $hd2 = @(LogsAfter $mark 'workspace.hide' | Select-Object -First 1)
+              $r.info_unhide = if ($uh) { 'restored={0} skipped={1} focused={2} C={3}' -f $uh.restored, $uh.skipped, $uh.focused, (StateOf $C) } elseif ($hd2.Count -gt 0) { 'the second press hid again (why={0})' -f $hd2[0].why } else { 'no workspace.unhide within 15 s' }
+            }
+          }
+        }
+      }
+    }
+  } catch { $r['error_7_hide'] = "$_ at line $($_.InvocationInfo.ScriptLineNumber)" }
+
   # 8. 로그에 시험 창 제목('SureMate-WS')·워크스페이스 이름('smoke ws'와 기본 이름)·이름을 담는 키가 없다(id·건수·까닭·시간만).
   #    아무것도 저장하지 않았으면 제목·이름이 앱을 거치지 않았으므로 판정하지 않는다
   $appLines = @(Get-Content $logFile -Encoding UTF8 | Select-Object -Skip $startLines) -join "`n"
@@ -575,7 +639,8 @@ try {
   elseif ($appLogLines -eq 0) { SkipAll @('log_has_no_titles', 'log_has_no_names', 'log_has_no_typed_text') 'no app log lines' }
   else {
     $r.log_has_no_titles = -not $appLines.Contains('SureMate-WS')
-    $names = @(@($wsName, $defaultName) | Where-Object { $_ })
+    # 기본 워크스페이스 이름('화면 감추기')도 로그에 없어야 한다(id builtin-hide만)
+    $names = @(@($wsName, $defaultName, '화면 감추기') | Where-Object { $_ })
     $found = @($names | Where-Object { $appLines.Contains($_) })
     $r.log_has_no_names = ($found.Count -eq 0)
     if ($found.Count -gt 0) { $r.info_names_in_log = $found -join ', ' }
