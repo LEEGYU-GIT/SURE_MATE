@@ -13,8 +13,10 @@ import {
   petWindowRect
 } from '../../shared/pet/pet-frame'
 import { dropOnLedge, jumpVelocity, PHYSICS, stepAir, throwVelocity } from '../../shared/pet/pet-physics'
+import type { PetBusy } from '../../shared/pet/pet-nudge'
 import {
   BUBBLE_MS,
+  nudgeReaction,
   REACTION_MS,
   reactionFor,
   type PetReaction
@@ -68,6 +70,16 @@ export interface PetController {
   press(down: boolean): void
   /** 앱 일(복사·되돌리기·가져오기 실패)에 반응한다. 숨긴 동안(설정·전체 화면)은 무시한다 */
   react(e: AppEvent): void
+  /**
+   * 쉬어 가기 말(2026-11-13)을 지금 걸 수 없는 까닭: 조종 중, 메뉴, 누름·들림, 반응 중(말풍선·기다리는 반응),
+   * 공중·뛰어오르기·꼭대기로 올라서기·돌아 내려가기. 걸 수 있으면 null(가만히·걷기·앉기·졸기·옆면에 붙음)
+   */
+  busy(): PetBusy | null
+  /**
+   * 쉬어 가기 말을 있는 말풍선(4초, 누르면 닫힘)과 폴짝 한 번으로 보인다. 졸고 있으면 깨우고 혼자 걷던 중이면 멈춘다.
+   * 쌓아 두지 않는다: 숨김·말풍선 끔·busy()이면 아무것도 하지 않고 false. 언제 말할지는 런타임(pet-nudge)이 정한다
+   */
+  nudge(text: string): boolean
   /** 말풍선을 눌렀다: 닫고 반응을 끝낸다 */
   bubbleClick(): void
   /**
@@ -221,6 +233,7 @@ export function floorMiddle(w: PetWorld, size: number): Point {
  * 움직이는 동안(walk·leap·climb·air·held, 꼭대기로 올라서는 300ms, 누르고 있는 동안)만 34ms 동작 고리를 돌리고,
  * 그 밖에는 커서 조회 타이머 하나로 클릭 통과만 맞춘다. 숨긴 동안에는 타이머가 없다.
  * 오른쪽 클릭 메뉴의 닫기 확인은 그 조회가 50ms 이하로 겸하고, 조종 모드는 계획·졸기 타이머를 멈춘다(새 타이머 없음).
+ * 쉬어 가기 말은 런타임의 1분 확인이 정하고 여기서는 반응 자리(반응 타이머)로 보이기만 한다(새 타이머 없음).
  */
 export function createPetController(d: PetControllerDeps): PetController {
   const T = d.timers
@@ -735,7 +748,8 @@ export function createPetController(d: PetControllerDeps): PetController {
       },
       Math.max(0, r.holdMs)
     )
-    if (r !== guide) d.log('pet.react', { kind: r.kind, bubble: r.bubble !== null })
+    // 쉬어 가기 말은 런타임이 pet.nudge(줄 번호)로 남긴다
+    if (r !== guide && r.kind !== 'nudge') d.log('pet.react', { kind: r.kind, bubble: r.bubble !== null })
   }
 
   /** 앱 반응(또는 조종 안내)을 지금 보인다: 졸고 있으면 깨우고, 혼자 걷던 중이면 멈춘다(조종 중 걷기는 그대로) */
@@ -747,6 +761,19 @@ export function createPetController(d: PetControllerDeps): PetController {
       vx = vy = 0
     }
     startReaction(r)
+  }
+
+  /**
+   * 쉬어 가기 말을 걸 수 없는 까닭(2026-11-13). 쌓아 두지 않으므로 반응을 미루는 자세(공중·뛰어오르기·올라서기·돌아 내려가기)도
+   * 걸 수 없는 것으로 친다. 떠 있는 말풍선(앱 반응·조종 안내)은 덮지 않는다
+   */
+  function nudgeBusy(): PetBusy | null {
+    if (control) return 'control'
+    if (menuOpen) return 'menu'
+    if (pressed !== null || mode === 'held') return 'held'
+    if (reacting !== null || pending !== null) return 'reacting'
+    if (mode === 'air' || mode === 'leap' || stepUp !== null || stepDown !== null) return 'moving'
+    return null
   }
 
   /** 메뉴가 닫힌 뒤: 메뉴 동안 온 마지막 반응을 보인다(가만히·앉기·졸기·걷기에서) */
@@ -1739,8 +1766,10 @@ export function createPetController(d: PetControllerDeps): PetController {
       readInputs()
       if (!started) return
       // 반응을 끄면 보이던 반응도 끝나고, 말풍선을 끄면 떠 있던 말풍선이 닫힌다(저장한 반응도 버린다).
-      // 조종 키 안내는 앱 반응이 아니라 반응 끄기와 상관없다(말풍선 끄기는 따른다)
-      const appReactionOff = (r: PetReaction): boolean => !cfg.reactions && r !== guide
+      // 조종 키 안내와 쉬어 가기 말은 앱 반응이 아니라 반응 끄기와 상관없다(말풍선 끄기는 따른다).
+      // 쉬어 가기 말을 끄면 떠 있던 쉬어 가기 말풍선도 닫힌다
+      const appReactionOff = (r: PetReaction): boolean =>
+        r.kind === 'nudge' ? !cfg.nudges : !cfg.reactions && r !== guide
       if (pending && (appReactionOff(pending) || (!cfg.bubbles && pending.bubble))) pending = null
       if (
         shown &&
@@ -1797,6 +1826,14 @@ export function createPetController(d: PetControllerDeps): PetController {
       // 졸고 있으면 깬 뒤, 혼자 걷고 있으면 멈춘 뒤 반응한다(오르기는 반응 동안 멈춘다. 조종 중에는 표정·말풍선만)
       showReaction(r)
       settle()
+    },
+    busy: () => nudgeBusy(),
+    nudge(text) {
+      if (disposed || !shown || !world || !cfg.bubbles || text.trim() === '' || nudgeBusy() !== null) return false
+      // 앱 반응과 같은 길: 졸고 있으면 깨우고(깸 기록) 혼자 걷던 중이면 멈춘 뒤 말풍선·폴짝. 끝나면 평소 규칙(finishReaction)
+      showReaction(nudgeReaction(text))
+      settle()
+      return true
     },
     bubbleClick() {
       if (disposed || !shown || !reacting || reacting.r.bubble === null) return

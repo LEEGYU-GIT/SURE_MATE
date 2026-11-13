@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { AppEvent } from '../../shared/app-events'
 import type { BarViewState } from '../../shared/bar/bar-items'
-import { PET_CRASH_NOTICE } from '../../shared/pet/pet-copy'
+import { PET_CRASH_NOTICE, PET_NUDGE_LINES } from '../../shared/pet/pet-copy'
 import { DEFAULT_SETTINGS, type Settings } from '../../shared/settings/settings'
 import type { MonitorInfo, Rect } from '../../shared/types'
 import { DISPLAY_SETTLE_MS, type BarController } from '../bar/bar-controller'
@@ -730,5 +730,96 @@ describe('createPetRuntime: 펫 창을 앱에 연결한다', () => {
     expect(f.win.w.destroy).toHaveBeenCalledTimes(1)
     expect(f.displays.size).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('쉬어 가기 말(2026-11-13): 펫이 보이고 설정이 켜져 있는 동안 1분에 한 번 확인한다', () => {
+  const MIN = 60_000
+  const nudgeLogs = (o: Opts): unknown[] => o.log.mock.calls.filter(([e]) => e === 'pet.nudge').map(([, d]) => d)
+
+  it('일한 시간이 60분(흔들기 0.5)이 되면 졸던 펫을 깨워 문구를 보인다. 확인은 1분에 한 번이고 기록은 줄 번호뿐(문구 없음)', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    // 재워 두면 동작 고리 없이 오래 보낼 수 있다(깨워서 말하는지도 본다)
+    rt.controller.putToSleep()
+    const busy = vi.spyOn(rt.controller, 'busy')
+    vi.advanceTimersByTime(10 * MIN)
+    expect(busy).toHaveBeenCalledTimes(10)
+    vi.advanceTimersByTime(49 * MIN)
+    expect(nudgeLogs(o)).toEqual([])
+    expect(rt.controller.status().mode).toBe('sleep')
+    vi.advanceTimersByTime(MIN)
+    expect(nudgeLogs(o)).toEqual([{ line: 3 }])
+    expect(rt.controller.status().mode).toBe('idle')
+    expect(rt.petView()?.bubble?.text).toBe(PET_NUDGE_LINES[3])
+    const logged = JSON.stringify(o.log.mock.calls)
+    for (const line of PET_NUDGE_LINES) expect(logged).not.toContain(line)
+    rt.dispose()
+  })
+
+  it('전체 화면으로 숨으면 확인 타이머도 없다. 다시 보이면 이어서 확인하고, 10분 넘게 숨어 있었으면 처음부터 센다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    rt.controller.putToSleep()
+    vi.advanceTimersByTime(50 * MIN)
+    rt.setFullscreen(true)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(30 * MIN)
+    rt.setFullscreen(false)
+    // 숨기 전 50분은 버렸다: 다시 보인 뒤 첫 확인이 쉼으로 보고, 그 뒤 60분
+    vi.advanceTimersByTime(60 * MIN)
+    expect(nudgeLogs(o)).toEqual([])
+    vi.advanceTimersByTime(MIN)
+    expect(nudgeLogs(o)).toEqual([{ line: 3 }])
+    rt.dispose()
+  })
+
+  it('설정에서 끄면 확인 타이머가 없고, 다시 켜면 그때부터 처음부터 센다', () => {
+    const f = fakeEnv()
+    let settings: Settings = { ...SETTINGS, pet: { ...SETTINGS.pet, nudges: false } }
+    const o = options({ bar: fakeBar().rt, getSettings: () => settings })
+    const rt = createPetRuntime(o, f.env)
+    rt.controller.putToSleep()
+    expect(vi.getTimerCount()).toBe(1) // 커서 조회만
+    vi.advanceTimersByTime(120 * MIN)
+    expect(nudgeLogs(o)).toEqual([])
+    expect(rt.petView()?.bubble).toBeNull()
+    settings = SETTINGS
+    rt.refresh()
+    expect(vi.getTimerCount()).toBe(2) // 커서 조회·쉬어 가기 확인
+    vi.advanceTimersByTime(59 * MIN)
+    expect(nudgeLogs(o)).toEqual([])
+    vi.advanceTimersByTime(MIN)
+    expect(nudgeLogs(o)).toEqual([{ line: 3 }])
+    settings = { ...SETTINGS, pet: { ...SETTINGS.pet, nudges: false } }
+    rt.refresh()
+    expect(rt.petView()?.bubble).toBeNull()
+    rt.dispose()
+  })
+
+  it('말할 수 없으면 까닭만 기록한다: 조종 중이면 건너뛰고 3분 뒤 한 번 더, 말풍선 끔은 다시 확인하지 않는다', () => {
+    const f = fakeEnv()
+    const o = options({ bar: fakeBar().rt })
+    const rt = createPetRuntime(o, f.env)
+    rt.controller.startControl()
+    vi.advanceTimersByTime(60 * MIN)
+    expect(nudgeLogs(o)).toEqual([{ skip: 'control', retry: true }])
+    vi.advanceTimersByTime(3 * MIN)
+    expect(nudgeLogs(o)).toEqual([
+      { skip: 'control', retry: true },
+      { skip: 'control', retry: false }
+    ])
+    rt.dispose()
+
+    const g = fakeEnv()
+    const quiet = options({ bar: fakeBar().rt, getSettings: () => ({ ...SETTINGS, pet: { ...SETTINGS.pet, bubbles: false } }) })
+    const rt2 = createPetRuntime(quiet, g.env)
+    rt2.controller.putToSleep()
+    vi.advanceTimersByTime(64 * MIN)
+    expect(nudgeLogs(quiet)).toEqual([{ skip: 'bubbles-off', retry: false }])
+    expect(rt2.controller.status().mode).toBe('sleep')
+    rt2.dispose()
   })
 })

@@ -1,6 +1,7 @@
 import type { AppEvents } from '../../shared/app-events'
 import { pickBarDisplay } from '../../shared/bar/bar-layout'
-import { PET_CRASH_NOTICE } from '../../shared/pet/pet-copy'
+import { PET_CRASH_NOTICE, PET_NUDGE_LINES } from '../../shared/pet/pet-copy'
+import { NUDGE, nextNudge, startNudge, type NudgeState } from '../../shared/pet/pet-nudge'
 import { petWorld, type PetBar, type PetWorld } from '../../shared/pet/pet-world'
 import type { Settings } from '../../shared/settings/settings'
 import type { MonitorInfo } from '../../shared/types'
@@ -149,7 +150,8 @@ export function barWorld(monitors: MonitorInfo[], settings: Settings, bar: BarCo
  * 말랑 메이트를 앱에 연결한다(설계 §14-2·§5). 판단은 모두 컨트롤러(순수)에 있고 여기는 연결만 한다:
  * 창·세계(바 모니터와 바)·커서·시계를 컨트롤러에 주고, 바 변화(34ms에 한 번 이하)·모니터 변화(200ms 뒤 한 번)·전체 화면·
  * 앱 일·창 이벤트(조종 중 blur, Alt+F4 닫기, 조종 시작 뒤 포커스 확인, 렌더러가 죽음)를 컨트롤러에 넘긴다. 맨 앞은 바가 보이면 바 런타임이(afterRaise),
- * 바가 없거나 숨으면 펫이 2초마다 스스로 올린다. 모든 처리기·타이머 콜백은 던지지 않는다(오류는 종류마다 한 번 기록).
+ * 바가 없거나 숨으면 펫이 2초마다 스스로 올린다. 쉬어 가기 말은 펫이 보이고 설정이 켜져 있는 동안 1분에 한 번 확인한다(pet-nudge).
+ * 모든 처리기·타이머 콜백은 던지지 않는다(오류는 종류마다 한 번 기록).
  * 만드는 중 실패하면 만든 것을 정리하고 던진다(index.ts가 pet.startError로 기록하고 바·팔레트는 그대로 동작한다).
  */
 export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetRuntime {
@@ -232,7 +234,52 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
       controller.endControl('blur')
     }
 
-    // 컨트롤러가 띄우고 숨기는 곳에서 맨 앞 유지를 맞춘다. 띄울 때는 먼저 나온 바 앞으로 바로 올린다
+    // 쉬어 가기 말(2026-11-13): 펫이 보이고 설정이 켜져 있는 동안만 1분에 한 번 확인한다(컨트롤러에는 타이머를 더하지 않는다).
+    // 펫이 숨으면(설정·전체 화면·디스플레이 없음) 멈추고 끝낼 때 지운다. 켤 때(처음 보일 때 포함) 처음부터 센다.
+    // 판단은 pet-nudge(순수)가 하고, 기록에는 줄 번호와 건너뛴 까닭만 남긴다(문구는 남기지 않는다)
+    let nudgeState: NudgeState | null = null
+    let nudgeOn = false
+    let nudgeTimer: unknown = null
+    const stopNudge = (): void => {
+      if (nudgeTimer !== null) timers.clearInterval(nudgeTimer)
+      nudgeTimer = null
+    }
+    undo.push(stopNudge)
+    const barFullscreen = (): boolean => {
+      try {
+        return o.bar?.fullscreen() ?? false
+      } catch {
+        return false
+      }
+    }
+    const checkNudge = guard('nudge', () => {
+      if (disposed || !shown || !nudgeState) return
+      const pet = o.getSettings().pet
+      const idle = env.idleSeconds()
+      const d = nextNudge(nudgeState, env.now(), Number.isFinite(idle) && idle > 0 ? idle * 1000 : 0, {
+        intervalMin: pet.nudgeEveryMin,
+        shown: controller.status().shown,
+        fullscreen: barFullscreen(),
+        bubbles: pet.bubbles,
+        busy: controller.busy(),
+        random: () => env.random()
+      })
+      nudgeState = d.state
+      if (d.action === 'speak') {
+        const said = controller.nudge(PET_NUDGE_LINES[d.line])
+        o.log('pet.nudge', said ? { line: d.line } : { line: d.line, skip: 'not-shown' })
+      } else if (d.action === 'skip') o.log('pet.nudge', { skip: d.reason, retry: d.retry })
+    })
+    const syncNudge = (): void => {
+      const on = !disposed && o.getSettings().pet.nudges
+      if (on && !nudgeOn) nudgeState = startNudge({ now: env.now(), random: () => env.random(), lastLine: nudgeState?.lastLine ?? null })
+      nudgeOn = on
+      if (on && shown) {
+        if (nudgeTimer === null) nudgeTimer = timers.setInterval(checkNudge, NUDGE.checkMs)
+      } else stopNudge()
+    }
+
+    // 컨트롤러가 띄우고 숨기는 곳에서 맨 앞 유지·쉬어 가기 말 확인을 맞춘다. 띄울 때는 먼저 나온 바 앞으로 바로 올린다
     // (바가 없으면 펫 혼자 올리기가 시작하며 올린다)
     const port: PetWindowPort = {
       ...win.port,
@@ -241,12 +288,14 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
         shown = true
         if (barVisible()) win.raise()
         syncKeeper()
+        syncNudge()
       },
       hide: () => {
         clearFocusCheck()
         win.port.hide()
         shown = false
         syncKeeper()
+        syncNudge()
       },
       setFocusable: (focusable) => {
         if (!focusable) clearFocusCheck()
@@ -391,6 +440,7 @@ export function createPetRuntime(o: PetRuntimeOptions, env: PetRuntimeEnv): PetR
         if (disposed) return
         controller.refresh()
         syncKeeper()
+        syncNudge()
       }),
       // 숨긴 펫은 바 변화를 무시한다(숨긴 펫에는 타이머가 없다, Task 9 #3). 다시 표시할 때 새 세계를 읽고,
       // 디스플레이가 없어 숨은 펫은 모니터 변화(settle → sync)로 다시 나타난다
