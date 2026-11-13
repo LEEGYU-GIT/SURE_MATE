@@ -48,6 +48,8 @@ public static class T23W {
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  // Alt+Tab과 같은 창 전환(앞 창에 키를 보내지 않는다). 메신저·Ttree가 앞에 있을 때 시험 창을 가져오는 데 쓴다
+  [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr h, bool altTab);
   // 키 없이 target을 앞으로: 앞 창(expected) 스레드의 입력 상태에 잠시 붙어 SetForegroundWindow를 부르고 바로 뗀다.
   // 그사이 앞 창이 바뀌었으면 아무것도 하지 않는다(부르는 쪽이 앞 창이 메신저·Ttree가 아님을 확인한 뒤 부른다)
   public static bool FocusByAttach(IntPtr target, IntPtr expected) {
@@ -203,6 +205,8 @@ function FocusTestWindow {
       if (SendKey 0x12 'any') { [void][W]::SetForegroundWindow($form.Handle); [void](SendKey 0x12 'any' -Up) }
     } elseif ($protected -contains (ProcName $fg.pid)) {
       [void][W]::SetForegroundWindow($form.Handle)
+      # 포커스 권한이 없으면(앞 시험이 메신저를 앞에 두고 끝남) Alt+Tab 같은 창 전환으로 가져온다. 메신저·Ttree에는 키를 보내지 않는다
+      if (-not (IsTestFg (FgNow))) { [T23W]::SwitchToThisWindow($form.Handle, $true) }
     } else {
       if (-not [T23W]::FocusByAttach($form.Handle, $fg.hwnd)) {
         # 앞 창이 없거나(전환 중, 시험 프로세스는 숨김으로 시작해 포커스 권한이 없다) 입력 연결이 안 되면 NewTestForm처럼 Alt를 눌러
