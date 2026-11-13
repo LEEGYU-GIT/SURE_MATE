@@ -3,11 +3,11 @@
 // Run through build.mjs (needs: node --experimental-transform-types --import ./lib/register-ts.mjs).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DESKTOP = join(HERE, '../../../desktop')
-const app = (path) => import(join(DESKTOP, path))
+const app = (path) => import(pathToFileURL(join(DESKTOP, path)).href)
 const json = (path) => JSON.parse(readFileSync(join(DESKTOP, path), 'utf8'))
 
 const { appCommandItems } = await app('src/main/apps/app-commands.ts')

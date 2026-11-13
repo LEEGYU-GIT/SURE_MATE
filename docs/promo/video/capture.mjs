@@ -4,7 +4,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { launchChrome, serveStatic } from './lib/cdp.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -185,7 +185,7 @@ console.log(`capture: ${todo.length} screens → ${UI}`)
  * 펫과 말풍선은 미리 보기 장면에서 잰 상대 위치(바닥·바 꼭대기 기준)를 그대로 옮긴다
  */
 async function desktopLayout(m) {
-  const app = (path) => import(join(DESKTOP, path))
+  const app = (path) => import(pathToFileURL(join(DESKTOP, path)).href)
   const { palettePosition } = await app('src/shared/palette-rules.ts')
   const { barRect, DEFAULT_BAR_RATIO } = await app('src/shared/bar/bar-layout.ts')
   const { flyoutCardRect, flyoutWindowRect } = await app('src/main/flyout/flyout-placement.ts')
