@@ -47,6 +47,12 @@
       "targets": [{ "id": "cmd.mask-selection" }] },
     { "id": "settings", "label": "설정",
       "words": ["설정", "단축키", "사이드패널", "위치", "내보내기", "가져오기"],
-      "targets": [{ "group": "command" }] }
+      "targets": [{ "group": "command" }] },
+    { "id": "messenger", "label": "프로그램 열기",
+      "words": ["메신저", "사내 메신저", "쪽지", "채팅", "messenger"],
+      "targets": [{ "id": "cmd.open-messenger" }] },
+    { "id": "ttree", "label": "프로그램 열기",
+      "words": ["Ttree", "티트리", "근무", "근무 시간", "근무시간", "근태", "출근", "퇴근", "근무 시작", "컴퓨터 종료", "휴가", "휴가 신청", "연차", "반차", "이석"],
+      "targets": [{ "id": "cmd.open-ttree" }] }
   ]
 }

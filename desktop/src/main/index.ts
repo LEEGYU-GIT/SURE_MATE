@@ -18,6 +18,8 @@ import type { MaskingMode, PaletteItem } from '../shared/types'
 import { defaultHideHotkey, HIDE_DEFAULT_HOTKEY, HIDE_WORKSPACE_ID } from '../shared/workspace/builtin'
 import { monitorFingerprint } from '../shared/workspace/monitors'
 import { appEvents } from './app-events'
+import { appCommandItems } from './apps/app-commands'
+import { createAppRuntime } from './apps/app-runtime'
 import { createBarCommands } from './bar/bar-commands'
 import { createPetCommands, createPetControlHotkey } from './pet/pet-commands'
 import { createBarRuntime, type BarRuntime } from './bar/bar-runtime'
@@ -113,6 +115,13 @@ const settingsCommands = createSettingsCommands({
   hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
   openSettings: () => openSettings('/settings'),
   openTry: () => openSettings('/try'),
+  log
+})
+/** 사내 메신저·Ttree 열기(설치된 것만 팔레트에 보인다, 2026-11-13) */
+const appCommands = createAppRuntime({
+  waitKeysReleased: () => waitPickKeysReleased(PICK_KEYS_WAIT_MS),
+  hidePalette: (restoreFocus) => hidePalette({ restoreFocus }),
+  notify,
   log
 })
 let packCommands: { run(id: string): Promise<boolean> } | null = null
@@ -470,6 +479,7 @@ async function runItem(id: string): Promise<void> {
   if (await barCommands.run(id)) return
   if (await petCommands.run(id)) return
   if (await settingsCommands.run(id)) return
+  if (await appCommands.run(id)) return
   // 지금 배치 저장(cmd.workspace-save)·워크스페이스 불러오기(workspace:<id>)
   if (workspaceCommands && (await workspaceCommands.run(id))) return
   if (naturalCommands && (await naturalCommands.run(id))) return
@@ -833,7 +843,8 @@ if (!app.requestSingleInstanceLock()) {
         petVisible: settings.pet.visible,
         // 졸고 있으면 "재우기" 대신 "깨우기"(M4)
         petSleeping: petRuntime?.controller.status().mode === 'sleep',
-        workspaces: workspaceItems
+        workspaces: workspaceItems,
+        apps: appCommandItems(appCommands.installed())
       })
     }
     // 기억한 문장·사용 기록: 팔레트 검색 문맥과 설정 창 말하듯 입력 탭이 같은 저장소를 쓴다. 저장소가 바꾼 값을 메모리에 바로 두고

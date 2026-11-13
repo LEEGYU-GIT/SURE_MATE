@@ -5,10 +5,10 @@ import { parseTemplatePack } from './pack'
 const allBuiltin = (): ReturnType<typeof parseTemplatePack>['templates'] => parseTemplatePack(builtin, 'builtin').templates
 const builtinTemplates = (): ReturnType<typeof parseTemplatePack>['templates'] => allBuiltin().filter((t) => t.kind === 'prompt')
 
-it('기본 팩: 프롬프트 8종, 오류 없음, id 중복 없음', () => {
+it('기본 팩: 프롬프트 9종, 오류 없음, id 중복 없음', () => {
   const { templates, errors } = parseTemplatePack(builtin, 'builtin')
   expect(errors).toEqual([])
-  expect(templates.filter((t) => t.kind === 'prompt')).toHaveLength(8)
+  expect(templates.filter((t) => t.kind === 'prompt')).toHaveLength(9)
   expect(new Set(templates.map((t) => t.id)).size).toBe(templates.length)
   expect(templates.every((t) => t.scope === 'builtin')).toBe(true)
 })
@@ -20,10 +20,11 @@ it('기본 상용구 2종: 결함 리포트·메일 서명, 가명 처리 자리
   expect(snippets[1].aliases).toEqual(['서명', 'signature'])
 })
 
-it('설계 문서 §7 표의 이름 8개를 순서대로 담는다', () => {
+it('설계 문서 §7 표의 이름 9개를 순서대로 담는다', () => {
   expect(builtinTemplates().map((t) => t.name)).toEqual([
     '회의록 정리',
     '주간보고 초안',
+    'Ttree 근무 기록 → 주간보고',
     '메일·문의 요약과 회신 초안',
     '문장 다듬기',
     '요구사항 → 테스트 케이스',
@@ -42,11 +43,11 @@ it('기본 프롬프트는 모두 입력 자리, 추측 금지, 초안 안내, �
   }
 })
 
-it('가명 기본값: 표준·규격 조항 찾기와 협업 문서 요약만 끔, 나머지 6종은 전체 기본값(설정)을 따른다', () => {
+it('가명 기본값: 표준·규격 조항 찾기와 협업 문서 요약만 끔, 나머지 7종은 전체 기본값(설정)을 따른다', () => {
   const templates = builtinTemplates()
   expect(templates.filter((t) => t.masking === 'off').map((t) => t.name)).toEqual(['표준·규격 조항 찾기', '협업 문서 요약(실명 유지)'])
   const rest = templates.filter((t) => t.masking !== 'off')
-  expect(rest).toHaveLength(6)
+  expect(rest).toHaveLength(7)
   expect(rest.every((t) => t.masking === undefined || t.masking === 'default')).toBe(true)
 })
 

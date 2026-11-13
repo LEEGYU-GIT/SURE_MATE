@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import type { Template } from '../../shared/template/types'
 import type { PaletteItem } from '../../shared/types'
 import type { GlossaryEntry } from '../../shared/glossary/types'
+import { appCommandItems } from '../apps/app-commands'
 import { buildPaletteItems } from './palette-items'
 
 const t = (over: Partial<Template>): Template => ({
@@ -97,6 +98,15 @@ it('워크스페이스 항목(저장 명령 포함)은 명령 다음, 위키 앞
     'wiki:mcdc'
   ])
   expect(items.find((i) => i.id === 'workspace:ws-qa')).toEqual(workspaces[1])
+})
+
+it('사내 업무 프로그램 열기(설치된 것만)는 설정 열기 명령 다음, 나머지 명령 앞에', () => {
+  const apps = appCommandItems(['messenger', 'ttree'])
+  const items = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [], barShape: 'edge', petVisible: true, apps })
+  expect(items.map((i) => i.id)).toEqual([...MASKING_IDS, ...PACK_IDS, ...BAR_IDS, ...PET_IDS, ...SETTINGS_IDS, 'cmd.open-messenger', 'cmd.open-ttree', 'dev.listWindows'])
+  // 설치된 앱이 없으면 명령도 없다
+  const none = buildPaletteItems([], commands, { maskingMode: 'restore', glossary: [], barShape: 'edge', petVisible: true, apps: appCommandItems([]) })
+  expect(none.some((i) => i.id.startsWith('cmd.open-messenger') || i.id.startsWith('cmd.open-ttree'))).toBe(false)
 })
 
 it('(M4) 말랑 메이트가 졸고 있으면 재우기 대신 깨우기 명령', () => {
