@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { withObjectParticle } from '../../../shared/josa'
-import { PET_CONTROL_KEYS, PET_RECALL_HINT } from '../../../shared/pet/pet-copy'
-import { PET_LIMITS, PET_SIZES, type PetActivity, type PetSize } from '../../../shared/pet/pet-settings'
+import { PET_CONTROL_KEYS, PET_NUDGE_LINES, PET_RECALL_HINT } from '../../../shared/pet/pet-copy'
+import { PET_LIMITS, PET_NUDGE_MINUTES, PET_SIZES, type PetActivity, type PetNudgeMin, type PetSize } from '../../../shared/pet/pet-settings'
 import type { PetLook } from '../../../shared/pet/pet-view'
 import { PetSprite } from '../pet/PetSprite'
 import { Button, Row, Section, Segmented, Slider, Toggle } from './controls'
@@ -15,9 +15,11 @@ const ACTIVITIES: { value: PetActivity; label: string }[] = [
   { value: 'normal', label: '보통' },
   { value: 'lively', label: '활발' }
 ]
+const NUDGE_MINUTES = PET_NUDGE_MINUTES.map((m) => ({ value: String(m) as `${PetNudgeMin}`, label: `${m}분` }))
 
 /**
- * 말랑 메이트(설계 문서 §14·§14-2): 보이기와 크기, 움직임, 반응과 말풍선, 조종 단축키. 캐릭터 고르기(§14-3)는 아직 없다.
+ * 말랑 메이트(설계 문서 §14·§14-2): 보이기와 크기, 움직임, 반응과 말풍선(쉬어 가기 말 포함), 조종 단축키. 캐릭터 고르기(§14-3)는 아직 없다.
+ * 쉬어 가기 말 간격은 켜 둔 동안만 보이고, 말풍선을 끄면 쉬어 가기 말 행이 지금은 말을 걸지 않는다고 알린다.
  * 바꾼 값은 그 자리에서 저장하고(설정 서비스 → 설정 쓰기 한 줄), 저장 뒤 펫이 바로 다시 판단한다.
  * 조종 단축키는 등록해 보고 실패하면 되돌려야 해서 단축키 탭과 같은 녹화 칸(단축키 바꾸기)으로 바꾼다.
  */
@@ -91,9 +93,46 @@ export function PetTab(): React.JSX.Element {
         <Row label="반응" description="프롬프트를 복사하거나 가명을 되돌리면 몸짓과 표정으로 알려 줘요">
           {(ids) => <Toggle {...ids} checked={pet.reactions} onChange={(reactions) => void save({ pet: { reactions } })} />}
         </Row>
-        <Row label="말풍선" description="복사 결과나 조종 안내를 펫 위 말풍선으로 보여 줘요">
+        <Row label="말풍선" description="복사 결과나 조종 안내, 쉬어 가기 말을 펫 위 말풍선으로 보여 줘요">
           {(ids) => <Toggle {...ids} checked={pet.bubbles} onChange={(bubbles) => void save({ pet: { bubbles } })} />}
         </Row>
+        <Row
+          label="쉬어 가기 말 걸기"
+          description={
+            <>
+              한참 일하면 &apos;{PET_NUDGE_LINES[0]}&apos;처럼 쉬어 가자고 말을 걸어요
+              {pet.nudges && !pet.bubbles ? (
+                <>
+                  <br />
+                  <span className="text-warn">말풍선이 꺼져 있어 지금은 말을 걸지 않아요</span>
+                </>
+              ) : null}
+            </>
+          }
+        >
+          {(ids) => <Toggle {...ids} checked={pet.nudges} onChange={(nudges) => void save({ pet: { nudges } })} />}
+        </Row>
+        {pet.nudges ? (
+          <Row
+            label="말 거는 간격"
+            description={
+              <>
+                키보드나 마우스를 쓰는 시간만 재요.
+                <br />
+                10분 넘게 쉬면 처음부터 다시 재요
+              </>
+            }
+          >
+            {(ids) => (
+              <Segmented
+                {...ids}
+                value={String(pet.nudgeEveryMin) as `${PetNudgeMin}`}
+                options={NUDGE_MINUTES}
+                onChange={(v) => void save({ pet: { nudgeEveryMin: Number(v) as PetNudgeMin } })}
+              />
+            )}
+          </Row>
+        ) : null}
       </Section>
 
       <Section title="조종">

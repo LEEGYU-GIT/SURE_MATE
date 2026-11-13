@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppEvent } from '../app-events'
-import { petBubbleText } from './pet-copy'
-import { BUBBLE_MS, REACTION_MS, reactionFor } from './pet-reactions'
+import { PET_NUDGE_LINES, petBubbleText } from './pet-copy'
+import { BUBBLE_MS, nudgeReaction, REACTION_MS, reactionFor } from './pet-reactions'
 
 const on = { reactions: true, bubbles: true }
 const noBubbles = { reactions: true, bubbles: false }
@@ -104,5 +104,19 @@ describe('reactionFor: 앱 일 → 반응(설계 §14-2 "앱과 연결" 표)', (
     const a = reactionFor(celebrate, on)!
     a.props.push('alert')
     expect(reactionFor(celebrate, on)!.props).toEqual(['envelope'])
+  })
+})
+
+describe('nudgeReaction: 쉬어 가기 말(2026-11-13)', () => {
+  it('있는 말풍선(4초, 누르면 닫힘)과 폴짝 한 번, 웃는 얼굴. 소품은 없다(선글라스는 상태 기계가 얹는다)', () => {
+    expect(nudgeReaction(PET_NUDGE_LINES[0])).toEqual({
+      kind: 'nudge',
+      face: 'happy',
+      props: [],
+      cue: 'hop',
+      bubble: '물도 마시고 해요!',
+      holdMs: BUBBLE_MS
+    })
+    expect(nudgeReaction('x').props).not.toBe(nudgeReaction('x').props)
   })
 })

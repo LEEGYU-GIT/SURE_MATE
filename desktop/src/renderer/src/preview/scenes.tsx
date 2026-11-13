@@ -14,9 +14,9 @@ import { buildGlossaryIndex, toCardEntry, wikiCardView } from '../../../shared/g
 import type { AppEvent } from '../../../shared/app-events'
 import { CAPTURE_NOTES } from '../../../shared/labels'
 import type { MaskCategory } from '../../../shared/masking/types'
-import { PET_CONTROL_GUIDE, petMenuRows } from '../../../shared/pet/pet-copy'
+import { PET_CONTROL_GUIDE, PET_NUDGE_LINES, petMenuRows } from '../../../shared/pet/pet-copy'
 import { bubbleHop, bubbleSlot, menuSlot, petBox, petWindowRect } from '../../../shared/pet/pet-frame'
-import { reactionFor } from '../../../shared/pet/pet-reactions'
+import { nudgeReaction, reactionFor } from '../../../shared/pet/pet-reactions'
 import type { PetSize } from '../../../shared/pet/pet-settings'
 import type { PetFace, PetLook, PetPose, PetView } from '../../../shared/pet/pet-view'
 import { petWorld, type PetWorld } from '../../../shared/pet/pet-world'
@@ -432,6 +432,8 @@ interface PetSceneOptions {
   backdrop?: React.ReactNode
   /** 앱 반응(Task 7): 상태 기계와 같은 계산(reactionFor·bubbleSlot)으로 표정·소품·말풍선을 얹는다. sunglasses는 가명 처리 기본값 켬 */
   react?: { event: AppEvent; sunglasses: boolean }
+  /** 쉬어 가기 말(2026-11-13): 상태 기계와 같은 반응(nudgeReaction)과 말풍선 자리 */
+  nudge?: { text: string; sunglasses: boolean }
   /** 개발용: 펫 창의 모든 움직임을 이 시각(ms)에 멈춰 그린다(폴짝 꼭대기에서 말풍선과 소품 간격 확인) */
   freezeAt?: number
   /** 오른쪽 클릭 메뉴(Task 8): 상태 기계와 같은 계산(menuSlot·petMenuRows). 졸기 자세면 두 번째 행이 깨우기 */
@@ -448,9 +450,10 @@ function bubbleAt(text: string, box: Rect, win: Rect, size: PetSize, controlling
 
 /** 상태 기계(react)와 같이 반응의 표정·소품·cue로 모습을 덮어쓰고 말풍선 자리를 계산한다 */
 function reactionView(o: PetSceneOptions, box: Rect, win: Rect, size: PetSize): Pick<PetView, 'look' | 'bubble'> {
-  const r = o.react ? reactionFor(o.react.event, { reactions: true, bubbles: true }) : null
-  if (!o.react || !r) return { look: petLook(o.look), bubble: null }
-  const look = petLook({ ...o.look, face: r.face, props: [...(o.react.sunglasses ? (['sunglasses'] as const) : []), ...r.props], cue: r.cue, cueSeq: r.cue ? 1 : 0 })
+  const r = o.nudge ? nudgeReaction(o.nudge.text) : o.react ? reactionFor(o.react.event, { reactions: true, bubbles: true }) : null
+  const shades = (o.nudge ?? o.react)?.sunglasses ?? false
+  if (!r) return { look: petLook(o.look), bubble: null }
+  const look = petLook({ ...o.look, face: r.face, props: [...(shades ? (['sunglasses'] as const) : []), ...r.props], cue: r.cue, cueSeq: r.cue ? 1 : 0 })
   if (!r.bubble) return { look, bubble: null }
   return { look, bubble: bubbleAt(r.bubble, box, win, size) }
 }
@@ -558,6 +561,48 @@ function PetGallery(): React.JSX.Element {
           <span key={`${p.label}-label`} style={galleryLabel}>
             {p.label}
           </span>
+        ))}
+      </div>
+    </Desktop>
+  )
+}
+
+/** 말풍선 글 너비(DIP): 너비 200 − 테두리 2·안쪽 여백 10 양쪽(bubble-box.ts BUBBLE_BOX) */
+const BUBBLE_TEXT_WIDTH = 176
+
+/**
+ * 개발용: 쉬어 가기 말 여섯 줄을 말풍선과 같은 글자(13px, 줄 높이 18, 너비 200)로 그리고, 줄을 바꾸지 않은 너비를 글꼴을 불러온 뒤 잰다.
+ * 말풍선이 두 줄이 되거나 잰 너비가 176을 넘으면 문구를 줄인다
+ */
+function NudgeLines(): React.JSX.Element {
+  const [widths, setWidths] = useState<number[]>([])
+  useEffect(() => {
+    let live = true
+    void document.fonts.ready.then(() => {
+      if (!live) return
+      setWidths([...document.querySelectorAll<HTMLElement>('[data-nudge-measure]')].map((el) => Math.ceil(el.getBoundingClientRect().width)))
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  return (
+    <Desktop edge="right">
+      <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+        {PET_NUDGE_LINES.map((line, i) => (
+          <div key={line} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div className="rounded-window border-2 border-ink bg-bubble px-2.5 py-2 text-small text-ink" style={{ width: 'max-content', maxWidth: 200 }}>
+              <p className="pet-bubble-text" style={{ lineHeight: '18px' }}>
+                {line}
+              </p>
+            </div>
+            <span data-nudge-measure="" className="text-small" style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap' }}>
+              {line}
+            </span>
+            <span style={{ ...galleryLabel, color: widths[i] > BUBBLE_TEXT_WIDTH ? 'var(--danger)' : 'var(--text-2)' }}>
+              {widths[i] ? `${widths[i]} / ${BUBBLE_TEXT_WIDTH}` : ''}
+            </span>
+          </div>
         ))}
       </div>
     </Desktop>
@@ -691,6 +736,19 @@ const REACTION_SCENES: Scene[] = [
     look: {},
     react: { event: { type: 'unmasked', restored: 3 }, sunglasses: true }
   }),
+  petScene('pet-nudge', '말랑 메이트 쉬어 가기 말: 일하는 중간에 한 줄 말풍선과 폴짝(웃는 얼굴, 선글라스)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'floor', x: 200 },
+    look: {},
+    nudge: { text: PET_NUDGE_LINES[0], sunglasses: true }
+  }),
+  petScene('pet-nudge-sit', '말랑 메이트 쉬어 가기 말: 바 꼭대기에 앉아(글자가 가장 많은 문구)', {
+    bar: EDGE_RIGHT,
+    spot: { at: 'ledge' },
+    look: { pose: 'sit' },
+    nudge: { text: PET_NUDGE_LINES[2], sunglasses: false }
+  }),
+  { id: 'pet-nudge-lines', title: '개발용: 쉬어 가기 말 여섯 줄을 말풍선 글자로 그려 잰 너비(한 줄 = 글 너비 176 이하)', fixtures: {}, render: () => <NudgeLines /> },
   petScene('pet-note', '말랑 메이트 반응: 선택한 글을 못 가져옴(터미널), 흰 문서 창 앞(외곽선 대비)', {
     bar: EDGE_RIGHT,
     spot: { at: 'floor', x: 170 },
@@ -1235,8 +1293,9 @@ export const SCENES: Scene[] = [
   settingsScene('settings-glossary', '설정: 용어 사전(기본 팩)', 'glossary'),
   settingsScene('settings-hotkeys', '설정: 단축키', 'hotkeys'),
   settingsScene('settings-pet', '설정: 말랑 메이트(기본값, 조종 단축키 없음)', 'pet'),
+  settingsScene('settings-pet-nudge', '설정: 말랑 메이트 아래쪽(기본값: 쉬어 가기 말 걸기 켬, 간격 60분)', 'pet', undefined, { scrollEnd: true }),
   settingsScene('settings-pet-set', '설정: 말랑 메이트(숨김·크게·차분·졸기 15분·움직임 줄이기, 조종 단축키 Ctrl+Alt+P)', 'pet', petSet),
-  settingsScene('settings-pet-set-end', '설정: 말랑 메이트 아래쪽(말풍선 끔, 조종 단축키 Ctrl+Alt+P 쓰는 중)', 'pet', petSet, { scrollEnd: true }),
+  settingsScene('settings-pet-set-end', '설정: 말랑 메이트 아래쪽(말풍선 끔 → 쉬어 가기 말은 지금 말하지 않음, 간격 30분, 조종 단축키 Ctrl+Alt+P 쓰는 중)', 'pet', petSet, { scrollEnd: true }),
   settingsScene(
     'settings-pet-taken',
     '설정: 말랑 메이트 아래쪽(조종 단축키를 다른 앱이 써서 등록 못 함)',
@@ -1307,9 +1366,9 @@ function settingsSnapshot(): SettingsSnapshot {
   }
 }
 
-/** 말랑 메이트 탭 미리 보기: 기본값을 모두 바꾼 상태(숨김, 크게, 차분, 졸기 15분, 말풍선 끔, 움직임 줄이기, 조종 단축키 있음) */
+/** 말랑 메이트 탭 미리 보기: 기본값을 모두 바꾼 상태(숨김, 크게, 차분, 졸기 15분, 말풍선 끔, 쉬어 가기 말 간격 30분, 움직임 줄이기, 조종 단축키 있음) */
 function petSet(s: SettingsSnapshot): void {
-  s.settings.pet = { ...s.settings.pet, visible: false, size: 72, activity: 'calm', sleepAfterMin: 15, bubbles: false, reduceMotion: true, controlHotkey: 'Ctrl+Alt+P' }
+  s.settings.pet = { ...s.settings.pet, visible: false, size: 72, activity: 'calm', sleepAfterMin: 15, bubbles: false, nudgeEveryMin: 30, reduceMotion: true, controlHotkey: 'Ctrl+Alt+P' }
   s.hotkeys['pet-control'] = { acc: 'Ctrl+Alt+P', registered: true }
 }
 

@@ -10,6 +10,7 @@ import {
   PET_CONTROL_KEY_ITEMS,
   PET_CONTROL_KEYS,
   PET_CRASH_NOTICE,
+  PET_NUDGE_LINES,
   petBubbleText,
   petMenuRows
 } from './pet-copy'
@@ -192,6 +193,28 @@ describe('조종 안내(메뉴 설명·조종 시작 말풍선·팔레트 부제
 
   it('조종을 시작할 때 말풍선: 할 일 한 문장(굵게) + 키 안내', () => {
     expect(PET_CONTROL_GUIDE).toBe(`키보드로 조종해 보세요. ${PET_CONTROL_KEYS}`)
+  })
+})
+
+describe('쉬어 가기 말(2026-11-13, 설계 §20 "펫 말풍선 문구 검토"는 이 목록을 본다)', () => {
+  it('문구 목록', () => {
+    expect(PET_NUDGE_LINES).toEqual([
+      '물도 마시고 해요!',
+      '기지개 한번 켜 볼까요?',
+      '눈 쉬게 먼 곳을 20초만 봐요.',
+      '어깨 한번 돌려 볼까요?',
+      '잠깐 일어나 걸어 볼까요?',
+      '허리 쭉 펴고 해요!'
+    ])
+  })
+
+  it('모두 해요체 한 문장(말풍선이 첫 문장을 굵게 떼지 않는다)이고 서로 다르다', () => {
+    for (const line of PET_NUDGE_LINES) {
+      expect(line, line).toMatch(/요[!?.]$/)
+      expect(line.indexOf('. '), line).toBe(-1)
+      expect(line, line).toBe(line.trim())
+    }
+    expect(new Set(PET_NUDGE_LINES).size).toBe(PET_NUDGE_LINES.length)
   })
 })
 

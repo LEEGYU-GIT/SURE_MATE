@@ -7,9 +7,12 @@ export const BUBBLE_MS = 4000
 /** 말풍선 없는 반응(말풍선 끔)의 표정·소품 유지 시간 */
 export const REACTION_MS = 1500
 
-/** 앱 일에 대한 펫 반응: 표정·소품·한 번 도는 움직임을 holdMs 동안 덮어쓰고 말풍선을 띄운다(자세는 그대로) */
+/**
+ * 앱 일에 대한 펫 반응: 표정·소품·한 번 도는 움직임을 holdMs 동안 덮어쓰고 말풍선을 띄운다(자세는 그대로).
+ * nudge는 앱 일이 아니라 쉬어 가기 말(2026-11-13)이고 같은 말풍선·시간·닫기 규칙을 쓴다
+ */
 export interface PetReaction {
-  kind: 'celebrate' | 'warn' | 'hop' | 'note'
+  kind: 'celebrate' | 'warn' | 'hop' | 'note' | 'nudge'
   face: PetFace
   props: PetProp[]
   cue: 'hop' | null
@@ -52,4 +55,9 @@ export function reactionFor(
     bubble,
     holdMs: bubble !== null ? BUBBLE_MS : REACTION_MS
   }
+}
+
+/** 쉬어 가기 말: 웃는 얼굴과 폴짝 한 번(있는 움직임), 말풍선 4초(누르면 닫힘). 새 소품·긴 움직임은 없다 */
+export function nudgeReaction(text: string): PetReaction {
+  return { kind: 'nudge', face: 'happy', props: [], cue: 'hop', bubble: text, holdMs: BUBBLE_MS }
 }

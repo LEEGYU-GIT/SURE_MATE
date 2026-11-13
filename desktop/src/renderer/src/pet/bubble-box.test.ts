@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PET_CONTROL_GUIDE } from '../../../shared/pet/pet-copy'
-import { PET_WINDOW } from '../../../shared/pet/pet-view'
+import { PET_CONTROL_GUIDE, PET_NUDGE_LINES } from '../../../shared/pet/pet-copy'
+import { PET_WINDOW, SLOT as PET_SLOT } from '../../../shared/pet/pet-view'
 import {
   BUBBLE_BOX,
   bubbleLines,
@@ -239,5 +239,22 @@ describe('글자 다루기', () => {
 
   it('글 너비 = 200 − 테두리·안쪽 여백(문구 4줄 기준 176)', () => {
     expect(200 - 2 * (BUBBLE_BOX.border + BUBBLE_BOX.padX)).toBe(176)
+  })
+})
+
+describe('쉬어 가기 말(2026-11-13)은 말풍선 한 줄에 든다', () => {
+  /** 글 너비(DIP): 말풍선 너비 200 − 테두리·안쪽 여백 */
+  const TEXT_WIDTH = PET_SLOT.bubbleWidth - 2 * (BUBBLE_BOX.border + BUBBLE_BOX.padX)
+  /** 말풍선 글자 13px(--fs-small)에서 넉넉히 잰 너비: 한글 한 자 1em, 띄어쓰기 0.3em, 숫자·기호 0.62em(실제 글꼴은 더 좁다) */
+  const estimate = (text: string): number =>
+    [...text].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? 1 : ch === ' ' ? 0.3 : 0.62), 0) * 13
+
+  it('문구마다 글 너비 176 안이고, 붙이기·첫 문장 떼기가 바꾸지 않는다(한 문장, 건수·분류 없음)', () => {
+    expect(TEXT_WIDTH).toBe(176)
+    for (const line of PET_NUDGE_LINES) {
+      expect(estimate(line), line).toBeLessThanOrEqual(TEXT_WIDTH)
+      expect(keepTogether(line)).toBe(line)
+      expect(splitLead(line)).toEqual({ lead: null, rest: line })
+    }
   })
 })

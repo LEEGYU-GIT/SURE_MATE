@@ -1,9 +1,31 @@
 import { expect, it } from 'vitest'
-import { DEFAULT_PET_SETTINGS, sanitizePetSettings, WALK_SPEED } from './pet-settings'
+import { DEFAULT_PET_SETTINGS, PET_NUDGE_MINUTES, sanitizePetSettings, WALK_SPEED } from './pet-settings'
 
 it('기본값과 걷는 속도', () => {
-  expect(DEFAULT_PET_SETTINGS).toEqual({ visible: true, size: 56, activity: 'normal', sleepAfterMin: 3, bubbles: true, reactions: true, controlHotkey: null, reduceMotion: false })
+  expect(DEFAULT_PET_SETTINGS).toEqual({
+    visible: true,
+    size: 56,
+    activity: 'normal',
+    sleepAfterMin: 3,
+    bubbles: true,
+    reactions: true,
+    nudges: true,
+    nudgeEveryMin: 60,
+    controlHotkey: null,
+    reduceMotion: false
+  })
   expect(WALK_SPEED).toEqual({ calm: 40, normal: 60, lively: 90 })
+})
+
+it('쉬어 가기 말(2026-11-13): 켬·끔과 간격 30·45·60·90분. 예전 파일(필드 없음)과 틀린 값은 기본값(켬, 60분)', () => {
+  expect(PET_NUDGE_MINUTES).toEqual([30, 45, 60, 90])
+  // 쉬어 가기 말 전의 설정 파일
+  const old = { visible: false, size: 72, activity: 'calm', sleepAfterMin: 10, bubbles: true, reactions: false, controlHotkey: 'Ctrl+Alt+P', reduceMotion: true }
+  expect(sanitizePetSettings(old)).toEqual({ ...old, nudges: true, nudgeEveryMin: 60 })
+  for (const m of PET_NUDGE_MINUTES) expect(sanitizePetSettings({ nudgeEveryMin: m }).nudgeEveryMin).toBe(m)
+  for (const bad of [0, 50, 61, 120, '60', 60.5, null]) expect(sanitizePetSettings({ nudgeEveryMin: bad }).nudgeEveryMin, String(bad)).toBe(60)
+  expect(sanitizePetSettings({ nudges: false }).nudges).toBe(false)
+  expect(sanitizePetSettings({ nudges: 'no' }).nudges).toBe(true)
 })
 
 it('undefined는 기본값과 같다', () => {

@@ -113,6 +113,12 @@ describe('말랑 메이트(pet, 설계 문서 §14)', () => {
       ['sleepAfterMin', max],
       ['bubbles', false],
       ['reactions', false],
+      ['nudges', false],
+      ['nudges', true],
+      ['nudgeEveryMin', 30],
+      ['nudgeEveryMin', 45],
+      ['nudgeEveryMin', 60],
+      ['nudgeEveryMin', 90],
       ['reduceMotion', true]
     ]
     for (const [k, v] of valid) expect(patchOf({ pet: { [k]: v } }).pet, `${k}=${String(v)}`).toEqual({ [k]: v })
@@ -135,6 +141,13 @@ describe('말랑 메이트(pet, 설계 문서 §14)', () => {
       ['sleepAfterMin', Number.POSITIVE_INFINITY, '졸기'],
       ['bubbles', 1, '말풍선'],
       ['reactions', null, '반응'],
+      ['nudges', 'on', '쉬어 가기 말 걸기'],
+      ['nudgeEveryMin', 50, '쉬어 가기 말 간격'],
+      ['nudgeEveryMin', 120, '쉬어 가기 말 간격'],
+      ['nudgeEveryMin', 0, '쉬어 가기 말 간격'],
+      ['nudgeEveryMin', 60.5, '쉬어 가기 말 간격'],
+      ['nudgeEveryMin', '60', '쉬어 가기 말 간격'],
+      ['nudgeEveryMin', null, '쉬어 가기 말 간격'],
       ['reduceMotion', 'on', '움직임 줄이기']
     ]
     for (const [k, v, word] of invalid) {
@@ -188,7 +201,18 @@ describe('applySettingsPatch', () => {
   })
   it('설정 창이 다른 필드를 모두 바꿔도 펫 설정(M6)은 하나도 바뀌지 않는다', () => {
     const s = cur()
-    s.pet = { visible: false, size: 72, activity: 'lively', sleepAfterMin: 10, bubbles: false, reactions: false, controlHotkey: 'Ctrl+Alt+P', reduceMotion: true }
+    s.pet = {
+      visible: false,
+      size: 72,
+      activity: 'lively',
+      sleepAfterMin: 10,
+      bubbles: false,
+      reactions: false,
+      nudges: false,
+      nudgeEveryMin: 30,
+      controlHotkey: 'Ctrl+Alt+P',
+      reduceMotion: true
+    }
     const before = structuredClone(s.pet)
     const patch = patchOf(
       {
