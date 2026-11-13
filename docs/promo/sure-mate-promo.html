@@ -1,0 +1,906 @@
+<title>Sure-Mate 홍보 키트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Jua&display=swap">
+<style>
+/* 게시글 한 장: 760px 세로 띠가 위에서 아래로 내려가며 색 띠가 번갈아 나온다. 키캡과 말랑 메이트가 길잡이, 둘째 탭은 같은 토큰의 작업 메모.
+   data-slice가 붙은 칸에서 게시판용 이미지가 나뉜다(docs/promo/README.md) */
+:root {
+  --paper: #F3F8F7;
+  --card: #FFFFFF;
+  --ink: #17202A;
+  --mute: #4E5C68;
+  --line: rgba(23, 32, 42, 0.14);
+  --jelly: #3CC8B4;
+  --jelly-text: #12705F;
+  --jelly-wash: rgba(60, 200, 180, 0.14);
+  --sun: #FFD447;
+  --sun-ink: #392D00;
+  --cheek: #FF8FA3;
+  --lens: #BFF3EC;
+  --warn: #A65200;
+  --warn-wash: rgba(245, 158, 61, 0.18);
+  --night: #1E212A;
+  --night-2: #2A2F3B;
+  --night-line: rgba(255, 255, 255, 0.12);
+  --night-text: #EEF2F7;
+  --night-mute: #A9B3C1;
+  --mate-ink: #1B1E26;
+  --mate-white: #FFFFFF;
+  --display: 'Jua', 'IBM Plex Sans KR', 'Malgun Gothic', sans-serif;
+  --body: 'IBM Plex Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  --mono: 'IBM Plex Mono', Consolas, 'D2Coding', monospace;
+  --col: 760px;
+  --fs-hero: clamp(40px, 9vw, 64px);
+  --fs-h2: clamp(28px, 5.4vw, 38px);
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-cap: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #11151A;
+    --card: #1A1F27;
+    --ink: #E9EFF4;
+    --mute: #A4B0BC;
+    --line: rgba(233, 239, 244, 0.14);
+    --jelly-text: #63DCC9;
+    --jelly-wash: rgba(60, 200, 180, 0.15);
+    --warn: #F5A04D;
+    --warn-wash: rgba(245, 158, 61, 0.14);
+    --night: #0B0E12;
+    --night-2: #1D222C;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #11151A;
+  --card: #1A1F27;
+  --ink: #E9EFF4;
+  --mute: #A4B0BC;
+  --line: rgba(233, 239, 244, 0.14);
+  --jelly-text: #63DCC9;
+  --jelly-wash: rgba(60, 200, 180, 0.15);
+  --warn: #F5A04D;
+  --warn-wash: rgba(245, 158, 61, 0.14);
+  --night: #0B0E12;
+  --night-2: #1D222C;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 400; }
+p { margin: 0; }
+:focus-visible { outline: 3px solid var(--jelly); outline-offset: 3px; border-radius: 4px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lead-sm { color: var(--mute); font-size: var(--fs-small); }
+
+.wrap { max-width: var(--col); margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* 위쪽 탭 */
+.kit-bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); border-bottom: 1px solid var(--line); }
+.kit-bar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; }
+.kit-name { font-family: var(--display); font-size: 20px; color: var(--ink); margin-right: auto; }
+.tabs { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--jelly-wash); }
+.tab { font: 600 var(--fs-small)/1 var(--body); color: var(--mute); background: none; border: 0; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+
+/* 키캡: 이 제품의 모든 것은 단축키 하나에서 시작한다 */
+.key {
+  display: inline-block; min-width: 2.2em; padding: 0.18em 0.55em 0.26em; margin: 0 0.12em;
+  font: 600 0.82em/1.2 var(--mono); text-align: center; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 7px;
+}
+.plus { color: var(--mute); font-family: var(--mono); }
+.tok { font-family: var(--mono); font-weight: 600; color: var(--jelly-text); }
+.orig { font-weight: 700; }
+.sticker { display: inline-block; padding: 4px 11px; border-radius: 999px; background: var(--sun); color: var(--sun-ink); font-size: var(--fs-small); font-weight: 600; }
+.sticker.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+/* 한글이 들어가는 작은 글은 본문 글꼴(고정폭 글꼴에는 한글이 없어 대체 글꼴로 띄엄띄엄 그려진다) */
+.note { font-family: var(--body); font-size: var(--fs-cap); font-weight: 500; color: var(--mute); }
+
+/* 띠: 게시글의 한 칸 */
+.band { padding-block: 64px; }
+.band + .band { border-top: 1px solid var(--line); }
+.band.night { background: var(--night); color: var(--night-text); border-top: 0; }
+.band.night + .band { border-top: 0; }
+.band.wash { background: var(--jelly-wash); border-top: 0; }
+.band.wash + .band { border-top: 0; }
+.band-head { display: grid; gap: 12px; margin-bottom: 32px; }
+.band-head h2 { font-family: var(--display); font-size: var(--fs-h2); line-height: 1.25; }
+.band-head p { color: var(--mute); max-width: 60ch; }
+.night .band-head p { color: var(--night-mute); }
+.night .key { background: var(--night-2); color: var(--night-text); border-color: var(--night-line); }
+.night .plus { color: var(--night-mute); }
+
+/* 말랑 메이트. <use>로 복제한 그림은 원래 자리에서 선택자를 맞추므로 조상 없이 클래스만 쓴다 */
+.mate { display: block; overflow: visible; }
+.m-body { fill: var(--jelly); stroke: var(--mate-ink); stroke-width: 3; stroke-linejoin: round; }
+.m-shine { fill: var(--mate-white); opacity: 0.55; }
+.m-eye { fill: var(--mate-ink); }
+.m-line { fill: none; stroke: var(--mate-ink); stroke-width: 2.2; stroke-linecap: round; }
+.m-cheek { fill: var(--cheek); opacity: 0.85; }
+.m-shades { fill: var(--lens); stroke: var(--mate-ink); stroke-width: 2; }
+.m-drop { fill: var(--lens); stroke: var(--mate-ink); stroke-width: 2; stroke-linejoin: round; }
+.bubble { position: relative; background: var(--card); color: var(--ink); border: 2px solid var(--mate-ink); border-radius: 14px; padding: 8px 13px; font-size: var(--fs-small); font-weight: 500; line-height: 1.5; }
+
+/* 1. 첫 화면 */
+.hero { padding-block: 48px 56px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 20px; align-items: end; }
+.hero-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.hero h1 { font-family: var(--display); font-size: var(--fs-hero); line-height: 1.12; letter-spacing: -0.01em; }
+.hero h1 em { font-style: normal; color: var(--jelly-text); }
+.hero-lead { margin-top: 18px; font-size: 18px; color: var(--mute); max-width: 34ch; }
+.hero-keys { margin-top: 26px; font-size: 26px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.hero-keys .key { animation: press 520ms cubic-bezier(.3,.7,.4,1) both; }
+.hero-keys .key:nth-of-type(2) { animation-delay: 140ms; }
+.hero-keys .key:nth-of-type(3) { animation-delay: 280ms; }
+@keyframes press { 0%, 100% { transform: translateY(0); border-bottom-width: 3px; } 45% { transform: translateY(3px); border-bottom-width: 1px; } }
+.hero-cta { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.cta { display: inline-flex; align-items: center; gap: 10px; padding: 13px 20px; border-radius: 12px; background: var(--ink); color: var(--paper); font-weight: 600; font-size: var(--fs-small); }
+.cta .file { font-family: var(--mono); font-weight: 500; opacity: 0.8; }
+/* 화면 오른쪽 가장자리의 Sure-Mate 바와 그 위에 앉은 펫(실제 앱과 같은 자리) */
+.edge { display: grid; justify-items: center; }
+.edge .bubble { margin-bottom: 10px; justify-self: stretch; text-align: left; }
+.edge .bubble::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 14px; height: 14px; background: var(--card); border-right: 2px solid var(--mate-ink); border-bottom: 2px solid var(--mate-ink); transform: translateX(-50%) rotate(45deg); }
+.edge .mate { width: 76px; height: 76px; margin-bottom: -12px; position: relative; z-index: 1; animation: hop 700ms 620ms cubic-bezier(.3,.7,.4,1) both; }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-14px); } }
+.bar { width: 58px; padding: 14px 0; border-radius: 12px 12px 0 0; background: var(--night); display: grid; justify-items: center; gap: 12px; }
+.bar i { display: block; width: 26px; height: 26px; border-radius: 8px; background: var(--night-2); }
+.bar i:first-child { background: var(--jelly); }
+.bar i.shield { background: var(--night-2); box-shadow: inset 0 0 0 2px var(--jelly); border-radius: 8px 8px 13px 13px; }
+
+/* 2. 이런 순간 */
+.fit-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0; list-style: none; }
+.fit-list li { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.fit-list b { font-family: var(--display); font-weight: 400; font-size: 19px; line-height: 1.35; }
+.fit-list span { color: var(--mute); font-size: var(--fs-small); }
+
+/* 3. 워크스페이스 데모 */
+.desk { display: grid; grid-template-columns: 1fr 1.08fr; gap: 14px; align-items: end; }
+.monitor { display: grid; gap: 6px; }
+.screen { position: relative; aspect-ratio: 16 / 9.4; border-radius: 8px; background: var(--night-2); border: 2px solid var(--night-line); overflow: hidden; max-width: 100%; }
+.monitor.main .screen { aspect-ratio: 16 / 10; }
+.monitor .cap { font-size: var(--fs-cap); color: var(--night-mute); text-align: center; }
+.win { position: absolute; border-radius: 4px; background: #3A4150; border: 1px solid rgba(255, 255, 255, 0.18); color: var(--night-text); font: 600 11px/1 var(--body); padding: 7px 6px 5px; transition: left .6s cubic-bezier(.2,.8,.2,1), top .6s cubic-bezier(.2,.8,.2,1), width .6s cubic-bezier(.2,.8,.2,1), height .6s cubic-bezier(.2,.8,.2,1); }
+.win::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; border-radius: 4px 4px 0 0; background: var(--wc, #6C7A8D); }
+.win.code { --wc: #4D8CF5; }
+.win.web { --wc: #F5B941; }
+.win.sheet { --wc: #3CB371; }
+.win.chat { --wc: #E06C9F; }
+.win.doc { --wc: #9A7BEA; }
+/* 저장한 배치(기본): 메신저는 워크스페이스에 없는 창이라 불러오면 Chrome 뒤로 간다 */
+.w-web { left: 3%; top: 6%; width: 94%; height: 88%; z-index: 2; }
+.w-chat { left: 52%; top: 30%; width: 40%; height: 52%; z-index: 1; }
+.w-code { left: 3%; top: 5%; width: 57%; height: 90%; z-index: 2; }
+.w-sheet { left: 62%; top: 5%; width: 35%; height: 90%; z-index: 1; }
+/* 흐트러진 배치: 메신저가 위를 덮는다 */
+.messy .w-web { left: 26%; top: 22%; width: 60%; height: 62%; }
+.messy .w-chat { left: 18%; top: 12%; width: 46%; height: 58%; z-index: 3; }
+.messy .w-code { left: 26%; top: 30%; width: 52%; height: 52%; }
+.messy .w-sheet { left: 6%; top: 44%; width: 46%; height: 46%; z-index: 3; }
+.desk-ctl { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.btn { font: 600 var(--fs-small)/1 var(--body); padding: 11px 16px; border-radius: 10px; border: 1px solid var(--night-line); background: var(--night-2); color: var(--night-text); cursor: pointer; }
+.btn.go { background: var(--jelly); color: var(--mate-ink); border-color: transparent; }
+.desk-status { font-size: var(--fs-small); color: var(--night-mute); }
+.facts { margin-top: 28px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fact { border: 1px solid var(--night-line); border-radius: 12px; padding: 14px; display: grid; gap: 2px; align-content: start; }
+.fact b { font-family: var(--display); font-size: 21px; font-weight: 400; color: var(--jelly); }
+.fact span { font-size: var(--fs-small); color: var(--night-mute); }
+.say { margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--fs-small); color: var(--night-mute); }
+.say .typed { color: var(--night-text); background: var(--night-2); border: 1px solid var(--night-line); border-radius: 8px; padding: 6px 12px; }
+/* 화면 감추기: 누르기 전 → 누른 뒤 */
+.hide { margin-top: 36px; padding-top: 32px; border-top: 1px solid var(--night-line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; align-items: center; }
+.hide h3 { font-family: var(--display); font-size: 26px; line-height: 1.3; }
+.hide p { margin-top: 10px; color: var(--night-mute); font-size: var(--fs-small); }
+.hide p b { color: var(--night-text); font-weight: 600; }
+.before-after { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+.before-after .screen { aspect-ratio: 16 / 10; }
+.before-after .arrow { font-family: var(--mono); color: var(--jelly); font-size: 20px; }
+.ba-cap { margin-top: 6px; font-size: var(--fs-cap); color: var(--night-mute); text-align: center; }
+
+/* 4. 팔레트 */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.palette { background: var(--night); color: var(--night-text); border-radius: 14px; padding: 12px; box-shadow: 0 12px 28px rgba(14, 20, 28, 0.22); }
+.p-input { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 9px; background: var(--night-2); font-size: 17px; }
+.p-input .caret { width: 2px; height: 20px; background: var(--jelly); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.p-group { margin: 12px 8px 6px; font-size: var(--fs-cap); color: var(--night-mute); letter-spacing: 0.04em; }
+.p-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: var(--fs-small); }
+.p-row.on { background: rgba(255, 255, 255, 0.08); }
+.p-row small { color: var(--night-mute); font-size: var(--fs-cap); }
+.p-row .chip { margin-left: auto; font-size: 11px; color: var(--jelly); border: 1px solid rgba(60, 200, 180, 0.45); border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+.p-foot { margin-top: 10px; padding: 8px 10px 2px; border-top: 1px solid var(--night-line); font-size: var(--fs-cap); color: var(--night-mute); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.flow { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; counter-reset: step; }
+.flow li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: start; }
+.flow li::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 600 13px/1 var(--mono); }
+.prompts { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px; }
+.prompts span { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: var(--fs-small); }
+.callout { margin-top: 22px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 6px; }
+.callout b { font-family: var(--display); font-weight: 400; font-size: 19px; }
+.callout p { color: var(--mute); font-size: var(--fs-small); }
+
+/* 5. 가명 처리 */
+.mask-grid { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 24px; align-items: center; }
+.mask-grid .mate { width: 120px; height: 120px; }
+.mask-flow { margin: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+.mask-flow dt { font-size: var(--fs-cap); font-weight: 600; color: var(--mute); padding-top: 3px; }
+.mask-flow dd { margin: 0; font-size: 15px; }
+.mask-flow dd small { display: block; color: var(--mute); font-size: var(--fs-cap); }
+.modes { margin-top: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mode { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.mode b { font-size: 16px; }
+.mode p { font-size: var(--fs-small); color: var(--mute); }
+.mode.off b { color: var(--warn); }
+.mode.on { border-color: var(--jelly); box-shadow: inset 0 0 0 1px var(--jelly); }
+
+/* 6. 용어 카드 · 상용구 */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 14px; align-content: start; }
+.panel h3 { font-family: var(--display); font-size: 22px; line-height: 1.3; }
+.panel > p { color: var(--mute); font-size: var(--fs-small); }
+.wiki { background: var(--night); color: var(--night-text); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; }
+.wiki .term { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+.wiki .alias { font-size: var(--fs-cap); color: var(--night-mute); }
+.wiki p { font-size: 13px; line-height: 1.6; }
+.wiki .acts { display: flex; gap: 6px; margin-top: 4px; }
+.wiki .acts span { font-size: 11px; border: 1px solid var(--night-line); border-radius: 6px; padding: 4px 8px; color: var(--night-mute); }
+.snippet { font-size: 13px; line-height: 1.75; background: var(--paper); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; color: var(--ink); white-space: pre-wrap; }
+
+/* 7. 말랑 메이트 */
+.pet-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.pet-card { border: 1px solid var(--night-line); border-radius: 14px; padding: 16px 12px; display: grid; justify-items: center; gap: 10px; text-align: center; align-content: start; }
+.pet-card .mate { width: 64px; height: 64px; }
+.pet-card b { font-size: 15px; }
+.pet-card span { font-size: var(--fs-cap); color: var(--night-mute); line-height: 1.5; }
+.pet-card .tag { font-size: 11px; font-weight: 600; color: var(--sun); }
+.pet-note { margin-top: 18px; font-size: var(--fs-small); color: var(--night-mute); }
+
+/* 8. 실측 자리 */
+.slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.slot { border: 2px dashed var(--line); border-radius: 16px; padding: 18px 16px; display: grid; gap: 6px; align-content: start; }
+.slot b { font-family: var(--display); font-size: 28px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.slot span { font-size: var(--fs-small); color: var(--mute); }
+.slot .note { color: var(--warn); }
+
+/* 9. AI를 어떻게 */
+.how { display: grid; gap: 12px; }
+.how-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+.how-row:first-child { border-top: 0; padding-top: 0; }
+.how-row b { font-family: var(--display); font-weight: 400; font-size: 19px; color: var(--jelly-text); }
+.how-row p small { display: block; color: var(--mute); font-size: var(--fs-small); margin-top: 4px; }
+
+/* 10. 설치 */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; counter-reset: st; }
+.steps li { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; display: grid; gap: 8px; align-content: start; }
+.steps li::before { counter-increment: st; content: "STEP " counter(st); font: 600 var(--fs-cap)/1 var(--mono); color: var(--jelly-text); letter-spacing: 0.06em; }
+.steps b { font-size: 16px; }
+.steps span { font-size: var(--fs-small); color: var(--mute); }
+
+/* 11. 한눈에 보기 */
+.spec-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.spec { width: 100%; border-collapse: collapse; font-size: var(--fs-small); min-width: 520px; }
+.spec th, .spec td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.spec tr:last-child th, .spec tr:last-child td { border-bottom: 0; }
+.spec th { width: 30%; font-weight: 600; color: var(--mute); background: var(--jelly-wash); }
+
+/* 12. 묻고 답하기 */
+.qna { display: grid; gap: 10px; margin: 0; }
+.qa { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 6px; }
+.qa dt { font-weight: 600; }
+.qa dt::before { content: "Q. "; font-family: var(--mono); color: var(--jelly-text); }
+.qa dd { margin: 0; color: var(--mute); font-size: var(--fs-small); }
+.qa dd::before { content: "A. "; font-family: var(--mono); color: var(--ink); font-weight: 600; }
+
+/* 13. 함께 출품 · 마무리 */
+.together { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.together div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 4px; align-content: start; }
+.together .note { color: var(--jelly-text); }
+.together b { font-size: 16px; }
+.together span { font-size: var(--fs-small); color: var(--mute); }
+.closing { text-align: center; display: grid; justify-items: center; gap: 16px; }
+.closing .mate { width: 110px; height: 110px; animation: hop 900ms ease-in-out 2 both; }
+.closing h2 { font-family: var(--display); font-size: var(--fs-h2); line-height: 1.3; }
+.closing p { color: var(--mute); max-width: 42ch; }
+
+/* 둘째 탭: 작업 메모 */
+.plan { padding-block: 40px 72px; display: grid; gap: 48px; }
+.plan h2 { font-family: var(--display); font-size: 30px; line-height: 1.3; margin-bottom: 6px; }
+.plan h2 + p { color: var(--mute); margin-bottom: 18px; max-width: 62ch; }
+.plan h3 { font-size: 17px; font-weight: 700; margin: 18px 0 8px; }
+.map-wrap, .board-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.map { width: 100%; border-collapse: collapse; font-size: var(--fs-small); min-width: 560px; }
+.map th, .map td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.map thead th { font-family: var(--mono); font-size: var(--fs-cap); color: var(--mute); font-weight: 600; letter-spacing: 0.04em; }
+.map tr:last-child td { border-bottom: 0; }
+.board { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+.board th, .board td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.board thead th { font-family: var(--mono); font-size: var(--fs-cap); color: var(--mute); font-weight: 600; background: var(--jelly-wash); }
+.board td:first-child { font-family: var(--mono); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--jelly-text); }
+.board tr:last-child td { border-bottom: 0; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 15px; }
+.checks li::before { content: ""; width: 16px; height: 16px; margin-top: 4px; border: 2px solid var(--jelly-text); border-radius: 4px; }
+.checks li.done::before { background: var(--jelly-text); }
+.checks small { display: block; color: var(--mute); font-size: var(--fs-small); }
+.files { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.files div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+.files b { font-family: var(--mono); font-size: 13px; }
+.files span { font-size: var(--fs-small); color: var(--mute); }
+.offers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.offers div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 6px; align-content: start; }
+.offers b { font-size: 15px; }
+.offers span { font-size: var(--fs-small); color: var(--mute); }
+.post-text { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
+
+/* 게시판용 이미지로 뽑을 때(export.cjs가 html에 export를 붙인다): 탭과 작업 메모를 빼고 게시글만 */
+.export .kit-bar, .export #panel-plan, .export .desk-ctl { display: none !important; }
+.export #panel-page { display: block !important; }
+/* 이미지 한 장이 화면 폭 전체이므로 양옆을 넉넉히 둔다 */
+.export .wrap { padding-left: 32px; padding-right: 32px; }
+
+@media (max-width: 640px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); }
+  .edge { justify-self: end; width: 150px; }
+  .fit-list, .split, .two, .together, .modes, .slots, .steps, .offers, .files { grid-template-columns: minmax(0, 1fr); }
+  .desk, .hide { grid-template-columns: minmax(0, 1fr); }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .pet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mask-grid { grid-template-columns: minmax(0, 1fr); }
+  .mask-grid .mate { width: 88px; height: 88px; }
+  .mask-flow { grid-template-columns: minmax(0, 1fr); gap: 4px 0; }
+  .mask-flow dd { margin-bottom: 8px; }
+  .how-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .band { padding-block: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="mate-body">
+      <path class="m-body" d="M8 52 C8 30 18 16 32 16 C46 16 56 30 56 52 C56 57 50 58 32 58 C14 58 8 57 8 52 Z"/>
+      <ellipse class="m-shine" cx="21" cy="28" rx="5" ry="3" transform="rotate(-32 21 28)"/>
+      <ellipse class="m-cheek" cx="18.5" cy="45" rx="3.6" ry="2.1"/>
+      <ellipse class="m-cheek" cx="45.5" cy="45" rx="3.6" ry="2.1"/>
+    </g>
+    <g id="mate-happy">
+      <use href="#mate-body"/>
+      <path class="m-line" d="M22 37 Q25 34 28 37"/>
+      <path class="m-line" d="M36 37 Q39 34 42 37"/>
+      <path class="m-line" d="M28.5 43 Q32 47 35.5 43"/>
+    </g>
+    <g id="mate-calm">
+      <use href="#mate-body"/>
+      <circle class="m-eye" cx="25" cy="37" r="2.6"/>
+      <circle class="m-eye" cx="39" cy="37" r="2.6"/>
+      <path class="m-line" d="M29 43.5 Q32 46 35 43.5"/>
+    </g>
+    <g id="mate-worried">
+      <use href="#mate-body"/>
+      <circle class="m-eye" cx="25" cy="38" r="2.6"/>
+      <circle class="m-eye" cx="39" cy="38" r="2.6"/>
+      <path class="m-line" d="M21 32 L28 30"/>
+      <path class="m-line" d="M43 32 L36 30"/>
+      <path class="m-line" d="M28.5 46 Q32 43 35.5 46"/>
+    </g>
+  </defs>
+</svg>
+
+<header class="kit-bar">
+  <div class="wrap">
+    <span class="kit-name">Sure-Mate 홍보 키트</span>
+    <div class="tabs" role="tablist" aria-label="보기">
+      <button class="tab" role="tab" id="tab-page" aria-selected="true" aria-controls="panel-page">게시글 시안</button>
+      <button class="tab" role="tab" id="tab-plan" aria-selected="false" aria-controls="panel-plan" tabindex="-1">영상 콘티·준비물</button>
+    </div>
+  </div>
+</header>
+
+<main>
+<div id="panel-page" role="tabpanel" aria-labelledby="tab-page">
+
+  <!-- 1. 첫 화면 -->
+  <section class="hero" data-slice="01-intro">
+    <div class="wrap">
+      <div class="hero-tags">
+        <span class="sticker">2026 슬기로운 AI 생활 출품작</span>
+        <span class="sticker ghost">업무 비서와 반복 작업 자동화 부문</span>
+      </div>
+      <div class="hero-grid">
+        <div>
+          <h1>단축키 한 번이면<br>일이 <em>제자리로.</em></h1>
+          <p class="hero-lead">창 배치, AI 프롬프트, 가명 처리, 사내 용어까지. 손에 익은 단축키 하나로 불러오는 작은 비서, Sure-Mate예요.</p>
+          <div class="hero-keys" aria-label="기본 단축키 Ctrl Alt Space">
+            <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">Space</kbd>
+          </div>
+        </div>
+        <div class="edge" aria-hidden="true">
+          <div class="bubble">안녕하세요, 말랑 메이트예요. 오늘 일, 같이 정리해요.</div>
+          <svg class="mate" viewBox="0 0 64 64"><use href="#mate-happy"/></svg>
+          <div class="bar"><i></i><i></i><i class="shield"></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="hero-cta">
+        <span class="cta">첨부 파일 <span class="file">Sure-Mate-Setup-0.1.0.exe · 약 108MB</span></span>
+        <span class="note">관리자 권한 없이 1분이면 설치돼요</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 이런 순간 -->
+  <section class="band wash">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>이런 순간, 하루에도 몇 번씩 오죠</h2>
+        <p>한 번은 짧지만 모이면 꽤 길어요.</p>
+      </div>
+      <ul class="fit-list">
+        <li><b>회의만 끝나면 창 열두 개를 다시 늘어놓을 때</b><span>모니터 두 대에 배율까지 다르면 더 오래 걸려요</span></li>
+        <li><b>AI에 붙여넣다가 고객사 이름에서 손이 멈출 때</b><span>지우고, 바꾸고, AI가 쓴 글에서 다시 고치고</span></li>
+        <li><b>“MC/DC가 뭐였더라” 사내 위키를 또 열 때</b><span>약어 하나 찾느라 흐름이 끊겨요</span></li>
+        <li><b>누가 뒤에 서면 창을 하나씩 내릴 때</b><span>메신저, 다른 고객사 문서까지 하나하나</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 3. 워크스페이스 -->
+  <section class="band night" data-slice="02-workspace">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>창 배치, 단축키 한 번에 되돌려요</h2>
+        <p>평소처럼 창을 놓고 ‘지금 배치 저장’을 누르면 끝이에요. 메신저가 위를 덮어도, 창이 흐트러져도 저장한 화면으로 돌아와요.</p>
+      </div>
+      <div class="desk" id="desk">
+        <div class="monitor">
+          <div class="screen">
+            <div class="win web w-web">Chrome</div>
+            <div class="win chat w-chat">메신저</div>
+          </div>
+          <div class="cap">보조 모니터 · 100%</div>
+        </div>
+        <div class="monitor main">
+          <div class="screen">
+            <div class="win code w-code">VS Code</div>
+            <div class="win sheet w-sheet">Excel</div>
+          </div>
+          <div class="cap">주 모니터 · 150%</div>
+        </div>
+      </div>
+      <div class="desk-ctl">
+        <button class="btn" id="mess" type="button">창 흐트러뜨리기</button>
+        <button class="btn go" id="restore" type="button"><span aria-hidden="true">Ctrl + Alt + 1</span><span class="sr">워크스페이스 불러오기</span></button>
+        <span class="desk-status" id="desk-status" role="status">저장한 ‘업무 배치’ 그대로예요</span>
+      </div>
+      <div class="facts">
+        <div class="fact"><b>±10px</b><span>배율이 다른 모니터 두 대에서도 저장한 자리 그대로</span></div>
+        <div class="fact"><b>최대화까지</b><span>최소화·최대화했던 창도 원래 상태로</span></div>
+        <div class="fact"><b>창 제목으로</b><span>엑셀 두 개도 통합 문서 이름으로 구분</span></div>
+      </div>
+      <div class="say">
+        <span>말로 해도 알아들어요</span>
+        <span class="typed">보고서 모드로 바꿔줘</span>
+        <span class="typed">qhrhtj ahemfh</span>
+        <span>영문 자판으로 쳐도요</span>
+      </div>
+      <div class="hide">
+        <div>
+          <h3>뒤에 누가 오면 <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">H</kbd></h3>
+          <p>기본으로 들어 있는 ‘화면 감추기’예요. <b>업무 창만 남기고 나머지 창은 모두 내려요.</b> 한 번 더 누르면 내렸던 창이 그대로 돌아와요.</p>
+          <p>창을 닫지 않고 내리기만 해서 하던 일이 그대로 남아요.</p>
+        </div>
+        <div>
+          <div class="before-after" aria-label="화면 감추기 전과 후">
+            <div class="screen">
+              <div class="win doc" style="left:4%;top:8%;width:62%;height:70%">업무 문서</div>
+              <div class="win chat" style="left:46%;top:30%;width:50%;height:60%">메신저</div>
+              <div class="win web" style="left:14%;top:46%;width:48%;height:48%">다른 고객사</div>
+            </div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="screen">
+              <div class="win doc" style="left:4%;top:8%;width:62%;height:70%">업무 문서</div>
+            </div>
+          </div>
+          <div class="ba-cap">누르기 전 · 누른 뒤</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 프롬프트 팔레트 -->
+  <section class="band" data-slice="03-ai">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>선택하고, 단축키, 회의록 정리. 끝.</h2>
+        <p>고른 글로 회사 업무에 맞춘 프롬프트를 조립해 클립보드에 넣고, 쓰던 AI를 열어 줘요. 복사는 안 해도 돼요. 팔레트가 선택한 글을 알아서 가져가요.</p>
+      </div>
+      <div class="split">
+        <div class="palette" aria-label="팔레트 화면 예시">
+          <div class="p-input">회의록<span class="caret" aria-hidden="true"></span></div>
+          <div class="p-group">프롬프트</div>
+          <div class="p-row on">회의록 정리 <small>선택한 글 312자</small><span class="chip">프롬프트</span></div>
+          <div class="p-row">주간보고 초안 <small>지난주 메모로</small></div>
+          <div class="p-group">워크스페이스</div>
+          <div class="p-row">회의 배치 <small>창 4개</small></div>
+          <div class="p-foot"><span>Enter 실행</span><span>Alt+M 가명 처리</span><span>Esc 닫기</span></div>
+        </div>
+        <ol class="flow">
+          <li><span>메일이나 문서에서 글을 고르고 <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">Space</kbd></span></li>
+          <li><span><b>회의록</b>을 치고 Enter</span></li>
+          <li><span>확인 화면에서 바뀐 이름을 보고 Enter</span></li>
+          <li><span>Claude·ChatGPT·Gemini 중 쓰는 AI가 열려요. <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">V</kbd>만 하세요</span></li>
+        </ol>
+      </div>
+      <div class="prompts" aria-label="기본 프롬프트 8종">
+        <span>회의록 정리</span><span>주간보고 초안</span><span>메일·문의 요약과 회신 초안</span><span>문장 다듬기</span><span>요구사항 → 테스트 케이스</span><span>정적분석 위반 분석·소명 초안</span><span>표준·규격 조항 찾기</span><span>협업 문서 요약</span>
+      </div>
+      <div class="callout">
+        <b>사내 용어 뜻을 프롬프트에 자동으로 붙여요</b>
+        <p>글에 나온 MC/DC, ASIL, HARA 같은 용어의 설명을 함께 보내서 AI가 약어를 엉뚱하게 해석하지 않게 해요. AI를 직접 부르지 않으니 API 키도 비용도 필요 없어요.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 가명 처리 -->
+  <section class="band wash">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>AI는 CLIENT_A만 알아요</h2>
+        <p>보내기 전에 고객사·IP·경로를 다른 이름으로 바꾸고, AI가 쓴 글을 복사해 ‘가명 되돌리기’를 하면 원래 이름으로 돌아와요.</p>
+      </div>
+      <div class="mask-grid">
+        <svg class="mate" viewBox="0 0 64 64" aria-hidden="true">
+          <use href="#mate-calm"/>
+          <rect class="m-shades" x="17" y="32" width="13" height="9" rx="4"/>
+          <rect class="m-shades" x="34" y="32" width="13" height="9" rx="4"/>
+          <path class="m-line" d="M30 36.5 H34"/>
+        </svg>
+        <dl class="mask-flow">
+          <dt>보낼 글</dt><dd><span class="orig">가상자동차</span> 브레이크 시험 결과를 <span class="orig">10.0.3.15</span> 서버에 올렸어요</dd>
+          <dt>AI에 가는 글</dt><dd><span class="tok">CLIENT_A</span> 브레이크 시험 결과를 <span class="tok">IP_1</span> 서버에 올렸어요</dd>
+          <dt>AI가 쓴 글</dt><dd><span class="tok">CLIENT_A</span> 브레이크 시험은 모두 통과했고, 결과 파일은 <span class="tok">IP_1</span> 서버에 있어요</dd>
+          <dt>되돌린 글</dt><dd><span class="orig">가상자동차</span> 브레이크 시험은 모두 통과했고, 결과 파일은 <span class="orig">10.0.3.15</span> 서버에 있어요<small>팔레트에서 ‘가명 되돌려줘’</small></dd>
+        </dl>
+      </div>
+      <div class="modes">
+        <div class="mode on"><b>바꾸고 되돌리기</b><p>CLIENT_A로 바꿔 보내고 AI가 쓴 글에서 되돌려요. 기본값이에요.</p></div>
+        <div class="mode"><b>바꾸기만</b><p>고객사A로 바꾼 채로 보내요. 그대로 공유할 글에 좋아요.</p></div>
+        <div class="mode off"><b>끔</b><p>원문 그대로 가요. 바의 방패가 끊기고 말랑 메이트가 선글라스를 벗어요.</p></div>
+      </div>
+      <div class="callout">
+        <b>무엇을 바꿀지는 이 PC에만 적어 둬요</b>
+        <p>IP·경로·메일·전화번호는 알아서 찾고, 고객사·프로젝트·사람 이름은 가명 사전에 적어 둔 것을 바꿔요. 가명 사전과 대응표는 이 PC 밖으로 나가지 않고, 로그에는 글 내용 없이 글자 수만 남아요.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. 용어 카드와 상용구 -->
+  <section class="band" data-slice="04-wiki-mate">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>모르는 용어는 옆에, 자주 쓰는 양식은 느낌표 하나로</h2>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <h3>글을 고르고 <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">W</kbd></h3>
+          <p>쓰던 창은 그대로 두고 바 옆에 용어 카드가 떠요. 8초 뒤 알아서 사라지고, 고정할 수도 있어요.</p>
+          <div class="wiki" aria-label="용어 카드 예시">
+            <span class="term">MC/DC</span>
+            <span class="alias">변경 조건/결정 커버리지 · MCDC</span>
+            <p>결정 안의 각 조건이 결과에 독립적으로 영향을 주는지 확인하는 커버리지 기준이에요. DO-178C 레벨 A, ISO 26262 ASIL D에서 요구해요.</p>
+            <div class="acts"><span>설명 복사</span><span>고정</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>팔레트에 <kbd class="key">!이슈</kbd> 입력</h3>
+          <p>커서가 있던 자리에 결함 리포트 양식이 한 번에 붙어요. 양식은 설정에서 우리 팀에 맞게 고쳐요.</p>
+          <span class="note">양식 예시</span>
+          <div class="snippet">[결함 요약]
+[발견 환경] 대상 버전 / 시험 장비
+[재현 절차] 1. 2. 3.
+[기대 결과] / [실제 결과]
+[심각도] [첨부]</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. 말랑 메이트 -->
+  <section class="band night">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>일은 안 방해하고, 기분은 챙기는 동료</h2>
+        <p>화면 오른쪽 바와 작업 표시줄 위를 돌아다니는 말랑 메이트예요. 지금 상태를 몸짓으로 알려 주고, 가끔 쉬어 가자고 말을 걸어요.</p>
+      </div>
+      <div class="pet-grid">
+        <div class="pet-card"><svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-happy"/></svg><b>복사하면 폴짝</b><span>편지를 들고 “Claude에 붙여넣어 주세요”</span><span class="tag">복사 축하</span></div>
+        <div class="pet-card"><svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-worried"/></svg><b>가명 처리가 꺼지면</b><span>걱정하는 얼굴로 먼저 알려 줘요</span><span class="tag">상태 알림</span></div>
+        <div class="pet-card"><svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-happy"/><path class="m-drop" d="M54 14 C54 14 59 20 59 23 A5 5 0 0 1 49 23 C49 20 54 14 54 14 Z"/></svg><b>한 시간쯤 일하면</b><span>“물도 마시고 해요!” “기지개 한번 켜 볼까요?”</span><span class="tag">쉬어 가기</span></div>
+        <div class="pet-card"><svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-calm"/></svg><b>발표 중에는 숨기</b><span>전체 화면이 되면 1초 안에 숨어요</span><span class="tag">방해 금지</span></div>
+      </div>
+      <p class="pet-note">가만히 두면 꾸벅 졸고, 오른쪽 클릭 → 조종하기로 ←→ 걷고 Space로 뛰어요. 말 거는 간격은 30·45·60·90분 중에 고르거나 끌 수 있고, 숨기기로 언제든 쉬게 할 수 있어요.</p>
+    </div>
+  </section>
+
+  <!-- 8. 실측 -->
+  <section class="band" data-slice="05-effect">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>써 본 동료들의 시간이 이만큼 줄었어요</h2>
+        <p>시범 사용자들이 같은 일을 Sure-Mate 없이 한 번, 있이 한 번 해서 잰 시간이에요.</p>
+      </div>
+      <div class="slots">
+        <div class="slot"><span class="note">실측 자리</span><b data-fill="meeting">__분 → __분</b><span>회의 메모를 정리해 AI에 붙이기</span></div>
+        <div class="slot"><span class="note">실측 자리</span><b data-fill="workspace">__초 → __초</b><span>회의 화면에서 보고서 화면으로 바꾸기</span></div>
+        <div class="slot"><span class="note">실측 자리</span><b data-fill="wiki">__초 → __초</b><span>모르는 사내 용어 뜻 찾기</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. AI를 어떻게 -->
+  <section class="band">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>AI를 이렇게 써요</h2>
+        <p>앱이 AI를 직접 부르지 않아요. 회사에서 허용한 AI에 사람이 붙여넣는 방식이라 어떤 AI든 쓸 수 있어요.</p>
+      </div>
+      <div class="how">
+        <div class="how-row"><b>업무에 맞춘 프롬프트</b><p>회의록·주간보고·소명 초안처럼 우리 일에 맞춘 프롬프트 8종에 선택한 글, 용어 설명, 잘 쓴 예시 문서를 채워 넣어요.<small>예시 문서는 이 PC에만 저장돼요</small></p></div>
+        <div class="how-row"><b>정확도 장치</b><p>글에 나온 사내 용어의 뜻을 프롬프트에 함께 붙여 AI가 약어를 헷갈리지 않게 해요.<small>기본 용어 팩에 내가 추가한 용어까지</small></p></div>
+        <div class="how-row"><b>보안 장치</b><p>고객사·프로젝트·사람 이름과 IP·경로·메일을 보내기 전에 바꾸고, AI가 쓴 글에서 되돌려요.<small>바꾼 내역은 확인 화면에서 하나씩 끌 수 있어요</small></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. 설치 -->
+  <section class="band wash">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>설치는 1분이면 돼요</h2>
+        <p>관리자 권한도, 재부팅도 필요 없어요.</p>
+      </div>
+      <ol class="steps">
+        <li><b>첨부 파일 실행</b><span>Sure-Mate-Setup-0.1.0.exe를 내려받아 실행해요</span></li>
+        <li><b>파란 창이 뜨면</b><span>‘Windows의 PC 보호’에서 [추가 정보] → [실행]. 서명이 없는 사내 도구라 떠요</span></li>
+        <li><b>첫 실행 안내 세 화면</b><span>소개 → 창 배치 체험 → 준비 완료. 30초 따라 해 보기는 트레이 메뉴에서 언제든 열어요</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 11. 한눈에 보기 -->
+  <section class="band" data-slice="06-info">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>한눈에 보는 Sure-Mate</h2>
+      </div>
+      <div class="spec-wrap">
+        <table class="spec">
+          <tr><th>이름</th><td>Sure-Mate 0.1.0</td></tr>
+          <tr><th>출품 부문</th><td>업무 비서와 반복 작업 자동화</td></tr>
+          <tr><th>설치 파일</th><td>Sure-Mate-Setup-0.1.0.exe, 약 108MB</td></tr>
+          <tr><th>동작 환경</th><td>Windows 64비트, 관리자 권한 필요 없음</td></tr>
+          <tr><th>인터넷 연결</th><td>앱은 접속하지 않아요. AI 사이트는 기본 브라우저로 열어요</td></tr>
+          <tr><th>저장 위치</th><td>설정·용어·가명 사전 모두 이 PC에만 있어요</td></tr>
+          <tr><th>메모리·CPU</th><td>사용 메모리 약 290MB, 가만히 있을 때 CPU 0.1% 안팎</td></tr>
+          <tr><th>기본 단축키</th><td><kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">Space</kbd> 팔레트 · <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">W</kbd> 용어 카드 · <kbd class="key">Ctrl</kbd><span class="plus">+</span><kbd class="key">Alt</kbd><span class="plus">+</span><kbd class="key">H</kbd> 화면 감추기</td></tr>
+          <tr><th>함께 들어 있는 것</th><td>말랑 메이트 한 마리</td></tr>
+          <tr><th>문의</th><td>이 게시글 댓글로 남겨 주세요</td></tr>
+          <tr><th>지우는 법</th><td>설정 → 앱 → Sure-Mate → 제거</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12. Q&A -->
+  <section class="band">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>써 보기 전에 궁금한 것</h2>
+      </div>
+      <dl class="qna">
+        <div class="qa"><dt>회사 자료를 AI에 보내도 괜찮을까요?</dt><dd>보내기 전에 고객사·IP·경로를 바꿔 주지만, 꼭 회사가 허용한 AI에만 붙여넣어 주세요. 올리면 안 되는 자료는 처음부터 고르지 않는 것이 가장 안전해요.</dd></div>
+        <div class="qa"><dt>화면 감추기를 누르면 창이 닫히나요?</dt><dd>닫지 않고 내리기만 해요. 한 번 더 누르면 그대로 돌아와요. 처음에는 모든 창을 내리고, 지금 배치를 화면 감추기에 저장해 두면 그 창들은 남겨요.</dd></div>
+        <div class="qa"><dt>단축키를 눌러도 아무 일이 없어요.</dt><dd>다른 프로그램이 같은 조합을 쓰고 있을 수 있어요. 설정 → 단축키에서 빨간 안내를 확인하고 다른 조합으로 바꿔 주세요.</dd></div>
+        <div class="qa"><dt>보안 프로그램이 창 제어를 막아요.</dt><dd>그래도 팔레트와 프롬프트, 가명 처리는 클립보드 글로 동작해요. 선택한 글 가져오기와 창 배치만 쓸 수 없다고 알려 드려요.</dd></div>
+        <div class="qa"><dt>말랑 메이트가 신경 쓰여요.</dt><dd>오른쪽 클릭하고 숨기기를 고르세요. 바의 펫 단추로 다시 불러요. 쉬어 가기 말은 설정 → 말랑 메이트에서 끌 수 있어요.</dd></div>
+        <div class="qa"><dt>다시 연습해 보고 싶어요.</dt><dd>트레이 메뉴의 ‘따라 해 보기’나 팔레트의 ‘따라 해 보기 (30초)’로 언제든 다시 해 볼 수 있어요.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 13. 함께 출품 -->
+  <section class="band">
+    <div class="wrap">
+      <div class="band-head">
+        <h2>함께 출품한 프롬프트도 있어요</h2>
+        <p>설치 없이 프롬프트만 복사해서 바로 써 볼 수 있어요. Sure-Mate 기본 프롬프트에도 들어 있어요.</p>
+      </div>
+      <div class="together">
+        <div><span class="note">개발과 검증 부문</span><b>정적분석 위반 분석·소명 초안</b><span>위반 목록을 붙이면 원인 분석과 소명 초안을 정리해요</span></div>
+        <div><span class="note">자료 조사와 지식 검색 부문</span><b>표준·규격 조항 찾기</b><span>ISO 26262 같은 규격에서 관련 조항을 찾아 정리해요</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14. 마무리 -->
+  <section class="band wash">
+    <div class="wrap closing">
+      <svg class="mate" viewBox="0 0 64 64" aria-hidden="true"><use href="#mate-happy"/></svg>
+      <h2>좋아요 하나에 말랑 메이트가 폴짝 뛰어요</h2>
+      <p>써 보신 소감, 이런 기능이 있으면 좋겠다는 의견을 댓글로 남겨 주세요. 다음 버전에 넣을게요.</p>
+    </div>
+  </section>
+</div>
+
+<!-- 둘째 탭: 영상 콘티와 준비물 -->
+<div id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
+  <div class="wrap plan">
+
+    <section>
+      <h2>게시글 구성 한눈에</h2>
+      <p>심사위원이 처음 30초 안에 무엇을, 어떻게, 얼마나 좋아졌는지 찾을 수 있게, 게시글 각 칸이 필수 항목과 심사 기준을 하나씩 맡아요.</p>
+      <div class="map-wrap">
+        <table class="map">
+          <thead><tr><th>필수 항목·심사 기준</th><th>맡는 칸</th><th>보여 줄 것</th></tr></thead>
+          <tbody>
+            <tr><td>어떤 업무에</td><td>이런 순간, 하루에도 몇 번씩</td><td>창 배치, AI에 붙여넣기, 용어 찾기, 창 감추기</td></tr>
+            <tr><td>무엇이 좋아졌는지 · 업무 개선 효과</td><td>실측 칸, 시연 영상</td><td>시범 사용자 전후 시간 3개(실측값만)</td></tr>
+            <tr><td>AI를 어떻게 · 업무 적합성</td><td>AI를 이렇게 써요, 가명 처리</td><td>프롬프트 조립, 용어 자동 첨부, 보내기 전 가명 처리</td></tr>
+            <tr><td>사용법</td><td>설치는 1분, 첫 실행 안내</td><td>SmartScreen 화면 캡처, 세 화면 안내, 30초 따라 해 보기</td></tr>
+            <tr><td>확산 가치</td><td>한눈에 보는 Sure-Mate, 함께 출품</td><td>관리자 권한 없이 설치, 프롬프트·용어 팩을 파일로 나눠 쓰기</td></tr>
+            <tr><td>좋아요·댓글</td><td>첫 화면 티저, 마무리</td><td>30초 티저 영상, 말랑 메이트, 댓글 부탁</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>게시판에 올릴 이미지</h2>
+      <p>게시글 시안을 760px 폭으로 여섯 장에 나눠 뽑았어요. 순서대로 올리고, 이미지 사이에 아래 본문 텍스트를 나눠 넣으면 돼요. 실측 숫자를 채우면 다시 뽑아요(docs/promo/README.md).</p>
+      <div class="files">
+        <div><b>01-intro.png</b><span>첫 화면, 이런 순간</span></div>
+        <div><b>02-workspace.png</b><span>창 배치, 화면 감추기</span></div>
+        <div><b>03-ai.png</b><span>프롬프트 팔레트, 가명 처리</span></div>
+        <div><b>04-wiki-mate.png</b><span>용어 카드·상용구, 말랑 메이트</span></div>
+        <div><b>05-effect.png</b><span>실측, AI를 이렇게, 설치</span></div>
+        <div><b>06-info.png</b><span>한눈에 보기, 궁금한 것, 함께 출품</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>영상 A · 30초 티저 「단축키 한 번」</h2>
+      <p>게시글 맨 위에 둬요. 내레이션 없이 음악과 큰 자막만, 장면마다 누른 키를 키캡 자막으로 띄워요.</p>
+      <div class="board-wrap">
+        <table class="board">
+          <thead><tr><th>시간</th><th>화면</th><th>자막</th></tr></thead>
+          <tbody>
+            <tr><td>0:00–0:03</td><td>두 모니터에 창이 뒤엉켜 있고 메신저가 위를 덮음</td><td>월요일 아침, 창 열두 개.</td></tr>
+            <tr><td>0:03–0:07</td><td><kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">1</kbd> 키캡 → 창이 저장한 자리로</td><td>단축키 한 번이면 제자리.</td></tr>
+            <tr><td>0:07–0:11</td><td>뒤에서 누가 다가옴 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">H</kbd> → 업무 창만 남음</td><td>뒤에 누가 오면, 한 번 더.</td></tr>
+            <tr><td>0:11–0:17</td><td>회의 메모 선택 → 팔레트 ‘회의록’ → Claude 열림</td><td>회의록 정리, AI에 바로.</td></tr>
+            <tr><td>0:17–0:22</td><td>확인 화면에서 가상자동차 → CLIENT_A로 바뀌는 순간 확대</td><td>고객사 이름은 AI가 몰라요.</td></tr>
+            <tr><td>0:22–0:26</td><td>문서에서 MC/DC 선택 → 바 옆 용어 카드</td><td>모르는 용어는 옆에 바로.</td></tr>
+            <tr><td>0:26–0:30</td><td>말랑 메이트가 편지를 들고 폴짝 → 로고와 첨부 파일 이름</td><td>Sure-Mate. 첨부 파일로 1분 설치.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>영상 B · 2분 30초 시연 「김가상 책임의 월요일」</h2>
+      <p>심사위원이 직접 해 볼 순서 그대로 보여 줘요. 인물·고객사는 모두 가상 이름이고, 내레이션은 텍스트 음성 변환으로 넣어 목소리로 작성자가 드러나지 않게 해요.</p>
+      <div class="board-wrap">
+        <table class="board">
+          <thead><tr><th>시간</th><th>화면</th><th>내레이션</th></tr></thead>
+          <tbody>
+            <tr><td>0:00–0:15</td><td>바탕화면, 오른쪽 바 위에 앉은 말랑 메이트</td><td>Sure-Mate는 단축키 하나로 창 배치, AI 프롬프트, 가명 처리, 사내 용어를 불러오는 작은 비서예요.</td></tr>
+            <tr><td>0:15–0:40</td><td>흐트러진 창 → 팔레트에 ‘보고서 모드로 바꿔줘’ → 두 모니터 배치 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">H</kbd>로 감췄다가 다시 누르기</td><td>저장해 둔 배치를 말로 불러요. 누가 뒤에 오면 화면 감추기로 업무 창만 남기고, 한 번 더 누르면 그대로 돌아와요.</td></tr>
+            <tr><td>0:40–1:20</td><td>회의 메모 선택 → 회의록 → 확인 화면(바뀐 이름 하이라이트) → Claude에 붙여넣기 → 답 복사 → ‘가명 되돌려줘’</td><td>AI에는 CLIENT_A만 가고, AI가 쓴 글은 원래 이름으로 되돌려요. 고객사 이름을 손으로 지울 일이 없어요.</td></tr>
+            <tr><td>1:20–1:40</td><td>보고서에서 MC/DC 선택 → <kbd class="key">Ctrl</kbd>+<kbd class="key">Alt</kbd>+<kbd class="key">W</kbd> 용어 카드</td><td>사내 용어 뜻이 바 옆에 떠요. 프롬프트에도 자동으로 붙어 AI가 약어를 헷갈리지 않아요.</td></tr>
+            <tr><td>1:40–1:55</td><td>메모장에 <kbd class="key">!이슈</kbd> → 결함 리포트 양식</td><td>자주 쓰는 양식은 느낌표 하나로 붙여요.</td></tr>
+            <tr><td>1:55–2:15</td><td>복사 축하 → 가명 처리 끔 경고 → “물도 마시고 해요!” → 슬라이드쇼 시작하자 숨기</td><td>말랑 메이트가 지금 상태를 알려 주고, 가끔 쉬어 가자고 말을 걸고, 발표할 땐 알아서 숨어요.</td></tr>
+            <tr><td>2:15–2:30</td><td>설치와 첫 실행 안내 세 화면 → 끝 화면(로고, 첨부 파일, 함께 출품한 두 글)</td><td>관리자 권한 없이 1분이면 설치돼요. 앱은 인터넷에 접속하지 않아요.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>장면별 GIF</h3>
+      <p class="lead-sm">게시판이 영상을 못 붙이면 영상 B의 장면을 6~8초 GIF로 잘라 이미지 사이에 넣어요. 창 배치, 화면 감추기, 프롬프트, 가명 처리, 용어 카드, 말랑 메이트 여섯 개면 충분해요.</p>
+    </section>
+
+    <section>
+      <h2>찍기 전에 준비할 것</h2>
+      <ul class="checks">
+        <li><span>화면 1920×1080, 배율 100%<small>글자가 또렷하게 찍혀요. 시연 뒤 원래 배율로 돌려요</small></span></li>
+        <li><span>알림 끄기<small>설정 → 시스템 → 알림 → 방해 금지 켜기</small></span></li>
+        <li><span>가짜 자료만 화면에<small>가명 사전에 가상자동차·XY방산·김가상·이예시를 넣고, 메신저·메일처럼 실명이 보이는 창은 닫아요</small></span></li>
+        <li><span>녹화는 Windows 캡처 도구<small><kbd class="key">Win</kbd>+<kbd class="key">Shift</kbd>+<kbd class="key">R</kbd>로 영역을 골라 MP4로 저장해요</small></span></li>
+        <li><span>편집은 Clipchamp<small>Windows 11 기본 앱이에요. 자르기, 자막, 키캡 이미지, 텍스트 음성 변환, 무료 배경 음악까지 한 곳에서 해요</small></span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>게시 전 확인</h2>
+      <ul class="checks">
+        <li><span>실측 자리 세 칸을 시범 사용자 측정값으로 채우고 이미지 다시 뽑기<small>측정하지 않은 숫자는 넣지 않아요</small></span></li>
+        <li><span>설치 파일 크기·메모리·CPU를 최종본으로 고치기<small>지금 숫자는 11/10 설치본 측정값이에요</small></span></li>
+        <li><span>첨부 파일 용량 확인<small>설치 파일이 게시판에 올라가는지, 안 되면 사내 공유 폴더 링크</small></span></li>
+        <li><span>SHA-256 해시를 본문에 적기<small>받은 파일이 바뀌지 않았는지 동료가 확인할 수 있어요</small></span></li>
+        <li><span>익명 점검<small>세 글 같은 닉네임, 캡처·영상·파일 속성에 실명·사번·메일 주소 없음</small></span></li>
+        <li><span>함께 출품한 두 글 링크 연결<small>세 글이 서로를 소개해요</small></span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>게시판 본문 텍스트 초안</h2>
+      <p>이미지 위아래에 붙이는 글이에요. 이미지가 안 보여도 필수 항목 네 가지가 다 읽히게 했어요.</p>
+      <div class="post-text">[어떤 업무에] 창 배치 전환, 회의록·보고서를 AI로 정리하기, 사내 용어 찾기, 결함 리포트 같은 양식 붙이기, 자리에 누가 왔을 때 화면 가리기처럼 하루에도 여러 번 반복하는 일에 써요.
+
+[무엇이 좋아졌는지] 시범 사용자 __명이 같은 일을 전후로 재 보니 회의록 정리 __분 → __분, 화면 전환 __초 → __초, 용어 찾기 __초 → __초였어요.
+
+[AI를 어떻게] 앱이 AI를 직접 부르지 않고, 우리 업무에 맞춘 프롬프트 8종에 선택한 글과 사내 용어 설명을 채워 클립보드에 넣어요. 보내기 전에 고객사·IP·경로를 다른 이름(CLIENT_A)으로 바꾸고, AI가 쓴 글은 ‘가명 되돌리기’로 원래 이름으로 돌려요. 회사가 허용한 AI라면 무엇이든 쓸 수 있어요.
+
+[사용법] 첨부한 Sure-Mate-Setup-0.1.0.exe를 실행하고(관리자 권한 필요 없음, ‘추가 정보 → 실행’), 첫 실행 안내 세 화면을 따라 하면 돼요. 팔레트는 Ctrl+Alt+Space, 용어 카드는 Ctrl+Alt+W, 화면 감추기는 Ctrl+Alt+H예요. 트레이 메뉴의 ‘따라 해 보기’로 30초 연습도 할 수 있어요.</div>
+    </section>
+
+    <section>
+      <h2>이어서 만들 수 있는 것</h2>
+      <p>원하는 것을 말씀해 주시면 바로 이어서 할게요.</p>
+      <div class="offers">
+        <div><b>최종 설치 파일과 실측</b><span>게시할 코드로 설치 파일을 만들고, 설치본으로 메모리·CPU를 다시 재서 숫자와 해시를 고쳐요</span></div>
+        <div><b>시연 자동 재생</b><span>스모크 시험처럼 사람 손 타이밍으로 영상 B의 장면을 매번 똑같이 재생해, 녹화를 몇 번이고 다시 찍을 수 있게 해요</span></div>
+        <div><b>실제 화면 캡처</b><span>가짜 자료로 앱 화면을 찍어 시안의 그림 자리를 실제 화면으로 바꿔요</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+</main>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab, focus) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    if (focus) tab.focus();
+    window.scrollTo({ top: 0 });
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t, false); });
+    t.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      select(tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length], true);
+    });
+  });
+
+  // 워크스페이스 데모: 흐트러뜨리면 메신저가 위를 덮고, 단축키 한 번이면 저장한 자리로
+  var desk = document.getElementById('desk');
+  var status = document.getElementById('desk-status');
+  document.getElementById('mess').addEventListener('click', function () {
+    desk.classList.add('messy');
+    status.textContent = '메신저가 위를 덮고 창이 흐트러졌어요';
+  });
+  document.getElementById('restore').addEventListener('click', function () {
+    desk.classList.remove('messy');
+    status.textContent = '업무 배치 · 창 3개 모두 배치했어요. 메신저는 뒤로 갔어요';
+  });
+})();
+</script>
