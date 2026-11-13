@@ -1,10 +1,10 @@
 # 공모전 홍보 영상
 
-`out/sure-mate-promo.mp4`는 사내 공모전 게시글에 첨부하는 홍보 영상이다.
+`sure-mate-promo.mp4`는 사내 공모전 게시글에 첨부하는 홍보 영상이다.
 
 - 화면: 1920×1080, 30fps, 약 77초
 - 소리: 합성 음악과 효과음(내레이션 없음)
-- 대표 이미지: `out/sure-mate-promo-poster.png`
+- 대표 이미지: `sure-mate-promo-poster.png`
 
 한 직원(가상 인물 김가상)의 하루를 시간 순서로 따라가며, 업무 중 실제로 발생하는 상황에서 Sure-Mate 주요 기능을 사용하는 장면을 보여 준다.
 

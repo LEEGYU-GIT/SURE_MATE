@@ -1,7 +1,8 @@
 // One command for the whole promo video: scenario data → real UI captures → frames → audio → MP4.
 //   node docs/promo/video/build.mjs                 (저장소 어디서나, Node 22 이상)
 //   node docs/promo/video/build.mjs --skip-capture  (캡처는 그대로 두고 장면·소리만 다시)
-// 결과: docs/promo/video/out/sure-mate-promo.mp4, out/sure-mate-promo-poster.png
+// 결과: docs/promo/video/sure-mate-promo.mp4, sure-mate-promo-poster.png
+// (저장소 .gitignore가 out/ 폴더를 빼므로 결과는 이 폴더에 바로 둔다)
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -9,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE = join(HERE, '.cache')
-const OUT = join(HERE, 'out')
+const OUT = HERE
 const args = process.argv.slice(2)
 const ffmpeg = process.env.FFMPEG ?? 'ffmpeg'
 // 앱의 TypeScript 소스를 그대로 불러온다(Node 22: 형식만 지우고 실행, 확장자 없는 import는 lib/ts-hook.mjs가 채운다)
