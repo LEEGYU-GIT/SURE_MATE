@@ -3,6 +3,7 @@ import type { Template } from '../../../shared/template/types'
 import { Button, Section, TextField } from './controls'
 import { templateSource, type TemplateSource } from './template-editor'
 import { ReferencesPanel } from './ReferencesPanel'
+import { StylePanel } from './StylePanel'
 import { TemplateEditor } from './TemplateEditor'
 
 const SOURCE_LABEL: Record<TemplateSource, string> = {
@@ -112,6 +113,7 @@ export function PromptsTab(): React.JSX.Element {
         </p>
       </div>
       <ReferencesPanel />
+      <StylePanel />
     </>
   )
 }

@@ -2,6 +2,8 @@ import { clipboard, shell } from 'electron'
 import { allAiTargets, isOpenableUrl } from '../../shared/ai-targets'
 import { termsFor } from '../../shared/glossary/find-terms'
 import type { GlossaryEntry } from '../../shared/glossary/types'
+import { analyzeStyle } from '../../shared/style/style-card'
+import { renderStylePrompt } from '../../shared/style/style-prompt'
 import { fillTemplate } from '../../shared/template/fill'
 import type { Template } from '../../shared/template/types'
 import { appEvents } from '../app-events'
@@ -14,6 +16,7 @@ import { notify } from '../notify'
 import type { Settings } from '../settings/settings-store'
 import { hidePalette, hidePaletteAndRefocus, isPaletteVisible, showPalette } from '../windows/palette-window'
 import { createPromptSession, type PromptSession } from './prompt-session'
+import { readStyleSamples, styleKindOfBody } from '../style/style-store'
 import { readReference } from './references'
 
 /** 넘으면 경고하는 기준 예시 길이(설계 문서 §7: 4,000자 이하 권장) */
@@ -29,6 +32,8 @@ export function createPromptRuntime(o: {
   /** 지금 용어 목록({{terms}}용, 팔레트를 열 때마다 새로 읽은 것) */
   getGlossary: () => GlossaryEntry[]
   masking: MaskingService
+  /** 실행한 프롬프트의 말투 종류와 넣은 글(메모리에만, 'AI 티 지우기'가 쓴다) */
+  lastPrompt?: { set(kind: string | null, input: string): void }
 }): PromptSession {
   return createPromptSession({
     findTemplate: (id) => o.getTemplates().find((t) => t.id === id) ?? null,
@@ -50,7 +55,9 @@ export function createPromptRuntime(o: {
           const text = readReference(o.userData, kind)
           if (text && text.length > REFERENCE_WARN_CHARS) longKinds.push(kind)
           return text
-        }
+        },
+        // 내 말투(설계 §7-1): 견본 글은 넣지 않고 견본에서 센 말투 카드만 넣는다
+        style: (kind) => renderStylePrompt(kind, analyzeStyle(readStyleSamples(o.userData, kind).map((s) => s.text)))
       })
       const warnings = longKinds.map((k) => `기준 예시(${k})가 4,000자를 넘어요. 프롬프트가 길어져 AI가 앞부분만 읽을 수 있어요`)
       return { ...result, warnings: [...result.warnings, ...warnings] }
@@ -78,6 +85,7 @@ export function createPromptRuntime(o: {
     },
     now: Date.now,
     // 말랑 메이트 반응(설계 §14-2 "앱과 연결")
-    emit: appEvents.emit
+    emit: appEvents.emit,
+    remember: ({ template, input }) => o.lastPrompt?.set(styleKindOfBody(template.body), input)
   })
 }

@@ -62,6 +62,8 @@ export interface PromptSessionDeps {
    * 가린 것은 분류별 건수, AI는 열 대상 이름만(말풍선에 그대로 보여 줄 값, 로그에는 남기지 않음)
    */
   emit(e: AppEvent): void
+  /** 실행한 프롬프트와 넣은 글을 기억한다(메모리에만). 'AI 티 지우기'가 말투 종류와 원문 대조에 쓴다 */
+  remember?(r: { template: Template; input: string }): void
 }
 
 /** 켠 항목의 분류별 건수 합(0건 제외, ALL_CATEGORIES 순서) */
@@ -158,6 +160,7 @@ export function createPromptSession(d: PromptSessionDeps): PromptSession {
     const { list, defaultId } = d.targets()
     const target = pickAiTarget({ override: req?.target, template: template.aiTarget, defaultId, targets: list })
     await d.writeClipboard(masked.text, { excludeFromHistory })
+    d.remember?.({ template, input })
     // 펫 반응은 복사한 직후, 브라우저를 열기 전에(여는 시간과 무관하게 1초 안에 반응한다)
     d.emit({ type: 'prompt-copied', masking: mode, masked: maskedCounts(masked.items), target: target.url ? target.name : null })
     if (target.url) await d.openUrl(target.url)

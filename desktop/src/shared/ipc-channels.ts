@@ -171,6 +171,11 @@ export const IPC = {
   settingsReferenceGet: 'settings:reference-get',
   settingsReferenceSave: 'settings:reference-save',
   settingsReferenceDelete: 'settings:reference-delete',
+  /** 내 말투(설계 §7-1): 종류 목록과 말투 카드, 견본 목록·더하기·지우기 */
+  settingsStyles: 'settings:styles',
+  settingsStyleSamples: 'settings:style-samples',
+  settingsStyleAdd: 'settings:style-add',
+  settingsStyleRemove: 'settings:style-remove',
   settingsGlossary: 'settings:glossary',
   settingsGlossarySave: 'settings:glossary-save',
   settingsGlossaryDelete: 'settings:glossary-delete',
@@ -372,6 +377,13 @@ export interface SettingsApi {
   referenceGet(kind: string): Promise<string | null>
   referenceSave(kind: string, text: string): Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
   referenceDelete(kind: string): Promise<{ ok: true } | { ok: false; reason: string }>
+  /** 내 말투(설계 §7-1): 템플릿이 쓰는 종류와 견본 파일만 있는 종류, 견본 수와 말투 카드 줄 */
+  styles(): Promise<StyleKindView[]>
+  /** 이 종류의 견본(넣은 순서, 앞부분만) */
+  styleSamples(kind: string): Promise<StyleSampleView[]>
+  styleAdd(kind: string, text: string): Promise<{ ok: true; count: number; dropped: boolean } | { ok: false; reason: string }>
+  /** index번째(0부터) 견본을 지운다 */
+  styleRemove(kind: string, index: number): Promise<{ ok: boolean }>
   /** 용어 사전(설계 문서 §9): 전체 용어와 기본 용어 id */
   glossary(): Promise<{ entries: GlossaryEntry[]; builtinIds: string[] }>
   glossarySave(draft: WikiDraft, o: { id?: string; allowDuplicate: boolean }): Promise<WikiSaveResult>
@@ -382,6 +394,12 @@ export interface SettingsApi {
 
 /** 기준 예시 한 종류: 파일 글자 수(없으면 null)와 쓰는 템플릿 이름 */
 export type ReferenceKind = { kind: string; length: number | null; usedBy: string[] }
+
+/** 설정 창의 내 말투 종류 한 줄: 견본 수, 쓰는 템플릿, 말투 카드(describeStyle 줄) */
+export type StyleKindView = { kind: string; samples: number; usedBy: string[]; card: string[] }
+
+/** 설정 창의 견본 한 줄: 첫 줄 앞부분, 글자 수, 넣은 시각(ISO) */
+export type StyleSampleView = { preview: string; length: number; addedAt: string }
 
 /** 편집기가 보내는 템플릿(id가 없으면 새로 만든다) */
 export type TemplateDraft = Omit<Template, 'scope' | 'id'> & { id?: string }

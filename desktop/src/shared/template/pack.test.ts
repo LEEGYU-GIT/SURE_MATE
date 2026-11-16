@@ -51,6 +51,19 @@ it('가명 기본값: 표준·규격 조항 찾기와 협업 문서 요약만 �
   expect(rest.every((t) => t.masking === undefined || t.masking === 'default')).toBe(true)
 })
 
+it('내 말투 자리: 회의록 정리·주간보고 초안·Ttree 근무 기록·메일 회신만, 입력(---) 앞에 둔다', () => {
+  const styled = builtinTemplates()
+    .map((t) => ({ id: t.id, kinds: [...t.body.matchAll(/\{\{style:([^}]*)\}\}/g)].map((m) => m[1]), body: t.body }))
+    .filter((t) => t.kinds.length)
+  expect(styled.map((t) => [t.id, t.kinds])).toEqual([
+    ['meeting-notes', ['회의록']],
+    ['weekly-report', ['주간보고']],
+    ['ttree-worklog', ['주간보고']],
+    ['mail-reply', ['메일']]
+  ])
+  for (const t of styled) expect(t.body.indexOf('{{style:'), t.id).toBeLessThan(t.body.indexOf('---\n입력:'))
+})
+
 it('기본 프롬프트마다 영문 입력용 별칭이 하나 이상 있다', () => {
   for (const t of builtinTemplates()) expect(t.aliases.some((a) => /^[a-z]+$/.test(a)), t.name).toBe(true)
 })

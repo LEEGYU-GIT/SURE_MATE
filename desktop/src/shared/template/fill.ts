@@ -1,3 +1,4 @@
+import { withObjectParticle } from '../josa'
 import type { FillContext, FillResult } from './types'
 
 /** {{이름}} 또는 {{이름:값}}. 중괄호 안 앞뒤 공백 허용 */
@@ -7,6 +8,7 @@ const TERMS_LINE = /\{\{\s*terms\s*\}\}/
 /** 줄에서 뺄 때는 앞 공백과 함께 */
 const TERMS_TOKEN = /[ \t]*\{\{\s*terms\s*\}\}/g
 const REFERENCE_TOKEN = /[ \t]*\{\{\s*reference:([^}]*)\}\}/g
+const STYLE_TOKEN = /[ \t]*\{\{\s*style:([^}]*)\}\}/g
 /** 넣는 글이 들어가는 자리. 이런 줄은 통째로 빼지 않는다 */
 const INPUT_IN_LINE = /\{\{\s*(selection|clipboard)\s*\}\}/
 
@@ -19,7 +21,7 @@ const formatTime = (d: Date): string => `${pad2(d.getHours())}:${pad2(d.getMinut
 /**
  * 템플릿 본문의 자리표시자를 한 번에 채운다(설계 문서 §7).
  * 넣은 글 안의 {{…}}는 다시 채우지 않고, 모르는 자리표시자는 그대로 두고 경고한다.
- * 넣을 용어가 없는 {{terms}} 줄과 기준 예시가 없는 {{reference:종류}} 줄은 통째로 뺀다.
+ * 넣을 용어가 없는 {{terms}} 줄, 기준 예시가 없는 {{reference:종류}} 줄, 내 말투 견본이 없는 {{style:종류}} 줄은 통째로 뺀다.
  * 다만 그 줄에 {{selection}}·{{clipboard}}가 같이 있으면 넣은 글까지 사라지므로 그 자리표시자만 뺀다.
  */
 export function fillTemplate(body: string, ctx: FillContext): FillResult {
@@ -36,7 +38,14 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
     return references.get(kind) ?? null
   }
 
+  const styles = new Map<string, string | null>()
+  const styleOf = (kind: string): string | null => {
+    if (!styles.has(kind)) styles.set(kind, ctx.style ? ctx.style(kind) : null)
+    return styles.get(kind) ?? null
+  }
+
   const missingKinds = new Set<string>()
+  const missingStyles = new Set<string>()
   const lines: string[] = []
   for (const raw of normalized.split('\n')) {
     let emptied = false
@@ -48,10 +57,18 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
       emptied = true
       return ''
     })
+    line = line.replace(STYLE_TOKEN, (whole: string, kind: string) => {
+      const k = kind.trim()
+      if (styleOf(k) !== null) return whole
+      missingStyles.add(k)
+      emptied = true
+      return ''
+    })
     if (!emptied) lines.push(raw)
     else if (INPUT_IN_LINE.test(raw)) lines.push(line)
   }
   for (const kind of missingKinds) notes.push(`기준 예시(${kind})를 넣어 두면 결과가 회사 양식에 더 가까워져요`)
+  for (const kind of missingStyles) notes.push(`내가 쓴 ${withObjectParticle(kind)} '내 말투로 등록'해 두면 AI 답이 내 말투에 가까워져요`)
   // 줄을 빼면 앞뒤 빈 줄이 겹치므로, 템플릿의 빈 줄 겹침은 하나로 줄인다(넣는 글은 아직 들어가기 전이라 영향 없음)
   const tidy = lines.filter((line, i) => !(line.trim() === '' && i > 0 && lines[i - 1].trim() === ''))
 
@@ -69,6 +86,9 @@ export function fillTemplate(body: string, ctx: FillContext): FillResult {
         return [TERMS_HEADING, ...terms.map((t) => `- ${t.term}: ${t.definition}`)].join('\n')
       case 'reference':
         if (arg !== undefined) return referenceOf(arg.trim()) ?? ''
+        break
+      case 'style':
+        if (arg !== undefined) return styleOf(arg.trim()) ?? ''
         break
     }
     warnings.push(`알 수 없는 자리표시자: ${whole}`)

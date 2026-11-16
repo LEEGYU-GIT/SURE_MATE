@@ -66,6 +66,10 @@ import { electronPetEnv } from './pet/pet-env'
 import { handOffForCapture } from './pet/pet-focus'
 import { createPetRuntime, type PetRuntime } from './pet/pet-runtime'
 import { createPromptRuntime, PICK_KEYS_WAIT_MS } from './prompts/prompt-runtime'
+import { analyzeStyle, describeStyle } from '../shared/style/style-card'
+import { createLastPrompt, styleCommandItems, type StyleCommands } from './style/style-commands'
+import { createStyleCommandsRuntime } from './style/style-commands-runtime'
+import { addStyleSample, listStyleKinds, readStyleSamples, removeStyleSample } from './style/style-store'
 import type { PromptSession } from './prompts/prompt-session'
 import { deletePersonalTemplate, exportMyTemplatesText, importTemplatePack, readMyTemplates, savePersonalTemplate } from './prompts/personal-templates'
 import { deleteReference, listReferenceKinds, readReference, saveReference } from './prompts/references'
@@ -100,6 +104,9 @@ let prompts: PromptSession | null = null
 let snippets: { run(templateId: string): Promise<unknown> } | null = null
 let masking: MaskingService | null = null
 let maskingCommands: MaskingCommands | null = null
+/** 내 말투(설계 §7-1): AI 티 지우기·내 말투로 등록. 마지막 프롬프트의 말투 종류와 넣은 글은 메모리에만 8시간 */
+let styleCommands: StyleCommands | null = null
+const lastPrompt = createLastPrompt()
 const barCommands = createBarCommands({
   getShape: () => settings.bar.shape,
   setShape: setBarShape,
@@ -551,6 +558,7 @@ async function runItem(id: string): Promise<void> {
   }
   if (isDevCommand(id)) return runDevCommand(id)
   if (maskingCommands && (await maskingCommands.run(id))) return
+  if (styleCommands && (await styleCommands.run(id))) return
   if (packCommands && (await packCommands.run(id))) return
   if (await barCommands.run(id)) return
   if (await petCommands.run(id)) return
@@ -854,7 +862,8 @@ if (!app.requestSingleInstanceLock()) {
     const loadDictionary = createTermsCache(userData, (errors) => reportFileErrors('가명 사전 항목', 'masking.dictionaryErrors', errors))
     masking = createMaskingService({ loadDictionary, settings: () => settings.masking, now: Date.now })
     glossaryEntries = (await glossaryCache.get()).entries
-    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, getGlossary: () => glossaryEntries, masking })
+    const session = createPromptRuntime({ userData, getSettings: () => settings, getTemplates: () => templates, getGlossary: () => glossaryEntries, masking, lastPrompt })
+    styleCommands = createStyleCommandsRuntime({ userData, masking, getTemplates: () => templates, lastPrompt: () => lastPrompt.get() })
     prompts = session
     snippets = createSnippetRuntime({ getTemplates: () => templates })
     maskingCommands = createMaskingCommandsRuntime({
@@ -920,7 +929,8 @@ if (!app.requestSingleInstanceLock()) {
         // 졸고 있으면 "재우기" 대신 "깨우기"(M4)
         petSleeping: petRuntime?.controller.status().mode === 'sleep',
         workspaces: workspaceItems,
-        apps: appCommandItems(appCommands.installed())
+        apps: appCommandItems(appCommands.installed()),
+        styles: styleCommandItems(listStyleKinds(list, userData))
       })
     }
     // 기억한 문장·사용 기록: 팔레트 검색 문맥과 설정 창 말하듯 입력 탭이 같은 저장소를 쓴다. 저장소가 바꾼 값을 메모리에 바로 두고
@@ -1125,6 +1135,26 @@ if (!app.requestSingleInstanceLock()) {
         remove: async (kind) => {
           const r = await deleteReference(userData, kind)
           log('reference.delete', { ok: r.ok })
+          return r
+        }
+      },
+      // 내 말투(설계 §7-1): 견본은 이 PC에만, 설정 창에는 첫 줄 앞부분과 말투 카드만 보낸다. 로그에는 길이·개수만
+      styles: {
+        list: () =>
+          listStyleKinds(templates, userData).map((k) => ({
+            ...k,
+            card: describeStyle(analyzeStyle(readStyleSamples(userData, k.kind).map((s) => s.text)))
+          })),
+        samples: (kind) =>
+          readStyleSamples(userData, kind).map((s) => ({ preview: [...(s.text.split('\n').find((l) => l.trim()) ?? '')].slice(0, 60).join(''), length: [...s.text].length, addedAt: s.addedAt })),
+        add: async (kind, text) => {
+          const r = await addStyleSample(userData, kind, text)
+          log('style.sample', r.ok ? { ok: true, length: text.length, count: r.count, dropped: r.dropped, from: 'settings' } : { ok: false, length: text.length, from: 'settings' })
+          return r
+        },
+        remove: async (kind, index) => {
+          const r = await removeStyleSample(userData, kind, index)
+          log('style.sampleRemove', { ok: r.ok })
           return r
         }
       }

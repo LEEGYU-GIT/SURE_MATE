@@ -77,6 +77,22 @@ it('기준 예시가 있으면 넣는다', () => {
   expect(r.warnings).toEqual([])
 })
 
+it('내 말투 견본이 있으면 {{style:종류}}에 말투 안내를 넣는다', () => {
+  const r = fillTemplate('[할 일]\n{{style:회의록}}\n{{selection}}', ctx({ style: (kind) => (kind === '회의록' ? '[내 말투] 개조식' : null) }))
+  expect(r.text).toBe('[할 일]\n[내 말투] 개조식\n본문')
+  expect(r.notes).toEqual([])
+})
+
+it('견본이 없거나 style을 주지 않으면 {{style:종류}} 줄을 빼고 등록을 권한다(을·를은 종류 이름에 맞춘다)', () => {
+  const none = fillTemplate('[할 일]\n{{style:회의록}}\n{{style:주간보고}}\n{{selection}}', ctx({ style: () => null }))
+  expect(none.text).toBe('[할 일]\n본문')
+  expect(none.notes).toEqual([
+    "내가 쓴 회의록을 '내 말투로 등록'해 두면 AI 답이 내 말투에 가까워져요",
+    "내가 쓴 주간보고를 '내 말투로 등록'해 두면 AI 답이 내 말투에 가까워져요"
+  ])
+  expect(fillTemplate('{{style:회의록}}\n{{selection}}', ctx()).text).toBe('본문')
+})
+
 it('중괄호 안 공백을 허용하고, {{selection}}이 없으면 경고한다', () => {
   expect(fillTemplate('{{ selection }}', ctx()).text).toBe('본문')
   expect(fillTemplate('고정 문장', ctx()).warnings).toContain('이 템플릿에는 {{selection}} 자리가 없어 입력한 글이 들어가지 않아요')

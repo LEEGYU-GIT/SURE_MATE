@@ -316,6 +316,21 @@ function fakeSettingsApi(fx: FakeFixtures, ws: ReturnType<typeof fakeWorkspaces>
     referenceGet: async () => null,
     referenceSave: async () => ({ ok: true }),
     referenceDelete: async () => ({ ok: true }),
+    styles: async () => [
+      { kind: '메일', samples: 0, usedBy: ['메일·문의 요약과 회신 초안'], card: [] },
+      {
+        kind: '회의록',
+        samples: 3,
+        usedBy: ['회의록 정리'],
+        card: ['끝맺음: 개조식(~함, ~예정) 86%', '한 줄: 18자 안팎', "목록 기호: '-'", '날짜: M/D(요일)', '자주 쓰는 끝말: 예정, 필요']
+      }
+    ],
+    styleSamples: async () => [
+      { preview: '[주간 회의] 11/9(월) 가상자동차 BCM', length: 312, addedAt: '2026-11-09T08:10:00.000Z' },
+      { preview: '- HIL 2번 장비 고장 → 수리 요청함', length: 188, addedAt: '2026-11-12T02:40:00.000Z' }
+    ],
+    styleAdd: async () => ({ ok: false, reason: '미리 보기에서는 저장하지 않아요' }),
+    styleRemove: async () => ({ ok: true }),
     glossary: async () => ({ entries: fx.glossary, builtinIds: fx.glossary.filter((e) => e.source === 'builtin').map((e) => e.id) }),
     glossarySave: async () => ({ ok: false, errors: ['미리 보기에서는 저장하지 않아요'] }),
     glossaryDelete: async () => ({ ok: true }),

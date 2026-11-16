@@ -31,6 +31,8 @@ export function buildPaletteItems(
     workspaces?: PaletteItem[]
     /** 사내 메신저·Ttree 열기(설치된 것만) */
     apps?: PaletteItem[]
+    /** 내 말투: AI 티 지우기, 종류마다 내 말투로 등록(styleCommandItems). 가명 처리 명령 바로 뒤 */
+    styles?: PaletteItem[]
   }
 ): PaletteItem[] {
   const fromTemplates = templates.map(
@@ -56,6 +58,7 @@ export function buildPaletteItems(
   return [
     ...fromTemplates,
     ...maskingCommandItems(o.maskingMode),
+    ...(o.styles ?? []),
     ...naturalCommandItems(),
     ...packCommandItems(),
     ...barCommandItems(o.barShape),

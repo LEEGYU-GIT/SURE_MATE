@@ -39,6 +39,13 @@ export interface SettingsIpcDeps {
     save(kind: string, text: string): Promise<unknown>
     remove(kind: string): Promise<unknown>
   }
+  /** 내 말투(설계 §7-1). 종류 이름·글 길이 검사는 받는 쪽(style-store)이 다시 한다 */
+  styles?: {
+    list(): unknown
+    samples(kind: string): unknown
+    add(kind: string, text: string): Promise<unknown>
+    remove(kind: string, index: number): Promise<unknown>
+  }
   dictionary: {
     get(): Promise<{ terms: unknown[]; errors: string[] }>
     save(terms: unknown): Promise<unknown>
@@ -117,6 +124,15 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
     fromSettings(e) && isKind(kind) && typeof text === 'string' ? d.references.save(kind, text) : { ok: false, reason: BAD }
   )
   ipcMain.handle(IPC.settingsReferenceDelete, (e, kind: unknown) => (fromSettings(e) && isKind(kind) ? d.references.remove(kind) : { ok: false, reason: BAD }))
+  const styles = d.styles
+  ipcMain.handle(IPC.settingsStyles, (e) => (fromSettings(e) && styles ? styles.list() : []))
+  ipcMain.handle(IPC.settingsStyleSamples, (e, kind: unknown) => (fromSettings(e) && styles && isKind(kind) ? styles.samples(kind) : []))
+  ipcMain.handle(IPC.settingsStyleAdd, (e, kind: unknown, text: unknown) =>
+    fromSettings(e) && styles && isKind(kind) && typeof text === 'string' ? styles.add(kind, text) : { ok: false, reason: BAD }
+  )
+  ipcMain.handle(IPC.settingsStyleRemove, (e, kind: unknown, index: unknown) =>
+    fromSettings(e) && styles && isKind(kind) && Number.isInteger(index) ? styles.remove(kind, index as number) : { ok: false }
+  )
   ipcMain.handle(IPC.settingsGlossary, (e) => (fromSettings(e) ? d.glossary.list() : { entries: [], builtinIds: [] }))
   ipcMain.handle(IPC.settingsGlossarySave, (e, draft: unknown, o: unknown) => {
     if (!fromSettings(e)) return { ok: false, errors: ['설정 창에서만 할 수 있어요'] }

@@ -36,6 +36,8 @@ export interface FillContext {
   terms(input: string): TermDef[]
   /** 기준 예시 문서. 없으면 null */
   reference(kind: string): string | null
+  /** {{style:종류}}에 넣을 내 말투 안내(견본에서 센 말투 카드). 견본이 없으면 null. 주지 않으면 늘 null */
+  style?(kind: string): string | null
 }
 
 export interface FillResult {
