@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { BarViewState } from '../shared/bar/bar-items'
-import { parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parsePointer } from '../shared/bar/bar-ipc'
+import { parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parseBarPress, parsePointer, type BarPressKind } from '../shared/bar/bar-ipc'
 import { parseFlyoutAction, parseFlyoutReady } from '../shared/flyout/flyout-action'
 import type { FlyoutAction, FlyoutMessage } from '../shared/flyout/flyout-content'
 import type { GlossaryEntry, WikiSaveResult } from '../shared/glossary/types'
@@ -32,7 +32,8 @@ export interface OverlayIpc {
   barContentsId: number
   flyoutContentsId: number
   barState(): BarViewState
-  barAction(id: string): Promise<void>
+  /** how: 바 단추를 실행한 방식(로그용). 틀린 값이면 null이고 실행은 그대로 한다 */
+  barAction(id: string, how: BarPressKind | null): Promise<void>
   barHover(id: string | null): void
   barPointer(inside: boolean): void
   barContextMenu(y: number): void
@@ -315,9 +316,9 @@ function registerOverlayIpc(overlay: () => OverlayIpc | null): void {
     })
   }
 
-  on(IPC.barAction, 'bar', (o, raw) => {
+  on(IPC.barAction, 'bar', (o, raw, how) => {
     const id = parseBarId(raw)
-    return id === null ? undefined : o.barAction(id)
+    return id === null ? undefined : o.barAction(id, parseBarPress(how))
   })
   on(IPC.barHover, 'bar', (o, raw) => {
     const h = parseBarHover(raw)

@@ -310,7 +310,8 @@ describe('바·펼침 창 IPC는 그 창이 보낸 것만 받는다', () => {
 describe('값을 검사한 뒤에만 넘긴다(renderer는 믿지 않는다)', () => {
   it('맞는 값은 그대로 넘긴다', async () => {
     const o = overlay!
-    send(IPC.barAction, BAR, 'prompt:meeting-notes')
+    send(IPC.barAction, BAR, 'prompt:meeting-notes', 'up')
+    send(IPC.barAction, BAR, 'pet', 'squeeze')
     send(IPC.barHover, BAR, 'masking')
     send(IPC.barHover, BAR, null)
     send(IPC.barPointer, BAR, false)
@@ -319,7 +320,11 @@ describe('값을 검사한 뒤에만 넘긴다(renderer는 믿지 않는다)', (
     send(IPC.flyoutReady, FLYOUT, 3, 183.5, 52)
     send(IPC.flyoutPointer, FLYOUT, true)
     expect(await invoke(IPC.flyoutAction, FLYOUT, { type: 'set-masking', mode: 'off', extra: 'x' })).toBe(true)
-    expect(o.barAction).toHaveBeenCalledWith('prompt:meeting-notes')
+    // 실행한 방식은 로그용이라 틀린 값이면 null로 바꿔 실행은 그대로 한다
+    expect(o.barAction.mock.calls).toEqual([
+      ['prompt:meeting-notes', 'up'],
+      ['pet', null]
+    ])
     expect(o.barHover.mock.calls).toEqual([['masking'], [null]])
     expect(o.barPointer).toHaveBeenCalledWith(false)
     expect(o.barContextMenu).toHaveBeenCalledWith(212.5)

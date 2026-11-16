@@ -9,11 +9,23 @@ export const BAR_ID_MAX = 200
 const DRAG_PHASES = ['start', 'move', 'end'] as const
 type DragPhase = (typeof DRAG_PHASES)[number]
 
+/**
+ * 바 단추를 실행한 방식(로그용). up: 누르고 뗌, up-only: 누름 없이 뗌만 옴(Windows가 포커스를 받지 않는 창에
+ * 누름을 보내지 않는 상태, 2026-11-16), click: 포인터 없이 온 click(화면 읽기 프로그램·자동화가 단추를 실행)
+ */
+export const BAR_PRESS_KINDS = ['up', 'up-only', 'click'] as const
+export type BarPressKind = (typeof BAR_PRESS_KINDS)[number]
+
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /** 바 항목 id(1~200자 문자열). 틀리면 null */
 export function parseBarId(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 && v.length <= BAR_ID_MAX ? v : null
+}
+
+/** 바 단추를 실행한 방식. 정해진 값이 아니면 null(로그에만 쓰는 값이라 null이어도 실행은 한다) */
+export function parseBarPress(v: unknown): BarPressKind | null {
+  return BAR_PRESS_KINDS.includes(v as BarPressKind) ? (v as BarPressKind) : null
 }
 
 /** 마우스가 들어간 항목 id(1~200자) 또는 나감(null). 틀리면 null */

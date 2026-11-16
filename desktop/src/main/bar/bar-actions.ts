@@ -1,3 +1,4 @@
+import type { BarPressKind } from '../../shared/bar/bar-ipc'
 import type { BarShape } from '../../shared/bar/bar-settings'
 import { createExecutionGuard } from '../../shared/execution-guard'
 import type { FlyoutAction } from '../../shared/flyout/flyout-content'
@@ -36,7 +37,7 @@ export interface BarActionDeps {
  * 실행 중 표시는 먼저 누른 고정 프롬프트 하나만 켠다: 실행 중에 다른 프롬프트를 누르면 세션이 막고(busy),
  * 그 단추가 먼저 누른 단추의 표시를 끄지 않게 한다.
  */
-export function createBarActions(d: BarActionDeps, now: () => number = Date.now): { run(id: string): Promise<void> } {
+export function createBarActions(d: BarActionDeps, now: () => number = Date.now): { run(id: string, how?: BarPressKind | null): Promise<void> } {
   const guard = createExecutionGuard(BAR_ACTION_GUARD_MS, now)
   let busyItem: string | null = null
 
@@ -76,14 +77,15 @@ export function createBarActions(d: BarActionDeps, now: () => number = Date.now)
   }
 
   return {
-    async run(id) {
+    async run(id, how = null) {
       if (!d.isKnown(id)) {
         // 모르는 id는 내용일 수 있어 길이만 남긴다
         d.log('bar.action.unknown', { length: id.length })
         return
       }
       if (!guard(id)) return
-      d.log('bar.action', { id })
+      // press: 뗌으로 실행(up), 누름 없이 뗌만 옴(up-only, Windows가 누름을 보내지 않는 상태), 보조 기술의 click
+      d.log('bar.action', how ? { id, press: how } : { id })
       try {
         await handle(id)
       } catch (e) {

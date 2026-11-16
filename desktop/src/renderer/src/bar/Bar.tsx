@@ -3,9 +3,18 @@ import type { BarItem, BarViewState } from '../../../shared/bar/bar-items'
 import { BAR_METRICS } from '../../../shared/bar/bar-layout'
 import type { MaskingMode } from '../../../shared/types'
 import { LetterIcon, ListChecksIcon, NotebookPenIcon, PetIcon, ScanSearchIcon, SettingsIcon, ShieldIcon, ShieldOffIcon, WikiIcon, WorkspaceIcon } from '../design/icons'
-import { barFrameStyle, createDragReporter, maskingLook, promptIcon, shouldSendBarClick, type PromptIconName } from './bar-view'
+import { barFrameStyle, createBarPress, createDragReporter, maskingLook, promptIcon, type PromptIconName } from './bar-view'
 
 type Shape = BarViewState['shape']
+
+/** 바 단추가 함께 쓰는 누름·뗌 처리(뗌으로 실행한다, bar-view.ts createBarPress) */
+const barPress = createBarPress()
+
+/** 뗀 자리가 그 요소 안인지(누른 채 바 밖으로 끌고 나가 떼면 실행하지 않는다) */
+const pointerInside = (e: ReactPointerEvent<HTMLElement>): boolean => {
+  const r = e.currentTarget.getBoundingClientRect()
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+}
 
 /**
  * 모양별 그림 크기(DIP). 칸·간격·여백은 BAR_METRICS에서만 온다.
@@ -96,7 +105,10 @@ export function BarView({ state }: { state: BarViewState }): React.JSX.Element {
       aria-label="Sure-Mate 바"
       className={`@container relative flex h-full w-full overflow-hidden ${right ? 'justify-end' : 'justify-start'} ${dragging ? 'cursor-grabbing' : ''}`}
       onMouseEnter={() => api.barPointer(true)}
-      onMouseLeave={() => api.barPointer(false)}
+      onMouseLeave={() => {
+        barPress.reset()
+        api.barPointer(false)
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         api.barContextMenu(e.clientY)
@@ -112,7 +124,10 @@ export function BarView({ state }: { state: BarViewState }): React.JSX.Element {
         if (drag.active()) drag.move(e.screenY)
       }}
       onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerCancel={(e) => {
+        barPress.reset()
+        endDrag(e)
+      }}
       onLostPointerCapture={endDrag}
     >
       <div
@@ -157,9 +172,15 @@ function ItemButton({ item, shape, busy }: { item: Exclude<BarItem, { kind: 'sep
       style={{ width: cell, height: cell }}
       onMouseEnter={() => api.barHover(item.id)}
       onMouseLeave={() => api.barHover(null)}
+      // 뗄 때 실행한다(createBarPress: Windows가 누름을 보내지 않아도 눌리게). 두 번 클릭의 두 번째는 보내지 않는다
+      onPointerDown={(e) => barPress.down(item.id, e.button)}
+      onPointerUp={(e) => {
+        const how = barPress.up(item.id, e.button, pointerInside(e))
+        if (how) api.barAction(item.id, how)
+      }}
       onClick={(e) => {
-        // 두 번 클릭의 두 번째 클릭은 보내지 않는다(shouldSendBarClick)
-        if (shouldSendBarClick(e.detail)) api.barAction(item.id)
+        const how = barPress.click(item.id, e.detail)
+        if (how) api.barAction(item.id, how)
       }}
     >
       <span className={`grid place-items-center ${grow} ${pulse}`}>

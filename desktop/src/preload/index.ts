@@ -89,7 +89,7 @@ const api: SureMateApi = {
     ipcRenderer.on(IPC.barState, listener)
     return () => ipcRenderer.removeListener(IPC.barState, listener)
   },
-  barAction: (id) => ipcRenderer.send(IPC.barAction, id),
+  barAction: (id, how) => ipcRenderer.send(IPC.barAction, id, how),
   barHover: (id) => ipcRenderer.send(IPC.barHover, id),
   barPointer: (inside) => ipcRenderer.send(IPC.barPointer, inside),
   barContextMenu: (y) => ipcRenderer.send(IPC.barContextMenu, y),

@@ -1,3 +1,4 @@
+import type { BarPressKind } from './bar/bar-ipc'
 import type { BarViewState } from './bar/bar-items'
 import type { FlyoutAction, FlyoutMessage } from './flyout/flyout-content'
 import type { GlossaryEntry, WikiDraft, WikiSaveResult } from './glossary/types'
@@ -253,8 +254,8 @@ export interface SureMateApi {
   /** 바 화면: 지금 바 상태(바가 없으면 null) */
   getBarState(): Promise<BarViewState | null>
   onBarState(cb: (s: BarViewState) => void): () => void
-  /** 바 항목을 왼쪽 클릭했다 */
-  barAction(id: string): void
+  /** 바 항목을 왼쪽 클릭했다. how는 실행한 방식(로그용, BarPressKind) */
+  barAction(id: string, how: BarPressKind): void
   /** 마우스가 바 항목에 들어감(id) 또는 나감(null) */
   barHover(id: string | null): void
   /** 마우스가 바 창에 들어감·나감 */

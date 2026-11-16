@@ -220,7 +220,7 @@ export function createBarRuntime(o: BarRuntimeOptions): BarRuntime {
       barContentsId: barWin.win.webContents.id,
       flyoutContentsId: flyoutWin.win.webContents.id,
       barState: () => bar.state(),
-      barAction: (id) => actions.run(id),
+      barAction: (id, how) => actions.run(id, how),
       barHover(id) {
         // 바에 없는 항목 id는 무시한다(renderer는 믿지 않는다)
         if (id !== null && !bar.hasItem(id)) return

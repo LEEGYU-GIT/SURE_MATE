@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest'
-import { BAR_ID_MAX, parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parsePointer } from './bar-ipc'
+import { BAR_ID_MAX, parseBarContextY, parseBarDrag, parseBarHover, parseBarId, parseBarPress, parsePointer } from './bar-ipc'
+
+it('parseBarPress: 정해진 실행 방식만 받고, 그 밖의 값은 null', () => {
+  expect(parseBarPress('up')).toBe('up')
+  expect(parseBarPress('up-only')).toBe('up-only')
+  expect(parseBarPress('click')).toBe('click')
+  for (const bad of [undefined, null, '', 'UP', 1, { how: 'up' }]) expect(parseBarPress(bad)).toBeNull()
+})
 
 it('parseBarDrag: 정해진 단계와 유한한 화면 y만 받는다', () => {
   expect(parseBarDrag('move', 12.5)).toEqual({ phase: 'move', screenY: 12.5 })

@@ -115,6 +115,12 @@ describe('createBarActions: 바 단추', () => {
     await t.actions.run('glossary')
     expect(t.log).toHaveBeenCalledWith('bar.action', { id: 'glossary' })
   })
+
+  it('실행한 방식이 오면 함께 기록한다(up-only: Windows가 누름을 보내지 않은 상태를 로그로 알 수 있다)', async () => {
+    const t = make()
+    await t.actions.run('pet', 'up-only')
+    expect(t.log).toHaveBeenCalledWith('bar.action', { id: 'pet', press: 'up-only' })
+  })
 })
 
 function makeFlyout() {

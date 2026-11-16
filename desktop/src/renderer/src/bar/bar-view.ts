@@ -1,3 +1,4 @@
+import type { BarPressKind } from '../../../shared/bar/bar-ipc'
 import type { BarViewState } from '../../../shared/bar/bar-items'
 import { BAR_METRICS } from '../../../shared/bar/bar-layout'
 import { maskingModeLabel } from '../../../shared/labels'
@@ -48,6 +49,70 @@ export const promptIcon = (templateId: string): PromptIconName | null => PROMPT_
  * 0(보조 기술·프로그램이 누른 클릭)과 1은 보낸다. main의 300ms 막기는 그대로 둔다.
  */
 export const shouldSendBarClick = (detail: number): boolean => detail <= 1
+
+/**
+ * 같은 단추를 이 시간 안에 다시 실행하면 두 번 클릭의 두 번째로 보고 보내지 않는다(Windows 기본 두 번 클릭 시간).
+ * 뗌으로 실행한 뒤 이 시간 안에 오는 click도 같은 누름의 click이라 건너뛴다(펼침 창 press.ts와 같은 값)
+ */
+export const BAR_REPEAT_MS = 500
+/** 누름을 기억하는 시간. 이보다 오래된 누름(뗌을 놓친 누름)은 없던 것으로 본다 */
+export const BAR_DOWN_STALE_MS = 3000
+
+export interface BarPress {
+  /** 단추 위에서 눌렀다(pointerdown). Windows가 누름을 보내지 않으면 불리지 않는다 */
+  down(id: string, button: number): void
+  /** 단추 위에서 뗐다(pointerup). inside: 뗀 자리가 그 단추 안인지. 실행할 방식을 돌려주고, 실행하지 않으면 null */
+  up(id: string, button: number, inside: boolean): BarPressKind | null
+  /** click이 왔다. detail은 운영 체제가 센 연속 클릭 수. 실행할 방식(click) 또는 null */
+  click(id: string, detail: number): BarPressKind | null
+  /** 포인터가 바를 떠났거나 취소됐다: 기억한 누름을 버린다 */
+  reset(): void
+}
+
+/**
+ * 바 단추는 click이 아니라 뗌(pointerup)으로 실행한다(펼침 창 press.ts와 같은 까닭).
+ * 2026-11-16 로그인 자동 실행 뒤 바 단추가 하나도 눌리지 않았다: 마우스를 올리면 이름표는 떴지만(bar:hover) bar.action이 없었다.
+ * Windows가 포커스를 받지 않는 창에 누름(WM_LBUTTONDOWN)을 보내지 않고 뗌만 보내는 상태로, click은 누름이 있어야 생긴다.
+ * - 누름이 왔으면 같은 단추에서 뗐을 때만 실행한다(다른 단추에서 눌러 여기서 떼면 실행하지 않는다)
+ * - 누름 없이 뗌만 오면 그 단추를 실행한다(up-only, 로그로 이 상태를 알 수 있다)
+ * - 뗌 없이 온 click(화면 읽기 프로그램·자동화)은 실행하고, 뗌 뒤에 따라오는 click은 건너뛴다
+ * - 두 번 클릭의 두 번째는 실행하지 않는다(shouldSendBarClick와 같은 뜻을 시간으로 센다). main의 300ms 막기는 그대로 둔다
+ */
+export function createBarPress(now: () => number = () => performance.now()): BarPress {
+  let down: { id: string; at: number } | null = null
+  let last: { id: string; at: number } | null = null
+  let lastUpAt = Number.NEGATIVE_INFINITY
+
+  /** 같은 단추를 BAR_REPEAT_MS 안에 다시 실행하려 하면 null. 건너뛴 시각도 기억해 세 번 클릭도 막는다 */
+  const run = (id: string, t: number, kind: BarPressKind): BarPressKind | null => {
+    const repeat = last !== null && last.id === id && t - last.at <= BAR_REPEAT_MS
+    last = { id, at: t }
+    return repeat ? null : kind
+  }
+
+  return {
+    down(id, button) {
+      if (button === 0) down = { id, at: now() }
+    },
+    up(id, button, inside) {
+      if (button !== 0) return null
+      const t = now()
+      lastUpAt = t
+      const from = down !== null && t - down.at <= BAR_DOWN_STALE_MS ? down.id : null
+      down = null
+      if (!inside || (from !== null && from !== id)) return null
+      return run(id, t, from === null ? 'up-only' : 'up')
+    },
+    click(id, detail) {
+      const t = now()
+      if (t - lastUpAt <= BAR_REPEAT_MS || !shouldSendBarClick(detail)) return null
+      return run(id, t, 'click')
+    },
+    reset() {
+      down = null
+    }
+  }
+}
 
 export type DragPhase = 'start' | 'move' | 'end'
 

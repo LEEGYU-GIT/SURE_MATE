@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { barFrameStyle, createDragReporter, maskingLook, promptIcon, shouldSendBarClick } from './bar-view'
+import {
+  BAR_DOWN_STALE_MS,
+  BAR_REPEAT_MS,
+  barFrameStyle,
+  createBarPress,
+  createDragReporter,
+  maskingLook,
+  promptIcon,
+  shouldSendBarClick,
+  type BarPress
+} from './bar-view'
 
 describe('barFrameStyle', () => {
   it('가장자리 띠는 너비 56이고 안쪽 모서리만 8로 둥글다', () => {
@@ -55,6 +65,90 @@ describe('shouldSendBarClick: 운영 체제의 두 번 클릭 가운데 두 번�
 
   it('클릭 횟수가 없는 클릭(detail 0: 보조 기술·프로그램이 누름)은 보낸다', () => {
     expect(shouldSendBarClick(0)).toBe(true)
+  })
+})
+
+describe('createBarPress: 바 단추는 뗌으로 실행한다', () => {
+  function setup(): { p: BarPress; advance(ms: number): void } {
+    let t = 1000
+    return {
+      p: createBarPress(() => t),
+      advance: (ms: number) => {
+        t += ms
+      }
+    }
+  }
+
+  it('누르고 같은 단추에서 떼면 실행하고(up), 뒤따르는 click은 건너뛴다', () => {
+    const s = setup()
+    s.p.down('pet', 0)
+    s.advance(80)
+    expect(s.p.up('pet', 0, true)).toBe('up')
+    s.advance(2)
+    expect(s.p.click('pet', 1)).toBeNull()
+  })
+
+  it('누름이 오지 않고 뗌만 와도 실행한다(up-only: 2026-11-16 로그인 뒤 Windows가 바에 누름을 보내지 않았다)', () => {
+    const s = setup()
+    expect(s.p.up('pet', 0, true)).toBe('up-only')
+  })
+
+  it('뗌 없이 온 click(화면 읽기 프로그램·자동화)은 실행하고, 그 click의 두 번째(detail 2)는 보내지 않는다', () => {
+    const s = setup()
+    expect(s.p.click('settings', 0)).toBe('click')
+    s.advance(BAR_REPEAT_MS + 1)
+    expect(s.p.click('settings', 1)).toBe('click')
+    s.advance(BAR_REPEAT_MS + 1)
+    expect(s.p.click('settings', 2)).toBeNull()
+  })
+
+  it('두 번 클릭의 두 번째·세 번째 뗌은 실행하지 않고, 두 번 클릭 시간이 지나면 다시 실행한다', () => {
+    const s = setup()
+    s.p.down('logo', 0)
+    expect(s.p.up('logo', 0, true)).toBe('up')
+    s.advance(300)
+    s.p.down('logo', 0)
+    expect(s.p.up('logo', 0, true)).toBeNull()
+    s.advance(300)
+    s.p.down('logo', 0)
+    expect(s.p.up('logo', 0, true)).toBeNull()
+    s.advance(BAR_REPEAT_MS + 1)
+    s.p.down('logo', 0)
+    expect(s.p.up('logo', 0, true)).toBe('up')
+  })
+
+  it('다른 단추는 바로 이어 눌러도 실행한다', () => {
+    const s = setup()
+    expect(s.p.up('masking', 0, true)).toBe('up-only')
+    s.advance(100)
+    expect(s.p.up('workspace', 0, true)).toBe('up-only')
+  })
+
+  it('다른 단추에서 눌러 여기서 떼거나, 단추 밖에서 떼면 실행하지 않는다', () => {
+    const s = setup()
+    s.p.down('masking', 0)
+    expect(s.p.up('pet', 0, true)).toBeNull()
+    s.p.down('pet', 0)
+    expect(s.p.up('pet', 0, false)).toBeNull()
+  })
+
+  it('뗌을 놓친 오래된 누름이나 바를 떠나며 버린 누름은 다음 뗌을 막지 않는다', () => {
+    const s = setup()
+    s.p.down('masking', 0)
+    s.advance(BAR_DOWN_STALE_MS + 1)
+    expect(s.p.up('pet', 0, true)).toBe('up-only')
+    s.advance(BAR_REPEAT_MS + 1)
+    s.p.down('masking', 0)
+    s.p.reset()
+    expect(s.p.up('settings', 0, true)).toBe('up-only')
+  })
+
+  it('왼쪽 버튼이 아니면 누름·뗌 모두 무시한다', () => {
+    const s = setup()
+    s.p.down('pet', 2)
+    expect(s.p.up('pet', 2, true)).toBeNull()
+    expect(s.p.up('pet', 1, true)).toBeNull()
+    expect(s.p.click('pet', 1)).toBe('click')
   })
 })
 
